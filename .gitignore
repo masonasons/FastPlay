@@ -1,0 +1,46 @@
+# Build outputs
+*.exe
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.iobj
+*.ipdb
+
+# SQLite database
+*.db
+
+# Config files (user-specific)
+*.ini
+
+# Dependencies (downloaded/external)
+lib/*.dll
+deps/
+src/sqlite3.c
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+ipch/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Distribution
+*.zip
+
+# Misc
+*.log
+*.tmp
+*.bak
+*~
+Thumbs.db
+.DS_Store

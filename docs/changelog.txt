@@ -1,0 +1,80 @@
+0.4.6
+Attempted network buffering fixes.
+Fix leading spaces in M3U favorites import.
+F2 will let you update a station.
+
+0.4.5
+Fix legacy volume bugs.
+
+0.4.4
+Add an option to make playback rate adjust by semitones instead of .01X
+Add a use legacy volume adjustment checkbox to advanced, for those who don't care about volume affecting recordings and want it to respond quickly.
+Add an option to not show track filenames in the window title.
+In addition to this, improve window title display so that it shows much more useful track information than before.
+Fix the scheduler so that when set to both playback and recording, the audio is now correctly muted.
+Add an import button to the radio dialog, for importing M3U or pls streams.
+Add the promised search tab to the radio dialog, which lets you search RadioBrowser, TuneIn, iHeart Radio.
+Adjust rate feature to not rely on the tempo algorithm being BassFX/Sound Touch.
+Fix pasting into the playlist view.
+Load folders from m3u's.
+
+0.4.3
+Add scheduler for scheduling playback/recording from within the app!
+Fix a bug report where now playing song titles didn't continue parsing past an apostrophe character.
+Add a keystroke, u, to mute the player. This works in such a way where recording the player would still work but you wouldn't hear the player output.
+Add backspace to reset the current effect slider to it's default value.
+Adjust it so that player volume does not affect recording volume.
+More adjustments to volume curve.
+Add volume step setting to options/playback.
+
+0.4.2
+Add convolution reverb.
+Add all files option to the open file dialog.
+Add chapter seeking option.
+in the speak now playing key, remove the now playing: text
+Make it so shift numbers show a text field in a dialog with the tag that that number key would speak.
+Add open folder option
+Add playlist manager dialog, control P. Allows you to modify the current playlist. You can add files to it by pasting them, move them with alt up and down arrows, delete them with delete.
+
+0.4.1
+Add toggle record and speak now playing as an available global hotkey assignment
+Add new speech tab, with some new settings for verbosity.
+Fix volume over 100 setting
+Add shuffle
+Fix a bug with tags where they were getting cutoff in some cases.
+Adjust volume curve and step.
+Fix flac playback by actually including the proper version of bassflac.
+Add home to jump to the beginning of the file.
+Add J for jump to time.
+
+0.4.0
+Add speedy as another tempo/pitch algorithm.
+Add reverb algorithm adjustment.
+Correctly show midi format in the file formats tab
+Add option to have FastPlay not automatically hide to tray.
+Add new bookmarks option. Press M to place a bookmark at the current position in the file. Press control M to open the list of bookmarks. Press enter on a bookmark to jump to it, or press delete to remove it.
+Attempt to fix internet streaming crashes.
+Add the ability to record the player's direct output. Useful in many applications, recording internet radio streams, recording affected audio, etc. Press R to toggle recording. Set up options in the recording tab.
+Add a radio dialog, for saving and quickly playing internet radio streams. Search tab coming soon.
+Thread youtube search, so NVDA doesn't freeze.
+
+0.3.1
+Add ID3 tag reading with 1 through 0
+Add new setting for nowplaying changes to be autoread.
+
+0.3.0
+Add FFT based stereo cancelation/isolation
+
+0.2.0
+Add new tabs in options for adjusting sound touch and rubber band settings.
+Add stereo width effect.
+Fix bugs with M3U files.
+
+0.1.3
+Adjustments to EQ.
+
+0.1.2
+Nuke Prism out of orbit, it's still pretty broken. Switch to universal speech for speech.
+
+0.1.1
+Try older prism build
