@@ -27,56 +27,110 @@ echo Downloading BASS libraries...
 echo.
 
 REM BASS core
-echo [1/8] Downloading BASS...
+echo [1/17] Downloading BASS...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bass24.zip' -OutFile 'temp_dl\bass.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bass.zip' -DestinationPath 'temp_dl\bass' -Force"
 copy /y "temp_dl\bass\c\x64\bass.lib" "lib\" >nul
 copy /y "temp_dl\bass\x64\bass.dll" "lib\" >nul
 
 REM BASS_FX
-echo [2/8] Downloading BASS_FX...
+echo [2/17] Downloading BASS_FX...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/z/0/bass_fx24.zip' -OutFile 'temp_dl\bass_fx.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bass_fx.zip' -DestinationPath 'temp_dl\bass_fx' -Force"
 copy /y "temp_dl\bass_fx\c\x64\bass_fx.lib" "lib\" >nul
 copy /y "temp_dl\bass_fx\x64\bass_fx.dll" "lib\" >nul
 
 REM BASS_AAC
-echo [3/8] Downloading BASS_AAC...
+echo [3/17] Downloading BASS_AAC...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/z/2/bass_aac24.zip' -OutFile 'temp_dl\bass_aac.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bass_aac.zip' -DestinationPath 'temp_dl\bass_aac' -Force"
 copy /y "temp_dl\bass_aac\c\x64\bass_aac.lib" "lib\" >nul
 copy /y "temp_dl\bass_aac\x64\bass_aac.dll" "lib\" >nul
 
+REM BASSALAC
+echo [4/17] Downloading BASSALAC...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassalac24.zip' -OutFile 'temp_dl\bassalac.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\bassalac.zip' -DestinationPath 'temp_dl\bassalac' -Force"
+copy /y "temp_dl\bassalac\x64\bassalac.dll" "lib\" >nul
+
+REM BASSAPE
+echo [5/17] Downloading BASSAPE...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/z/1/bassape24.zip' -OutFile 'temp_dl\bassape.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\bassape.zip' -DestinationPath 'temp_dl\bassape' -Force"
+copy /y "temp_dl\bassape\x64\bassape.dll" "lib\" >nul
+
+REM BASSCD
+echo [6/17] Downloading BASSCD...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/basscd24.zip' -OutFile 'temp_dl\basscd.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\basscd.zip' -DestinationPath 'temp_dl\basscd' -Force"
+copy /y "temp_dl\basscd\x64\basscd.dll" "lib\" >nul
+
+REM BASSDSD
+echo [7/17] Downloading BASSDSD...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassdsd24.zip' -OutFile 'temp_dl\bassdsd.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\bassdsd.zip' -DestinationPath 'temp_dl\bassdsd' -Force"
+copy /y "temp_dl\bassdsd\x64\bassdsd.dll" "lib\" >nul
+
+REM BASSFLAC
+echo [8/17] Downloading BASSFLAC...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassflac24.zip' -OutFile 'temp_dl\bassflac.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\bassflac.zip' -DestinationPath 'temp_dl\bassflac' -Force"
+copy /y "temp_dl\bassflac\x64\bassflac.dll" "lib\" >nul
+
+REM BASSHLS
+echo [9/17] Downloading BASSHLS...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/basshls24.zip' -OutFile 'temp_dl\basshls.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\basshls.zip' -DestinationPath 'temp_dl\basshls' -Force"
+copy /y "temp_dl\basshls\x64\basshls.dll" "lib\" >nul
+
 REM BASSMIDI
-echo [4/8] Downloading BASSMIDI...
+echo [10/17] Downloading BASSMIDI...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassmidi24.zip' -OutFile 'temp_dl\bassmidi.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bassmidi.zip' -DestinationPath 'temp_dl\bassmidi' -Force"
 copy /y "temp_dl\bassmidi\c\x64\bassmidi.lib" "lib\" >nul
 copy /y "temp_dl\bassmidi\x64\bassmidi.dll" "lib\" >nul
 
+REM BASSOPUS
+echo [11/17] Downloading BASSOPUS...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassopus24.zip' -OutFile 'temp_dl\bassopus.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\bassopus.zip' -DestinationPath 'temp_dl\bassopus' -Force"
+copy /y "temp_dl\bassopus\x64\bassopus.dll" "lib\" >nul
+
+REM BASSWMA
+echo [12/17] Downloading BASSWMA...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/basswma24.zip' -OutFile 'temp_dl\basswma.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\basswma.zip' -DestinationPath 'temp_dl\basswma' -Force"
+copy /y "temp_dl\basswma\x64\basswma.dll" "lib\" >nul
+
+REM BASSWV
+echo [13/17] Downloading BASSWV...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/basswv24.zip' -OutFile 'temp_dl\basswv.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\basswv.zip' -DestinationPath 'temp_dl\basswv' -Force"
+copy /y "temp_dl\basswv\x64\basswv.dll" "lib\" >nul
+
 REM BASSENC
-echo [5/8] Downloading BASSENC...
+echo [14/17] Downloading BASSENC...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassenc24.zip' -OutFile 'temp_dl\bassenc.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bassenc.zip' -DestinationPath 'temp_dl\bassenc' -Force"
 copy /y "temp_dl\bassenc\c\x64\bassenc.lib" "lib\" >nul
 copy /y "temp_dl\bassenc\x64\bassenc.dll" "lib\" >nul
 
 REM BASSENC_MP3
-echo [6/8] Downloading BASSENC_MP3...
+echo [15/17] Downloading BASSENC_MP3...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassenc_mp324.zip' -OutFile 'temp_dl\bassenc_mp3.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bassenc_mp3.zip' -DestinationPath 'temp_dl\bassenc_mp3' -Force"
 copy /y "temp_dl\bassenc_mp3\c\x64\bassenc_mp3.lib" "lib\" >nul
 copy /y "temp_dl\bassenc_mp3\x64\bassenc_mp3.dll" "lib\" >nul
 
 REM BASSENC_OGG
-echo [7/8] Downloading BASSENC_OGG...
+echo [16/17] Downloading BASSENC_OGG...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassenc_ogg24.zip' -OutFile 'temp_dl\bassenc_ogg.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bassenc_ogg.zip' -DestinationPath 'temp_dl\bassenc_ogg' -Force"
 copy /y "temp_dl\bassenc_ogg\c\x64\bassenc_ogg.lib" "lib\" >nul
 copy /y "temp_dl\bassenc_ogg\x64\bassenc_ogg.dll" "lib\" >nul
 
 REM BASSENC_FLAC
-echo [8/8] Downloading BASSENC_FLAC...
+echo [17/17] Downloading BASSENC_FLAC...
 powershell -Command "Invoke-WebRequest -Uri 'https://www.un4seen.com/files/bassenc_flac24.zip' -OutFile 'temp_dl\bassenc_flac.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\bassenc_flac.zip' -DestinationPath 'temp_dl\bassenc_flac' -Force"
 copy /y "temp_dl\bassenc_flac\c\x64\bassenc_flac.lib" "lib\" >nul
