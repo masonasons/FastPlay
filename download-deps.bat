@@ -145,9 +145,9 @@ copy /y "temp_dl\bassenc_flac\x64\bassenc_flac.dll" "lib\" >nul
 
 echo.
 echo Downloading SQLite...
-powershell -Command "Invoke-WebRequest -Uri 'https://www.sqlite.org/2024/sqlite-amalgamation-3450000.zip' -OutFile 'temp_dl\sqlite.zip'"
+powershell -Command "Invoke-WebRequest -Uri 'https://www.sqlite.org/2025/sqlite-amalgamation-3510200.zip' -OutFile 'temp_dl\sqlite.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\sqlite.zip' -DestinationPath 'temp_dl\sqlite' -Force"
-copy /y "temp_dl\sqlite\sqlite-amalgamation-3450000\sqlite3.c" "src\" >nul
+copy /y "temp_dl\sqlite\sqlite-amalgamation-3510200\sqlite3.c" "src\" >nul
 
 echo.
 echo Cloning Rubber Band...
