@@ -211,6 +211,15 @@ static bool SearchWithAPI(const std::wstring& query, std::vector<YouTubeResult>&
     return !results.empty();
 }
 
+// Helper to try multiple JSON field names
+static std::wstring ParseJsonStringMulti(const std::wstring& json, std::initializer_list<const wchar_t*> keys) {
+    for (const wchar_t* key : keys) {
+        std::wstring value = ParseJsonString(json, key);
+        if (!value.empty()) return value;
+    }
+    return L"";
+}
+
 // Search using yt-dlp
 static bool SearchWithYtdlp(const std::wstring& query, std::vector<YouTubeResult>& results) {
     // Use yt-dlp to search YouTube
@@ -222,13 +231,18 @@ static bool SearchWithYtdlp(const std::wstring& query, std::vector<YouTubeResult
     std::wistringstream iss(output);
     std::wstring line;
     while (std::getline(iss, line)) {
+        // Strip trailing \r if present (Windows line endings)
+        if (!line.empty() && line.back() == L'\r') {
+            line.pop_back();
+        }
         if (line.empty() || line[0] != L'{') continue;
 
         YouTubeResult result;
-        result.videoId = ParseJsonString(line, L"id");
-        result.title = ParseJsonString(line, L"title");
-        result.channel = ParseJsonString(line, L"channel");
-        result.duration = ParseJsonString(line, L"duration_string");
+        // Try multiple field names for compatibility with different yt-dlp versions
+        result.videoId = ParseJsonStringMulti(line, {L"id", L"video_id", L"display_id"});
+        result.title = ParseJsonStringMulti(line, {L"title", L"fulltitle"});
+        result.channel = ParseJsonStringMulti(line, {L"channel", L"uploader", L"uploader_id", L"channel_id"});
+        result.duration = ParseJsonStringMulti(line, {L"duration_string", L"duration"});
 
         if (!result.videoId.empty() && !result.title.empty()) {
             results.push_back(result);
@@ -273,13 +287,18 @@ bool YouTubeGetPlaylistContents(const std::wstring& playlistId, std::vector<YouT
     std::wistringstream iss(output);
     std::wstring line;
     while (std::getline(iss, line)) {
+        // Strip trailing \r if present (Windows line endings)
+        if (!line.empty() && line.back() == L'\r') {
+            line.pop_back();
+        }
         if (line.empty() || line[0] != L'{') continue;
 
         YouTubeResult result;
-        result.videoId = ParseJsonString(line, L"id");
-        result.title = ParseJsonString(line, L"title");
-        result.channel = ParseJsonString(line, L"channel");
-        result.duration = ParseJsonString(line, L"duration_string");
+        // Try multiple field names for compatibility with different yt-dlp versions
+        result.videoId = ParseJsonStringMulti(line, {L"id", L"video_id", L"display_id"});
+        result.title = ParseJsonStringMulti(line, {L"title", L"fulltitle"});
+        result.channel = ParseJsonStringMulti(line, {L"channel", L"uploader", L"uploader_id", L"channel_id"});
+        result.duration = ParseJsonStringMulti(line, {L"duration_string", L"duration"});
 
         if (!result.videoId.empty() && !result.title.empty()) {
             results.push_back(result);
