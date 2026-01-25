@@ -1,6 +1,9 @@
 # Claude Code
 .claude/
 
+# Unused
+include/prism.h
+
 # Build outputs
 *.exe
 *.obj
