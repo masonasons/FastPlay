@@ -71,9 +71,6 @@ BEGIN
     AUTOCHECKBOX    "Auto-ad&vance to next playlist item", IDC_AUTO_ADVANCE, 17, 144, 150, 10
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
     COMBOBOX        IDC_VOLUME_STEP, 215, 116, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "&Downloads folder:", -1, 17, 160, 65, 10
-    EDITTEXT        IDC_DOWNLOAD_PATH, 17, 172, 205, 14, ES_AUTOHSCROLL | ES_READONLY
-    PUSHBUTTON      "Br&owse...", IDC_DOWNLOAD_BROWSE, 225, 171, 45, 14
 
     // Recording tab controls (shown when tab 1 selected)
     LTEXT           "Record audio output to file. Press R to toggle recording.", -1, 17, 30, 230, 10
@@ -89,7 +86,14 @@ BEGIN
     COMBOBOX        IDC_REC_BITRATE, 163, 106, 70, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "(Bitrate only applies to MP3 and OGG formats)", -1, 17, 125, 200, 10
 
-    // Speech tab controls (shown when Speech tab selected)
+    // Downloads tab controls (shown when tab 2 selected)
+    LTEXT           "Configure podcast episode download settings.", -1, 17, 30, 230, 10
+    LTEXT           "&Downloads folder:", -1, 17, 50, 65, 10
+    EDITTEXT        IDC_DOWNLOAD_PATH, 17, 62, 205, 14, ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "&Browse...", IDC_DOWNLOAD_BROWSE, 225, 61, 45, 14
+    AUTOCHECKBOX    "&Organize downloads into folders by feed title", IDC_DOWNLOAD_ORGANIZE, 17, 82, 200, 10
+
+    // Speech tab controls (shown when tab 3 selected)
     LTEXT           "Configure speech feedback for various events.", -1, 17, 30, 230, 10
     AUTOCHECKBOX    "&Announce track changes", IDC_SPEECH_TRACKCHANGE, 17, 50, 150, 10
     AUTOCHECKBOX    "Speak &volume when adjusted", IDC_SPEECH_VOLUME, 17, 70, 150, 10
@@ -410,8 +414,9 @@ BEGIN
     LTEXT           "&Episodes:", IDC_PODCAST_EP_LABEL, 172, 28, 50, 10
     LISTBOX         IDC_PODCAST_EPISODES, 172, 40, 264, 130, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        IDC_PODCAST_EP_DESC, 172, 174, 264, 66, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
-    LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 280, 10
-    PUSHBUTTON      "&Download", IDC_PODCAST_DOWNLOAD, 300, 244, 50, 14
+    LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 230, 10
+    PUSHBUTTON      "&Download", IDC_PODCAST_DOWNLOAD, 248, 244, 50, 14
+    PUSHBUTTON      "Download &All", IDC_PODCAST_DOWNLOAD_ALL, 302, 244, 58, 14
     PUSHBUTTON      "&Refresh", IDC_PODCAST_REFRESH, 364, 244, 50, 14
     // Search tab controls (tab 1)
     LTEXT           "&Search iTunes:", IDC_PODCAST_SEARCH_LABEL, 14, 30, 55, 10

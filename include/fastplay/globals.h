@@ -167,7 +167,8 @@ extern std::wstring g_ytdlpPath;    // Path to yt-dlp executable
 extern std::wstring g_ytApiKey;     // YouTube Data API key (optional)
 
 // Downloads settings
-extern std::wstring g_downloadPath; // Output directory for podcast downloads
+extern std::wstring g_downloadPath;      // Output directory for podcast downloads
+extern bool g_downloadOrganizeByFeed;    // Organize downloads into folders by feed title
 
 // Recording settings
 extern std::wstring g_recordPath;       // Output directory for recordings

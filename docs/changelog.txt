@@ -1,9 +1,11 @@
 0.4.6
+Add podcast search dialog, control shift P!
 Attempted network buffering fixes.
 Fix leading spaces in M3U favorites import.
 F2 will let you update a station.
 Fix youtube search
 Add an auto advance to next playlist item option to playback tab.
+Fix bug with rate doubling etc.
 
 0.4.5
 Fix legacy volume bugs.

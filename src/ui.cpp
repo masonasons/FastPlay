@@ -738,43 +738,45 @@ void ShowPlaylistDialog() {
 
 // Helper to show/hide tab controls
 void ShowTabControls(HWND hwnd, int tab) {
-    // Tab indices: 0=Playback, 1=Recording, 2=Speech, 3=Movement, 4=File Types, 5=Global Hotkeys,
-    //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Rubber Band, 11=Speedy, 12=MIDI
+    // Tab indices: 0=Playback, 1=Recording, 2=Downloads, 3=Speech, 4=Movement, 5=File Types, 6=Global Hotkeys,
+    //              7=Effects, 8=Advanced, 9=YouTube, 10=SoundTouch, 11=Rubber Band, 12=Speedy, 13=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
-    // Speech tab controls (tab 2)
+    // Downloads tab controls (tab 2)
+    int downloadsCtrls[] = {IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_DOWNLOAD_ORGANIZE};
+    // Speech tab controls (tab 3)
     int speechCtrls[] = {IDC_SPEECH_TRACKCHANGE, IDC_SPEECH_VOLUME, IDC_SPEECH_EFFECT};
-    // Movement tab controls (tab 3)
+    // Movement tab controls (tab 4)
     int movementCtrls[] = {IDC_SEEK_1S, IDC_SEEK_5S, IDC_SEEK_10S, IDC_SEEK_30S, IDC_SEEK_1M, IDC_SEEK_5M, IDC_SEEK_10M,
                            IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
-    // File Types tab controls (tab 4)
+    // File Types tab controls (tab 5)
     int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_WMA,
                            IDC_ASSOC_AAC, IDC_ASSOC_OPUS, IDC_ASSOC_AIFF, IDC_ASSOC_APE, IDC_ASSOC_WV,
                            IDC_ASSOC_M3U, IDC_ASSOC_M3U8, IDC_ASSOC_PLS, IDC_ASSOC_MID, IDC_ASSOC_MIDI};
-    // Global Hotkeys tab controls (tab 5)
+    // Global Hotkeys tab controls (tab 6)
     int hotkeyCtrls[] = {IDC_HOTKEY_ENABLED, IDC_HOTKEY_LIST, IDC_HOTKEY_ADD, IDC_HOTKEY_EDIT, IDC_HOTKEY_REMOVE};
-    // Effects tab controls (tab 6)
+    // Effects tab controls (tab 7)
     int effectCtrls[] = {IDC_EFFECT_VOLUME, IDC_EFFECT_PITCH, IDC_EFFECT_TEMPO, IDC_EFFECT_RATE, IDC_RATE_STEP_MODE,
                          IDC_DSP_REVERB, IDC_DSP_ECHO, IDC_DSP_EQ, IDC_DSP_COMPRESSOR, IDC_DSP_STEREOWIDTH,
                          IDC_DSP_CENTERCANCEL, IDC_DSP_CONVOLUTION, IDC_CONV_IR, IDC_CONV_BROWSE};
-    // Advanced tab controls (tab 7)
+    // Advanced tab controls (tab 8)
     int advancedCtrls[] = {IDC_BUFFER_SIZE, IDC_UPDATE_PERIOD, IDC_TEMPO_ALGORITHM,
                            IDC_EQ_BASS_FREQ, IDC_EQ_MID_FREQ, IDC_EQ_TREBLE_FREQ,
                            IDC_LEGACY_VOLUME};
-    // YouTube tab controls (tab 8)
+    // YouTube tab controls (tab 9)
     int youtubeCtrls[] = {IDC_YTDLP_PATH, IDC_YTDLP_BROWSE, IDC_YT_APIKEY};
-    // SoundTouch tab controls (tab 9)
+    // SoundTouch tab controls (tab 10)
     int soundtouchCtrls[] = {IDC_ST_AA_FILTER, IDC_ST_AA_LENGTH, IDC_ST_QUICK_ALGO, IDC_ST_SEQUENCE,
                              IDC_ST_SEEKWINDOW, IDC_ST_OVERLAP, IDC_ST_PREVENT_CLICK, IDC_ST_ALGORITHM};
-    // Rubber Band tab controls (tab 10)
+    // Rubber Band tab controls (tab 11)
     int rubberbandCtrls[] = {IDC_RB_FORMANT, IDC_RB_PITCH_MODE, IDC_RB_WINDOW, IDC_RB_TRANSIENTS,
                              IDC_RB_DETECTOR, IDC_RB_CHANNELS, IDC_RB_PHASE, IDC_RB_SMOOTHING};
-    // Speedy tab controls (tab 11)
+    // Speedy tab controls (tab 12)
     int speedyCtrls[] = {IDC_SPEEDY_NONLINEAR};
-    // MIDI tab controls (tab 12)
+    // MIDI tab controls (tab 13)
     int midiCtrls[] = {IDC_MIDI_SOUNDFONT, IDC_MIDI_SF_BROWSE, IDC_MIDI_VOICES, IDC_MIDI_SINC};
 
     // Show/hide playback controls
@@ -787,59 +789,64 @@ void ShowTabControls(HWND hwnd, int tab) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 1 ? SW_SHOW : SW_HIDE);
     }
 
+    // Show/hide downloads controls
+    for (int id : downloadsCtrls) {
+        ShowWindow(GetDlgItem(hwnd, id), tab == 2 ? SW_SHOW : SW_HIDE);
+    }
+
     // Show/hide speech controls
     for (int id : speechCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 2 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 3 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide movement controls
     for (int id : movementCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 3 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 4 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide file type controls
     for (int id : fileTypeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 4 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide hotkey controls
     for (int id : hotkeyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide effect controls
     for (int id : effectCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide advanced controls
     for (int id : advancedCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide YouTube controls
     for (int id : youtubeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide SoundTouch controls
     for (int id : soundtouchCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Rubber Band controls
     for (int id : rubberbandCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Speedy controls
     for (int id : speedyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide MIDI controls
     for (int id : midiCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 13 ? SW_SHOW : SW_HIDE);
     }
 }
 
@@ -855,28 +862,30 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             TabCtrl_InsertItem(hTab, 0, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Recording");
             TabCtrl_InsertItem(hTab, 1, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Speech");
+            tie.pszText = const_cast<LPWSTR>(L"Downloads");
             TabCtrl_InsertItem(hTab, 2, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Movement");
+            tie.pszText = const_cast<LPWSTR>(L"Speech");
             TabCtrl_InsertItem(hTab, 3, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"File Types");
+            tie.pszText = const_cast<LPWSTR>(L"Movement");
             TabCtrl_InsertItem(hTab, 4, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Global Hotkeys");
+            tie.pszText = const_cast<LPWSTR>(L"File Types");
             TabCtrl_InsertItem(hTab, 5, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Effects");
+            tie.pszText = const_cast<LPWSTR>(L"Global Hotkeys");
             TabCtrl_InsertItem(hTab, 6, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Advanced");
+            tie.pszText = const_cast<LPWSTR>(L"Effects");
             TabCtrl_InsertItem(hTab, 7, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"YouTube");
+            tie.pszText = const_cast<LPWSTR>(L"Advanced");
             TabCtrl_InsertItem(hTab, 8, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"SoundTouch");
+            tie.pszText = const_cast<LPWSTR>(L"YouTube");
             TabCtrl_InsertItem(hTab, 9, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Rubber Band");
+            tie.pszText = const_cast<LPWSTR>(L"SoundTouch");
             TabCtrl_InsertItem(hTab, 10, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Speedy");
+            tie.pszText = const_cast<LPWSTR>(L"Rubber Band");
             TabCtrl_InsertItem(hTab, 11, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            tie.pszText = const_cast<LPWSTR>(L"Speedy");
             TabCtrl_InsertItem(hTab, 12, &tie);
+            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            TabCtrl_InsertItem(hTab, 13, &tie);
 
             // Populate hotkey list and set enabled checkbox
             CheckDlgButton(hwnd, IDC_HOTKEY_ENABLED, g_hotkeysEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -922,8 +931,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_SHOW_TITLE, g_showTitleInWindow ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
 
-            // Set download path
+            // Set download path and organize checkbox
             SetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, g_downloadPath.c_str());
+            CheckDlgButton(hwnd, IDC_DOWNLOAD_ORGANIZE, g_downloadOrganizeByFeed ? BST_CHECKED : BST_UNCHECKED);
 
             // Populate volume step combo box
             {
@@ -1258,11 +1268,12 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
 
-                    // Get download path
+                    // Get download settings
                     {
                         wchar_t dlPath[MAX_PATH];
                         GetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, dlPath, MAX_PATH);
                         g_downloadPath = dlPath;
+                        g_downloadOrganizeByFeed = (IsDlgButtonChecked(hwnd, IDC_DOWNLOAD_ORGANIZE) == BST_CHECKED);
                     }
 
                     // Get volume step setting
@@ -3408,6 +3419,11 @@ static std::vector<PodcastEpisode> g_podcastEpisodes;
 static std::vector<PodcastSearchResult> g_podcastSearchResults;
 static int g_currentPodcastId = -1;
 
+// Batch download tracking
+static int g_batchDownloadPending = 0;
+static int g_batchDownloadSuccess = 0;
+static int g_batchDownloadFailed = 0;
+
 // HTTP GET for podcast operations
 static std::wstring PodcastHttpGet(const std::wstring& url) {
     std::wstring result;
@@ -4043,7 +4059,7 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     // Subscriptions tab controls (tab 0)
     int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES, IDC_PODCAST_EP_DESC,
-                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_REFRESH,
+                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_DOWNLOAD_ALL, IDC_PODCAST_REFRESH,
                        IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
@@ -4245,14 +4261,30 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         return TRUE;
                     }
 
+                    // Build download folder path
+                    std::wstring downloadFolder = g_downloadPath;
+                    if (!downloadFolder.empty() && downloadFolder.back() != L'\\') downloadFolder += L'\\';
+
+                    // If organize by feed is enabled, create subfolder
+                    if (g_downloadOrganizeByFeed && g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                std::wstring feedFolder = SanitizeFilename(sub.name);
+                                if (!feedFolder.empty()) {
+                                    downloadFolder += feedFolder + L'\\';
+                                    CreateDirectoryW(downloadFolder.c_str(), nullptr);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
                     // Build filename from episode title
                     std::wstring filename = SanitizeFilename(ep.title);
                     if (filename.empty()) filename = L"episode";
                     filename += GetUrlExtension(ep.audioUrl);
 
-                    std::wstring filepath = g_downloadPath;
-                    if (!filepath.empty() && filepath.back() != L'\\') filepath += L'\\';
-                    filepath += filename;
+                    std::wstring filepath = downloadFolder + filename;
 
                     // Check if file already exists
                     if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -4273,6 +4305,90 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     } else {
                         delete params;
                         Speak("Failed to start download");
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_DOWNLOAD_ALL: {
+                    // Download all episodes in the current feed
+                    if (g_podcastEpisodes.empty()) {
+                        Speak("No episodes loaded");
+                        return TRUE;
+                    }
+
+                    if (g_downloadPath.empty()) {
+                        Speak("Please set a downloads folder in Options");
+                        return TRUE;
+                    }
+
+                    // Build download folder path
+                    std::wstring downloadFolder = g_downloadPath;
+                    if (!downloadFolder.empty() && downloadFolder.back() != L'\\') downloadFolder += L'\\';
+
+                    // If organize by feed is enabled, create subfolder
+                    if (g_downloadOrganizeByFeed && g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                std::wstring feedFolder = SanitizeFilename(sub.name);
+                                if (!feedFolder.empty()) {
+                                    downloadFolder += feedFolder + L'\\';
+                                    CreateDirectoryW(downloadFolder.c_str(), nullptr);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Initialize batch download tracking
+                    g_batchDownloadPending = 0;
+                    g_batchDownloadSuccess = 0;
+                    g_batchDownloadFailed = 0;
+
+                    // Start downloads for all episodes
+                    int skipped = 0;
+                    for (const auto& ep : g_podcastEpisodes) {
+                        if (ep.audioUrl.empty()) {
+                            skipped++;
+                            continue;
+                        }
+
+                        std::wstring filename = SanitizeFilename(ep.title);
+                        if (filename.empty()) filename = L"episode";
+                        filename += GetUrlExtension(ep.audioUrl);
+
+                        std::wstring filepath = downloadFolder + filename;
+
+                        // Skip if file already exists
+                        if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                            skipped++;
+                            continue;
+                        }
+
+                        // Start download in background thread
+                        PodcastDownloadParams* params = new PodcastDownloadParams();
+                        params->url = ep.audioUrl;
+                        params->filepath = filepath;
+                        params->hwndNotify = hwnd;
+
+                        HANDLE hThread = CreateThread(nullptr, 0, PodcastDownloadThread, params, 0, nullptr);
+                        if (hThread) {
+                            CloseHandle(hThread);
+                            g_batchDownloadPending++;
+                        } else {
+                            delete params;
+                            skipped++;
+                        }
+                    }
+
+                    char msg[128];
+                    if (g_batchDownloadPending == 0) {
+                        Speak("No episodes to download");
+                    } else if (skipped > 0) {
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", g_batchDownloadPending, skipped);
+                        Speak(msg);
+                    } else {
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes", g_batchDownloadPending);
+                        Speak(msg);
                     }
                     return TRUE;
                 }
@@ -4527,8 +4643,9 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EP_DESC), nullptr, epsX, descY, epsWidth, descHeight, SWP_NOZORDER);
 
             // Reposition buttons
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 190, height - 46, 60, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD), nullptr, width - 124, height - 46, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 248, height - 46, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD), nullptr, width - 184, height - 46, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD_ALL), nullptr, width - 130, height - 46, 58, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_REFRESH), nullptr, width - 64, height - 46, 50, 14, SWP_NOZORDER);
 
             // Search tab controls
@@ -4555,10 +4672,32 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
         case WM_USER + 100:
             // Download completion notification
-            if (wParam) {
-                Speak("Download complete");
+            if (g_batchDownloadPending > 0) {
+                // Batch download mode - track progress
+                if (wParam) {
+                    g_batchDownloadSuccess++;
+                } else {
+                    g_batchDownloadFailed++;
+                }
+                g_batchDownloadPending--;
+
+                // Speak only when all downloads complete
+                if (g_batchDownloadPending == 0) {
+                    char msg[128];
+                    if (g_batchDownloadFailed == 0) {
+                        snprintf(msg, sizeof(msg), "%d downloads complete", g_batchDownloadSuccess);
+                    } else {
+                        snprintf(msg, sizeof(msg), "%d complete, %d failed", g_batchDownloadSuccess, g_batchDownloadFailed);
+                    }
+                    Speak(msg);
+                }
             } else {
-                Speak("Download failed");
+                // Single download mode - speak immediately
+                if (wParam) {
+                    Speak("Download complete");
+                } else {
+                    Speak("Download failed");
+                }
             }
             return TRUE;
     }

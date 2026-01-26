@@ -335,10 +335,12 @@
 #define IDC_PODCAST_PASSWORD    974
 #define IDC_PODCAST_DOWNLOAD    975
 #define IDC_PODCAST_IMPORT_OPML 976
+#define IDC_PODCAST_DOWNLOAD_ALL 977
 
-// Downloads path in Playback tab
+// Downloads tab
 #define IDC_DOWNLOAD_PATH       980
 #define IDC_DOWNLOAD_BROWSE     981
+#define IDC_DOWNLOAD_ORGANIZE   982
 
 #define IDOK                1
 #define IDCANCEL            2

@@ -158,6 +158,7 @@ void LoadSettings() {
     wchar_t dlBuf[512] = {0};
     GetPrivateProfileStringW(L"Downloads", L"Path", L"", dlBuf, 512, g_configPath.c_str());
     g_downloadPath = dlBuf;
+    g_downloadOrganizeByFeed = GetPrivateProfileIntW(L"Downloads", L"OrganizeByFeed", 0, g_configPath.c_str()) != 0;
 
     // Load recording settings
     wchar_t recBuf[512] = {0};
@@ -426,6 +427,7 @@ void SaveSettings() {
 
     // Save downloads settings
     WritePrivateProfileStringW(L"Downloads", L"Path", g_downloadPath.c_str(), g_configPath.c_str());
+    WritePrivateProfileStringW(L"Downloads", L"OrganizeByFeed", g_downloadOrganizeByFeed ? L"1" : L"0", g_configPath.c_str());
 
     // Save recording settings
     WritePrivateProfileStringW(L"Recording", L"Path", g_recordPath.c_str(), g_configPath.c_str());
