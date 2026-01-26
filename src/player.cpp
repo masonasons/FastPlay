@@ -225,6 +225,7 @@ void FreeBass() {
         BASS_StreamFree(g_stream);
         g_stream = 0;
     }
+    g_currentBitrate = 0;
     BASS_Free();
 }
 
@@ -319,6 +320,12 @@ bool LoadURL(const wchar_t* url) {
     BASS_CHANNELINFO info;
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
+
+    // Capture bitrate (may come from stream headers or BASS attribute)
+    float bitrate = 0;
+    BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
+    g_currentBitrate = static_cast<int>(bitrate);
+    // If no BASS bitrate, ICY headers will be checked by GetCurrentBitrate()
 
     // Set up metadata sync for stream title changes (internet radio)
     g_metaSync = BASS_ChannelSetSync(g_stream, BASS_SYNC_META, 0, OnMetaChange, nullptr);
@@ -707,6 +714,11 @@ bool LoadFile(const wchar_t* path) {
     BASS_CHANNELINFO info;
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
+
+    // Capture bitrate before stream gets wrapped by tempo processor
+    float bitrate = 0;
+    BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
+    g_currentBitrate = static_cast<int>(bitrate);
 
     // Set up tempo processor based on selected algorithm
     TempoAlgorithm algo = static_cast<TempoAlgorithm>(g_tempoAlgorithm);
@@ -2066,6 +2078,21 @@ void SpeakTagBitrate() {
     }
 
     Speak(buf);
+}
+
+int GetCurrentBitrate() {
+    // Return cached bitrate (captured when file was loaded)
+    // For streams, also check ICY headers
+    if (g_currentBitrate > 0) return g_currentBitrate;
+
+    // Fall back to ICY headers for internet streams
+    HSTREAM sourceStream = g_stream ? g_stream : g_fxStream;
+    if (sourceStream) {
+        int icyBitrate = GetStreamBitrate(sourceStream);
+        if (icyBitrate > 0) return icyBitrate;
+    }
+
+    return 0;
 }
 
 void SpeakTagDuration() {

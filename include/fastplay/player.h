@@ -68,6 +68,7 @@ void SpeakTagTrack();
 void SpeakTagGenre();
 void SpeakTagComment();
 void SpeakTagBitrate();
+int GetCurrentBitrate();  // Returns current stream bitrate in kbps, or 0 if unavailable
 void SpeakTagDuration();
 void SpeakTagFilename();
 

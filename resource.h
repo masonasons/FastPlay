@@ -254,6 +254,7 @@
 #define IDD_RADIO_ADD       860
 #define IDC_RADIO_NAME      861
 #define IDC_RADIO_URL       862
+#define IDC_RADIO_EXPORT    863
 
 // Scheduler
 #define IDM_FILE_SCHEDULE   108

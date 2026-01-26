@@ -311,8 +311,9 @@ BEGIN
     // Favorites tab controls
     LISTBOX         IDC_RADIO_LIST, 14, 28, 322, 195, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Enter = play, Delete = remove, Escape = close", -1, 14, 228, 200, 10
-    PUSHBUTTON      "&Add...", IDC_RADIO_ADD, 170, 226, 50, 14
-    PUSHBUTTON      "&Import...", IDC_RADIO_IMPORT, 224, 226, 50, 14
+    PUSHBUTTON      "&Add...", IDC_RADIO_ADD, 116, 226, 50, 14
+    PUSHBUTTON      "&Import...", IDC_RADIO_IMPORT, 170, 226, 50, 14
+    PUSHBUTTON      "&Export...", IDC_RADIO_EXPORT, 224, 226, 50, 14
     // Search tab controls
     LTEXT           "&Source:", -1, 14, 30, 30, 10
     COMBOBOX        IDC_RADIO_SEARCH_SOURCE, 47, 28, 90, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP

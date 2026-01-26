@@ -131,6 +131,15 @@ void UpdateStatusBar() {
             default: stateText = L""; break;
         }
 
+        // Add bitrate if available
+        int bitrate = GetCurrentBitrate();
+        if (bitrate > 0) {
+            if (!stateText.empty()) stateText += L" | ";
+            wchar_t brBuf[32];
+            swprintf(brBuf, 32, L"%d kbps", bitrate);
+            stateText += brBuf;
+        }
+
         // Add recording indicator
         if (g_isRecording) {
             if (!stateText.empty()) stateText += L" | ";
@@ -2846,7 +2855,7 @@ static std::wstring ResolveRadioStreamUrl(const RadioSearchResult& result) {
 // Show/hide radio dialog controls based on tab
 static void UpdateRadioTabVisibility(HWND hwnd, int tab) {
     // Favorites tab controls (tab 0)
-    int favCtrls[] = {IDC_RADIO_LIST, IDC_RADIO_ADD, IDC_RADIO_IMPORT};
+    int favCtrls[] = {IDC_RADIO_LIST, IDC_RADIO_ADD, IDC_RADIO_IMPORT, IDC_RADIO_EXPORT};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_RADIO_SEARCH_SOURCE, IDC_RADIO_SEARCH_EDIT, IDC_RADIO_SEARCH_BTN,
                          IDC_RADIO_SEARCH_LIST, IDC_RADIO_SEARCH_ADD};
@@ -3224,6 +3233,51 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     return TRUE;
                 }
 
+                case IDC_RADIO_EXPORT: {
+                    // Export favorites to M3U file
+                    if (g_radioStations.empty()) {
+                        Speak("No favorites to export");
+                        return TRUE;
+                    }
+
+                    wchar_t szFile[MAX_PATH] = L"radio_favorites.m3u";
+                    OPENFILENAMEW ofn = {0};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = hwnd;
+                    ofn.lpstrFile = szFile;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrFilter = L"M3U Playlist\0*.m3u\0All Files (*.*)\0*.*\0";
+                    ofn.nFilterIndex = 1;
+                    ofn.lpstrDefExt = L"m3u";
+                    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+
+                    if (GetSaveFileNameW(&ofn)) {
+                        FILE* f = _wfopen(szFile, L"wb");
+                        if (f) {
+                            // Write UTF-8 BOM
+                            fwrite("\xEF\xBB\xBF", 1, 3, f);
+                            // Write M3U header
+                            fprintf(f, "#EXTM3U\r\n");
+
+                            for (const auto& station : g_radioStations) {
+                                // Write EXTINF with station name
+                                std::string name = WideToUtf8(station.name);
+                                std::string url = WideToUtf8(station.url);
+                                fprintf(f, "#EXTINF:-1,%s\r\n", name.c_str());
+                                fprintf(f, "%s\r\n", url.c_str());
+                            }
+                            fclose(f);
+
+                            wchar_t msg[64];
+                            swprintf(msg, 64, L"Exported %d stations", static_cast<int>(g_radioStations.size()));
+                            Speak(WideToUtf8(msg).c_str());
+                        } else {
+                            Speak("Failed to write file");
+                        }
+                    }
+                    return TRUE;
+                }
+
                 case IDC_RADIO_LIST:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
                         // Double-click to play
@@ -3311,6 +3365,7 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                         SetCursor(LoadCursor(nullptr, IDC_ARROW));
                         if (!streamUrl.empty()) {
                             if (AddRadioStation(r.name, streamUrl) >= 0) {
+                                RefreshRadioList(hwnd);
                                 Speak("Added to favorites");
                             } else {
                                 Speak("Failed to add station");
@@ -3374,8 +3429,9 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
             // Favorites tab controls
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_LIST), nullptr, 14, 28, w - 28, h - 92, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_ADD), nullptr, w - 174, h - 54, 50, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_IMPORT), nullptr, w - 120, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_ADD), nullptr, w - 228, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_IMPORT), nullptr, w - 174, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_EXPORT), nullptr, w - 120, h - 54, 50, 14, SWP_NOZORDER);
 
             // Search tab controls
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_EDIT), nullptr, 142, 28, w - 210, 14, SWP_NOZORDER);
