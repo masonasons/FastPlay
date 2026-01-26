@@ -40,7 +40,8 @@ echo Copying DLLs to lib folder...
 mkdir "dist_temp\lib"
 copy /y "lib\bass.dll" "dist_temp\lib\"
 copy /y "lib\bass_fx.dll" "dist_temp\lib\"
-copy /y "lib\nvdaControllerClient.dll" "dist_temp\lib\" 2>&1
+copy /y "lib\nvdaControllerClient64.dll" "dist_temp\lib\" 2>&1
+copy /y "lib\SAAPI64.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\bassflac.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\bassopus.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\basswma.dll" "dist_temp\lib\" 2>&1
