@@ -283,6 +283,9 @@
 // Chapter seeking
 #define IDC_CHAPTER_SEEK    900
 
+// Auto-advance playlist
+#define IDC_AUTO_ADVANCE    901
+
 // Tag view dialog
 #define IDD_TAG_VIEW        910
 #define IDC_TAG_TEXT        911

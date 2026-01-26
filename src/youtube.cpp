@@ -224,7 +224,12 @@ static std::wstring ParseJsonStringMulti(const std::wstring& json, std::initiali
 static bool SearchWithYtdlp(const std::wstring& query, std::vector<YouTubeResult>& results) {
     // Use yt-dlp to search YouTube
     std::wstring args = L"--flat-playlist --dump-json \"ytsearch25:" + query + L"\"";
+    OutputDebugStringW((L"[YT] Running: " + g_ytdlpPath + L" " + args + L"\n").c_str());
     std::wstring output = RunYtdlp(args);
+    OutputDebugStringW((L"[YT] Output length: " + std::to_wstring(output.length()) + L"\n").c_str());
+    if (output.length() < 500) {
+        OutputDebugStringW((L"[YT] Output: " + output + L"\n").c_str());
+    }
     if (output.empty()) return false;
 
     // Parse JSON lines (each line is a video)
@@ -258,16 +263,23 @@ bool YouTubeSearch(const std::wstring& query, std::vector<YouTubeResult>& result
     results.clear();
     nextPageToken.clear();
 
+    OutputDebugStringW(L"[YT] YouTubeSearch called\n");
+    OutputDebugStringW((L"[YT] HasApiKey: " + std::wstring(HasApiKey() ? L"yes" : L"no") + L"\n").c_str());
+    OutputDebugStringW((L"[YT] IsYtdlpAvailable: " + std::wstring(IsYtdlpAvailable() ? L"yes" : L"no") + L"\n").c_str());
+
     // Try API first if available
     if (HasApiKey() && SearchWithAPI(query, results, nextPageToken, pageToken)) {
+        OutputDebugStringW(L"[YT] API search succeeded\n");
         return true;
     }
 
     // Fall back to yt-dlp (only for first page, no pagination support)
     if (pageToken.empty() && IsYtdlpAvailable()) {
+        OutputDebugStringW(L"[YT] Trying yt-dlp search\n");
         return SearchWithYtdlp(query, results);
     }
 
+    OutputDebugStringW(L"[YT] No search method available\n");
     return false;
 }
 
@@ -504,25 +516,6 @@ static void PlaySelected(HWND hwnd) {
     }
 }
 
-// Subclassed edit proc to handle Enter key
-static WNDPROC g_origSearchProc = nullptr;
-static LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-        DoSearch(GetParent(hwnd));
-        return 0;
-    }
-    return CallWindowProcW(g_origSearchProc, hwnd, msg, wParam, lParam);
-}
-
-// Subclassed listbox proc to handle Enter key
-static WNDPROC g_origListProc = nullptr;
-static LRESULT CALLBACK ResultsListProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-        PlaySelected(GetParent(hwnd));
-        return 0;
-    }
-    return CallWindowProcW(g_origListProc, hwnd, msg, wParam, lParam);
-}
 
 // Dialog procedure
 INT_PTR CALLBACK YouTubeDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -531,18 +524,24 @@ INT_PTR CALLBACK YouTubeDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_ytDialog = hwnd;
             g_ytResults.clear();
             g_ytNextPageToken.clear();
-            // Subclass edit and listbox to handle Enter key
-            g_origSearchProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
-                GetDlgItem(hwnd, IDC_YT_SEARCH), GWLP_WNDPROC,
-                reinterpret_cast<LONG_PTR>(SearchEditProc)));
-            g_origListProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
-                GetDlgItem(hwnd, IDC_YT_RESULTS), GWLP_WNDPROC,
-                reinterpret_cast<LONG_PTR>(ResultsListProc)));
             SetFocus(GetDlgItem(hwnd, IDC_YT_SEARCH));
             return FALSE;  // We set focus manually
 
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
+                case IDOK:
+                    // Enter pressed - check if search box has focus
+                    if (GetFocus() == GetDlgItem(hwnd, IDC_YT_SEARCH)) {
+                        DoSearch(hwnd);
+                        return TRUE;
+                    }
+                    // If results list has focus, play selected
+                    if (GetFocus() == GetDlgItem(hwnd, IDC_YT_RESULTS)) {
+                        PlaySelected(hwnd);
+                        return TRUE;
+                    }
+                    return TRUE;  // Prevent dialog from closing
+
                 case IDC_YT_RESULTS:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
                         PlaySelected(hwnd);

@@ -38,9 +38,9 @@ void SetVolume(float vol);
 void ToggleMute();
 
 // Track navigation
-void NextTrack();
+void NextTrack(bool autoPlay = true);
 void PrevTrack();
-void PlayTrack(int index);
+void PlayTrack(int index, bool autoPlay = true);
 
 // Track end callback
 void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user);

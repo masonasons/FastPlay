@@ -178,8 +178,9 @@ extern bool g_speechTrackChange;        // Announce track changes
 extern bool g_speechVolume;             // Speak volume when adjusted
 extern bool g_speechEffect;             // Speak effect value when adjusted
 
-// Shuffle
+// Shuffle and auto-advance
 extern bool g_shuffle;                  // Shuffle playback order
+extern bool g_autoAdvance;              // Auto-play next track when current ends (default true)
 
 // Chapter support
 struct Chapter {

@@ -75,7 +75,7 @@ extern bool ReinitBass(int device);
 extern void SetVolume(float vol);
 extern void RegisterGlobalHotkeys();
 extern void UnregisterGlobalHotkeys();
-extern void PlayTrack(int index);
+extern void PlayTrack(int index, bool autoPlay);
 extern void SaveFilePosition(const std::wstring& filePath);
 extern double LoadFilePosition(const std::wstring& filePath);
 extern INT_PTR CALLBACK HotkeyDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -741,7 +741,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Rubber Band, 11=Speedy, 12=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Speech tab controls (tab 2)
@@ -919,6 +919,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_LOAD_FOLDER, g_loadFolder ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_MINIMIZE_TO_TRAY, g_minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SHOW_TITLE, g_showTitleInWindow ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
 
             // Populate volume step combo box
             {
@@ -1250,6 +1251,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_loadFolder = (IsDlgButtonChecked(hwnd, IDC_LOAD_FOLDER) == BST_CHECKED);
                     g_minimizeToTray = (IsDlgButtonChecked(hwnd, IDC_MINIMIZE_TO_TRAY) == BST_CHECKED);
                     g_showTitleInWindow = (IsDlgButtonChecked(hwnd, IDC_SHOW_TITLE) == BST_CHECKED);
+                    g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
 
                     // Get volume step setting

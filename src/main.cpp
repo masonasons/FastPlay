@@ -263,7 +263,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     PrevTrack();
                     break;
                 case IDM_PLAY_NEXT:
-                    NextTrack();
+                    // HIWORD==1 means auto-advance is disabled, so don't auto-play
+                    NextTrack(HIWORD(wParam) == 0);
                     break;
                 case IDM_PLAY_SHUFFLE:
                     g_shuffle = !g_shuffle;

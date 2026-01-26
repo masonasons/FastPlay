@@ -228,8 +228,9 @@ bool g_speechTrackChange = false;                   // Announce track changes (d
 bool g_speechVolume = true;                         // Speak volume when adjusted (default on)
 bool g_speechEffect = true;                         // Speak effect value when adjusted (default on)
 
-// Shuffle
+// Shuffle and auto-advance
 bool g_shuffle = false;                             // Shuffle playback order
+bool g_autoAdvance = true;                          // Auto-play next track when current ends
 
 // Chapter support
 std::vector<Chapter> g_chapters;                    // Chapters for current file

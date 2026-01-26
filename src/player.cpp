@@ -777,7 +777,13 @@ bool LoadFile(const wchar_t* path) {
 // Sync callback when track ends
 void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user) {
     // Post message to main thread to advance track
-    PostMessage(g_hwnd, WM_COMMAND, IDM_PLAY_NEXT, 0);
+    // Use a custom message if auto-advance is disabled to load but not play
+    if (g_autoAdvance) {
+        PostMessage(g_hwnd, WM_COMMAND, IDM_PLAY_NEXT, 0);
+    } else {
+        // Load next track but don't auto-play - use lParam=1 to indicate no auto-play
+        PostMessage(g_hwnd, WM_COMMAND, MAKEWPARAM(IDM_PLAY_NEXT, 1), 0);
+    }
 }
 
 // Sync callback when stream metadata changes (for internet radio)
@@ -1097,7 +1103,7 @@ void SpeakTotal() {
 }
 
 // Play a specific track by index
-void PlayTrack(int index) {
+void PlayTrack(int index, bool autoPlay) {
     if (g_isBusy) return;  // Prevent re-entrancy
     if (index < 0 || index >= static_cast<int>(g_playlist.size())) {
         return;
@@ -1126,6 +1132,11 @@ void PlayTrack(int index) {
         } else {
             break;  // Single file, don't loop
         }
+    }
+
+    // If autoPlay is false, pause immediately after loading
+    if (loadedSuccessfully && !autoPlay && g_fxStream) {
+        BASS_ChannelPause(g_fxStream);
     }
 
     // Announce track change if setting is enabled
@@ -1171,7 +1182,7 @@ void PlayTrack(int index) {
 }
 
 // Play next track
-void NextTrack() {
+void NextTrack(bool autoPlay) {
     if (g_playlist.empty() || g_isBusy) return;
 
     int next;
@@ -1188,7 +1199,7 @@ void NextTrack() {
             return;
         }
     }
-    PlayTrack(next);
+    PlayTrack(next, autoPlay);
 }
 
 // Play previous track
