@@ -3479,11 +3479,12 @@ static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstrin
 
     std::wstring content = xml.substr(contentStart, end - contentStart);
 
-    // Strip CDATA wrapper if present
-    if (content.find(L"<![CDATA[") == 0) {
+    // Strip CDATA wrapper if present (may have leading whitespace)
+    size_t cdataStart = content.find(L"<![CDATA[");
+    if (cdataStart != std::wstring::npos) {
         size_t cdataEnd = content.rfind(L"]]>");
-        if (cdataEnd != std::wstring::npos) {
-            content = content.substr(9, cdataEnd - 9);
+        if (cdataEnd != std::wstring::npos && cdataEnd > cdataStart) {
+            content = content.substr(cdataStart + 9, cdataEnd - cdataStart - 9);
         }
     }
 
@@ -3695,11 +3696,23 @@ static void RefreshPodcastSubsList(HWND hwnd) {
     }
 }
 
+// Subclass proc for podcast description edit - prevents text selection
+static WNDPROC g_origDescProc = nullptr;
+static LRESULT CALLBACK PodcastDescSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    LRESULT result = CallWindowProcW(g_origDescProc, hwnd, msg, wParam, lParam);
+    if (msg == WM_SETFOCUS || msg == WM_SETTEXT) {
+        // Deselect any text after focus or text change
+        SendMessageW(hwnd, EM_SETSEL, 0, 0);
+    }
+    return result;
+}
+
 // Load episodes for a subscription
 static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
     HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
     SendMessageW(hList, LB_RESETCONTENT, 0, 0);
     g_podcastEpisodes.clear();
+    SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, L"");
 
     Speak("Loading episodes");
 
@@ -3761,6 +3774,14 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
             SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(display.c_str()));
         }
 
+        // Select first episode
+        if (!g_podcastEpisodes.empty()) {
+            SendMessageW(hList, LB_SETCURSEL, 0, 0);
+            // Trigger description update by simulating selection change
+            SendMessageW(hwnd, WM_COMMAND, MAKEWPARAM(IDC_PODCAST_EPISODES, LBN_SELCHANGE),
+                         reinterpret_cast<LPARAM>(hList));
+        }
+
         char buf[64];
         snprintf(buf, sizeof(buf), "%d episodes", static_cast<int>(g_podcastEpisodes.size()));
         Speak(buf);
@@ -3772,7 +3793,7 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 // Update visibility of podcast tab controls
 static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     // Subscriptions tab controls (tab 0)
-    int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES,
+    int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES, IDC_PODCAST_EP_DESC,
                        IDC_PODCAST_REFRESH,
                        IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
@@ -3846,6 +3867,11 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SendMessageW(hTab, TCM_INSERTITEMW, 0, reinterpret_cast<LPARAM>(&tie));
             tie.pszText = const_cast<LPWSTR>(L"Search");
             SendMessageW(hTab, TCM_INSERTITEMW, 1, reinterpret_cast<LPARAM>(&tie));
+
+            // Subclass description edit to prevent text selection
+            HWND hDesc = GetDlgItem(hwnd, IDC_PODCAST_EP_DESC);
+            g_origDescProc = reinterpret_cast<WNDPROC>(
+                SetWindowLongPtrW(hDesc, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(PodcastDescSubclassProc)));
 
             // Load subscriptions
             RefreshPodcastSubsList(hwnd);
@@ -4022,6 +4048,45 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                             PlayTrack(0, true);
                             Speak("Playing");
                         }
+                    } else if (HIWORD(wParam) == LBN_SELCHANGE) {
+                        // Update description field
+                        int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
+                            std::wstring desc = g_podcastEpisodes[sel].description;
+                            // Clean up description - remove HTML tags
+                            size_t pos;
+                            while ((pos = desc.find(L'<')) != std::wstring::npos) {
+                                size_t endPos = desc.find(L'>', pos);
+                                if (endPos != std::wstring::npos) {
+                                    desc.erase(pos, endPos - pos + 1);
+                                } else {
+                                    break;
+                                }
+                            }
+                            // Decode HTML entities
+                            while ((pos = desc.find(L"&nbsp;")) != std::wstring::npos) desc.replace(pos, 6, L" ");
+                            while ((pos = desc.find(L"&amp;")) != std::wstring::npos) desc.replace(pos, 5, L"&");
+                            while ((pos = desc.find(L"&quot;")) != std::wstring::npos) desc.replace(pos, 6, L"\"");
+                            while ((pos = desc.find(L"&apos;")) != std::wstring::npos) desc.replace(pos, 6, L"'");
+                            while ((pos = desc.find(L"&lt;")) != std::wstring::npos) desc.replace(pos, 4, L"<");
+                            while ((pos = desc.find(L"&gt;")) != std::wstring::npos) desc.replace(pos, 4, L">");
+                            while ((pos = desc.find(L"&#39;")) != std::wstring::npos) desc.replace(pos, 5, L"'");
+                            // Convert standalone \n to \r\n for edit control (skip existing \r\n)
+                            pos = 0;
+                            while ((pos = desc.find(L'\n', pos)) != std::wstring::npos) {
+                                if (pos == 0 || desc[pos - 1] != L'\r') {
+                                    desc.insert(pos, 1, L'\r');
+                                    pos += 2;
+                                } else {
+                                    pos++;
+                                }
+                            }
+                            SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, desc.c_str());
+                            // Scroll to top (deselect handled by subclass)
+                            SendDlgItemMessageW(hwnd, IDC_PODCAST_EP_DESC, WM_VSCROLL, SB_TOP, 0);
+                        } else {
+                            SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, L"");
+                        }
                     }
                     break;
 
@@ -4058,10 +4123,16 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             int subsWidth = (width - 28) / 3;
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), nullptr, 14, 40, subsWidth, height - 90, SWP_NOZORDER);
 
-            // Resize episodes list (right side)
+            // Resize episodes list (right side, top portion)
             int epsX = 14 + subsWidth + 8;
             int epsWidth = width - epsX - 14;
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), nullptr, epsX, 40, epsWidth, height - 90, SWP_NOZORDER);
+            int epsHeight = (height - 90) * 55 / 100;  // 55% for episodes list
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), nullptr, epsX, 40, epsWidth, epsHeight, SWP_NOZORDER);
+
+            // Description field below episodes list
+            int descY = 40 + epsHeight + 4;
+            int descHeight = height - 90 - epsHeight - 4;
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EP_DESC), nullptr, epsX, descY, epsWidth, descHeight, SWP_NOZORDER);
 
             // Reposition buttons
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 130, height - 46, 60, 14, SWP_NOZORDER);

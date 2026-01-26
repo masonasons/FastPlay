@@ -325,6 +325,7 @@
 #define IDC_PODCAST_SUBS_HELP   967
 #define IDC_PODCAST_SEARCH_LABEL 968
 #define IDC_PODCAST_SEARCH_HELP 969
+#define IDC_PODCAST_EP_DESC     955
 
 // Add podcast subscription dialog
 #define IDD_PODCAST_ADD         970
