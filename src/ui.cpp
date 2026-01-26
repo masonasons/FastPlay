@@ -136,8 +136,14 @@ void UpdateStatusBar() {
         int bitrate = GetCurrentBitrate();
         if (bitrate > 0) {
             if (!stateText.empty()) stateText += L" | ";
-            wchar_t brBuf[32];
-            swprintf(brBuf, 32, L"%d kbps", bitrate);
+            wchar_t brBuf[48];
+            // Check if VBR
+            float vbr = 0;
+            if (g_sourceStream && BASS_ChannelGetAttribute(g_sourceStream, BASS_ATTRIB_VBR, &vbr) && vbr > 0) {
+                swprintf(brBuf, 48, L"~%d kbps VBR", bitrate);
+            } else {
+                swprintf(brBuf, 48, L"%d kbps", bitrate);
+            }
             stateText += brBuf;
         }
 
