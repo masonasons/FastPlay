@@ -338,10 +338,10 @@ bool LoadURL(const wchar_t* url) {
         return false;
     }
 
-    // Restore tempo/pitch/rate settings to processor before initializing
+    // Restore tempo/pitch settings to processor before initializing
+    // Note: Rate is handled via BASS_ATTRIB_FREQ below, not through tempo processor
     processor->SetTempo(g_tempo);
     processor->SetPitch(g_pitch);
-    processor->SetRate(g_rate);
 
     // Initialize processor - this creates the output stream
     g_fxStream = processor->Initialize(g_stream, g_originalFreq);
@@ -708,10 +708,10 @@ bool LoadFile(const wchar_t* path) {
     FreeTempoProcessor();
     TempoProcessor* processor = GetTempoProcessor();
 
-    // Restore tempo/pitch/rate settings to processor before initializing
+    // Restore tempo/pitch settings to processor before initializing
+    // Note: Rate is handled via BASS_ATTRIB_FREQ below, not through tempo processor
     processor->SetTempo(g_tempo);
     processor->SetPitch(g_pitch);
-    processor->SetRate(g_rate);
 
     // Initialize processor - this creates the output stream
     g_fxStream = processor->Initialize(g_stream, g_originalFreq);
@@ -723,7 +723,6 @@ bool LoadFile(const wchar_t* path) {
             processor = GetTempoProcessor();
             processor->SetTempo(g_tempo);
             processor->SetPitch(g_pitch);
-            processor->SetRate(g_rate);
             g_fxStream = processor->Initialize(g_stream, g_originalFreq);
         }
 
@@ -783,7 +782,7 @@ void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user) {
         PostMessage(g_hwnd, WM_COMMAND, IDM_PLAY_NEXT, 0);
     } else {
         // Load next track but don't auto-play - use lParam=1 to indicate no auto-play
-        PostMessage(g_hwnd, WM_COMMAND, MAKEWPARAM(IDM_PLAY_NEXT, 1), 0);
+        PostMessage(g_hwnd, WM_COMMAND, IDM_PLAY_NEXT, 1);
     }
 }
 
