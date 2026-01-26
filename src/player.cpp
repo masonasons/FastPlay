@@ -327,6 +327,11 @@ bool LoadURL(const wchar_t* url) {
     // use push-based processing that doesn't work well with network buffering
     SetCurrentAlgorithm(TempoAlgorithm::SoundTouch);
 
+    // Check if this is a live (non-seekable) stream BEFORE setting up tempo
+    // Live streams have unknown length (-1 or 0)
+    QWORD streamLen = BASS_ChannelGetLength(g_stream, BASS_POS_BYTE);
+    g_isLiveStream = (streamLen == (QWORD)-1 || streamLen == 0);
+
     // Create or reinitialize tempo processor
     FreeTempoProcessor();
     TempoProcessor* processor = GetTempoProcessor();
@@ -338,9 +343,11 @@ bool LoadURL(const wchar_t* url) {
         return false;
     }
 
-    // Restore tempo/pitch settings to processor before initializing
-    // Note: Rate is handled via BASS_ATTRIB_FREQ below, not through tempo processor
-    processor->SetTempo(g_tempo);
+    // Restore pitch settings (always works)
+    // Only restore tempo if not a live stream (tempo doesn't work on live streams)
+    if (!g_isLiveStream) {
+        processor->SetTempo(g_tempo);
+    }
     processor->SetPitch(g_pitch);
 
     // Initialize processor - this creates the output stream
@@ -358,8 +365,8 @@ bool LoadURL(const wchar_t* url) {
         g_stream = 0;  // Prevent double-free
     }
 
-    // Apply rate using native BASS frequency attribute
-    if (g_rate != 1.0f) {
+    // Apply rate using native BASS frequency attribute (skip for live streams)
+    if (g_rate != 1.0f && !g_isLiveStream) {
         BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_FREQ, g_originalFreq * g_rate);
     }
 
@@ -636,6 +643,7 @@ bool LoadFile(const wchar_t* path) {
         return LoadURL(path);
     }
     g_isLoading = true;
+    g_isLiveStream = false;  // Local files are always seekable
 
     // Free existing streams safely
     if (g_fxStream) {

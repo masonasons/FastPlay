@@ -24,6 +24,7 @@ float g_tempo = 0.0f;
 float g_pitch = 0.0f;
 float g_rate = 1.0f;
 float g_originalFreq = 44100.0f;  // Default, updated when loading files
+bool g_isLiveStream = false;      // True if current stream is non-seekable
 
 // Playlist
 std::vector<std::wstring> g_playlist;

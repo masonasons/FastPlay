@@ -724,7 +724,8 @@ void SetParamValue(ParamId id, float value) {
             break;
         case ParamId::Tempo:
             g_tempo = value;
-            if (g_fxStream) {
+            // Skip applying tempo to live streams (not supported)
+            if (g_fxStream && !g_isLiveStream) {
                 TempoProcessor* processor = GetTempoProcessor();
                 if (processor && processor->IsActive()) {
                     processor->SetTempo(g_tempo);
@@ -733,7 +734,8 @@ void SetParamValue(ParamId id, float value) {
             break;
         case ParamId::Rate:
             g_rate = value;
-            if (g_fxStream) {
+            // Skip applying rate to live streams (not supported)
+            if (g_fxStream && !g_isLiveStream) {
                 // Use native BASS frequency attribute (changes speed and pitch together)
                 BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_FREQ, g_originalFreq * g_rate);
             }
@@ -901,6 +903,12 @@ void AdjustCurrentParam(int direction) {
     const ParamDef* def = GetParamDef(id);
     if (!def) return;
 
+    // Block tempo and rate adjustments for live streams
+    if (g_isLiveStream && (id == ParamId::Tempo || id == ParamId::Rate)) {
+        Speak("Not available for live streams");
+        return;
+    }
+
     // For Volume, respect the allow amplify setting and use g_volumeStep
     float maxVal = def->maxValue;
     float step = def->step;
@@ -950,6 +958,12 @@ void ResetCurrentParam() {
     ParamId id = (ParamId)g_currentParamIndex;
     const ParamDef* def = GetParamDef(id);
     if (!def) return;
+
+    // Block tempo and rate reset for live streams
+    if (g_isLiveStream && (id == ParamId::Tempo || id == ParamId::Rate)) {
+        Speak("Not available for live streams");
+        return;
+    }
 
     SetParamValue(id, def->defaultValue);
     AnnounceCurrentParam();

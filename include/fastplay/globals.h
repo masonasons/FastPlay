@@ -47,6 +47,7 @@ extern float g_tempo;
 extern float g_pitch;
 extern float g_rate;
 extern float g_originalFreq;  // Original sample rate for rate control
+extern bool g_isLiveStream;   // True if current stream is non-seekable (live stream)
 
 // Playlist
 extern std::vector<std::wstring> g_playlist;
