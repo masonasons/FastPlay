@@ -154,6 +154,11 @@ void LoadSettings() {
     GetPrivateProfileStringW(L"YouTube", L"ApiKey", L"", ytBuf, 512, g_configPath.c_str());
     g_ytApiKey = ytBuf;
 
+    // Load downloads settings
+    wchar_t dlBuf[512] = {0};
+    GetPrivateProfileStringW(L"Downloads", L"Path", L"", dlBuf, 512, g_configPath.c_str());
+    g_downloadPath = dlBuf;
+
     // Load recording settings
     wchar_t recBuf[512] = {0};
     GetPrivateProfileStringW(L"Recording", L"Path", L"", recBuf, 512, g_configPath.c_str());
@@ -418,6 +423,9 @@ void SaveSettings() {
     // Save YouTube settings
     WritePrivateProfileStringW(L"YouTube", L"YtdlpPath", g_ytdlpPath.c_str(), g_configPath.c_str());
     WritePrivateProfileStringW(L"YouTube", L"ApiKey", g_ytApiKey.c_str(), g_configPath.c_str());
+
+    // Save downloads settings
+    WritePrivateProfileStringW(L"Downloads", L"Path", g_downloadPath.c_str(), g_configPath.c_str());
 
     // Save recording settings
     WritePrivateProfileStringW(L"Recording", L"Path", g_recordPath.c_str(), g_configPath.c_str());

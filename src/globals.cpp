@@ -215,6 +215,9 @@ float g_eqTrebleFreq = 12000.0f;
 std::wstring g_ytdlpPath;   // Path to yt-dlp executable
 std::wstring g_ytApiKey;    // YouTube Data API key (optional)
 
+// Downloads settings
+std::wstring g_downloadPath;  // Output directory for podcast downloads
+
 // Recording settings
 std::wstring g_recordPath;                          // Output directory
 std::wstring g_recordTemplate = L"%Y-%m-%d_%H-%M-%S";  // Filename template

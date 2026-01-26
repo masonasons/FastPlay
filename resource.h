@@ -331,6 +331,13 @@
 #define IDD_PODCAST_ADD         970
 #define IDC_PODCAST_NAME        971
 #define IDC_PODCAST_FEED_URL    972
+#define IDC_PODCAST_USERNAME    973
+#define IDC_PODCAST_PASSWORD    974
+#define IDC_PODCAST_DOWNLOAD    975
+
+// Downloads path in Playback tab
+#define IDC_DOWNLOAD_PATH       980
+#define IDC_DOWNLOAD_BROWSE     981
 
 #define IDOK                1
 #define IDCANCEL            2

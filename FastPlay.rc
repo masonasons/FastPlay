@@ -60,17 +60,20 @@ BEGIN
     // Playback tab controls (shown when tab 0 selected)
     LTEXT           "&Output device:", -1, 17, 30, 55, 10
     COMBOBOX        IDC_SOUNDCARD, 75, 28, 188, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    AUTOCHECKBOX    "&Allow volume above 100%", IDC_ALLOW_AMPLIFY, 17, 50, 120, 10
-    AUTOCHECKBOX    "&Remember playback state on exit", IDC_REMEMBER_STATE, 17, 70, 150, 10
-    LTEXT           "Remember p&osition if longer than:", -1, 17, 92, 125, 10
-    COMBOBOX        IDC_REMEMBER_POS, 145, 90, 118, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    AUTOCHECKBOX    "&Bring window to front when opening files", IDC_BRING_TO_FRONT, 17, 112, 180, 10
-    AUTOCHECKBOX    "&Load all files in folder when opening single file", IDC_LOAD_FOLDER, 17, 132, 200, 10
-    AUTOCHECKBOX    "&Minimize to system tray", IDC_MINIMIZE_TO_TRAY, 17, 147, 120, 10
-    AUTOCHECKBOX    "Show &track name in window title", IDC_SHOW_TITLE, 17, 162, 150, 10
-    AUTOCHECKBOX    "Auto-&advance to next playlist item", IDC_AUTO_ADVANCE, 17, 177, 150, 10
-    LTEXT           "&Volume step:", -1, 160, 162, 50, 10
-    COMBOBOX        IDC_VOLUME_STEP, 215, 160, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    AUTOCHECKBOX    "&Allow volume above 100%", IDC_ALLOW_AMPLIFY, 17, 48, 120, 10
+    AUTOCHECKBOX    "&Remember playback state on exit", IDC_REMEMBER_STATE, 17, 61, 150, 10
+    LTEXT           "Remember p&osition if longer than:", -1, 17, 76, 125, 10
+    COMBOBOX        IDC_REMEMBER_POS, 145, 74, 118, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    AUTOCHECKBOX    "&Bring window to front when opening files", IDC_BRING_TO_FRONT, 17, 92, 180, 10
+    AUTOCHECKBOX    "&Load all files in folder when opening single file", IDC_LOAD_FOLDER, 17, 105, 200, 10
+    AUTOCHECKBOX    "&Minimize to system tray", IDC_MINIMIZE_TO_TRAY, 17, 118, 120, 10
+    AUTOCHECKBOX    "Show &track name in window title", IDC_SHOW_TITLE, 17, 131, 150, 10
+    AUTOCHECKBOX    "Auto-ad&vance to next playlist item", IDC_AUTO_ADVANCE, 17, 144, 150, 10
+    LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
+    COMBOBOX        IDC_VOLUME_STEP, 215, 116, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Downloads folder:", -1, 17, 160, 65, 10
+    EDITTEXT        IDC_DOWNLOAD_PATH, 17, 172, 205, 14, ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Br&owse...", IDC_DOWNLOAD_BROWSE, 225, 171, 45, 14
 
     // Recording tab controls (shown when tab 1 selected)
     LTEXT           "Record audio output to file. Press R to toggle recording.", -1, 17, 30, 230, 10
@@ -408,6 +411,7 @@ BEGIN
     LISTBOX         IDC_PODCAST_EPISODES, 172, 40, 264, 130, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        IDC_PODCAST_EP_DESC, 172, 174, 264, 66, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
     LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 280, 10
+    PUSHBUTTON      "&Download", IDC_PODCAST_DOWNLOAD, 300, 244, 50, 14
     PUSHBUTTON      "&Refresh", IDC_PODCAST_REFRESH, 364, 244, 50, 14
     // Search tab controls (tab 1)
     LTEXT           "&Search iTunes:", IDC_PODCAST_SEARCH_LABEL, 14, 30, 55, 10
@@ -422,18 +426,21 @@ BEGIN
 END
 
 // Add podcast subscription dialog
-IDD_PODCAST_ADD DIALOGEX 0, 0, 300, 90
+IDD_PODCAST_ADD DIALOGEX 0, 0, 300, 100
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Add Podcast"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT           "Podcast &name:", -1, 7, 12, 55, 10
-    EDITTEXT        IDC_PODCAST_NAME, 65, 10, 228, 14, ES_AUTOHSCROLL
-    LTEXT           "Feed &URL:", -1, 7, 32, 55, 10
-    EDITTEXT        IDC_PODCAST_FEED_URL, 65, 30, 228, 14, ES_AUTOHSCROLL
-    LTEXT           "(RSS feed URL, e.g., https://example.com/feed.xml)", -1, 65, 48, 220, 10
-    DEFPUSHBUTTON   "OK", IDOK, 189, 68, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 243, 68, 50, 14
+    LTEXT           "Feed &URL:", -1, 7, 12, 55, 10
+    EDITTEXT        IDC_PODCAST_FEED_URL, 65, 10, 228, 14, ES_AUTOHSCROLL
+    LTEXT           "(RSS feed URL, e.g., https://example.com/feed.xml)", -1, 65, 28, 220, 10
+    LTEXT           "&Username:", -1, 7, 48, 55, 10
+    EDITTEXT        IDC_PODCAST_USERNAME, 65, 46, 100, 14, ES_AUTOHSCROLL
+    LTEXT           "&Password:", -1, 172, 48, 40, 10
+    EDITTEXT        IDC_PODCAST_PASSWORD, 215, 46, 78, 14, ES_AUTOHSCROLL | ES_PASSWORD
+    LTEXT           "(Leave blank if feed doesn't require authentication)", -1, 65, 64, 220, 10
+    DEFPUSHBUTTON   "OK", IDOK, 189, 80, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 243, 80, 50, 14
 END
 
 IDA_ACCEL ACCELERATORS

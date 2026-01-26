@@ -742,7 +742,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Rubber Band, 11=Speedy, 12=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Speech tab controls (tab 2)
@@ -921,6 +921,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_MINIMIZE_TO_TRAY, g_minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SHOW_TITLE, g_showTitleInWindow ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
+
+            // Set download path
+            SetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, g_downloadPath.c_str());
 
             // Populate volume step combo box
             {
@@ -1255,6 +1258,13 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
 
+                    // Get download path
+                    {
+                        wchar_t dlPath[MAX_PATH];
+                        GetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, dlPath, MAX_PATH);
+                        g_downloadPath = dlPath;
+                    }
+
                     // Get volume step setting
                     {
                         HWND hVolStepCombo = GetDlgItem(hwnd, IDC_VOLUME_STEP);
@@ -1545,6 +1555,23 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         wchar_t folderPath[MAX_PATH];
                         if (SHGetPathFromIDListW(pidl, folderPath)) {
                             SetDlgItemTextW(hwnd, IDC_REC_PATH, folderPath);
+                        }
+                        CoTaskMemFree(pidl);
+                    }
+                    return TRUE;
+                }
+
+                case IDC_DOWNLOAD_BROWSE: {
+                    // Browse for downloads folder
+                    BROWSEINFOW bi = {0};
+                    bi.hwndOwner = hwnd;
+                    bi.lpszTitle = L"Select downloads folder";
+                    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+                    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+                    if (pidl) {
+                        wchar_t folderPath[MAX_PATH];
+                        if (SHGetPathFromIDListW(pidl, folderPath)) {
+                            SetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, folderPath);
                         }
                         CoTaskMemFree(pidl);
                     }
@@ -3444,6 +3471,74 @@ static std::wstring PodcastHttpGet(const std::wstring& url) {
     return result;
 }
 
+// HTTP GET with Basic Authentication support
+static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstring& username, const std::wstring& password) {
+    // If no credentials, use regular function
+    if (username.empty() && password.empty()) {
+        return PodcastHttpGet(url);
+    }
+
+    std::wstring result;
+
+    // Parse URL to get host and path
+    std::wstring host, path;
+    bool secure = false;
+
+    if (url.find(L"https://") == 0) {
+        secure = true;
+        size_t hostStart = 8;
+        size_t pathStart = url.find(L'/', hostStart);
+        if (pathStart == std::wstring::npos) {
+            host = url.substr(hostStart);
+            path = L"/";
+        } else {
+            host = url.substr(hostStart, pathStart - hostStart);
+            path = url.substr(pathStart);
+        }
+    } else if (url.find(L"http://") == 0) {
+        size_t hostStart = 7;
+        size_t pathStart = url.find(L'/', hostStart);
+        if (pathStart == std::wstring::npos) {
+            host = url.substr(hostStart);
+            path = L"/";
+        } else {
+            host = url.substr(hostStart, pathStart - hostStart);
+            path = url.substr(pathStart);
+        }
+    } else {
+        return result;
+    }
+
+    HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hInternet) return result;
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    if (secure) flags |= INTERNET_FLAG_SECURE;
+
+    HINTERNET hConnect = InternetConnectW(hInternet, host.c_str(),
+                                          secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT,
+                                          username.c_str(), password.c_str(), INTERNET_SERVICE_HTTP, 0, 0);
+    if (hConnect) {
+        HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr, flags, 0);
+        if (hRequest) {
+            if (HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0)) {
+                char buffer[4096];
+                DWORD bytesRead;
+                std::string response;
+                while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+                    response.append(buffer, bytesRead);
+                }
+                result = Utf8ToWide(response);
+            }
+            InternetCloseHandle(hRequest);
+        }
+        InternetCloseHandle(hConnect);
+    }
+    InternetCloseHandle(hInternet);
+
+    return result;
+}
+
 // URL encode for podcast searches
 static std::wstring PodcastUrlEncode(const std::wstring& str) {
     std::string utf8 = WideToUtf8(str);
@@ -3458,6 +3553,79 @@ static std::wstring PodcastUrlEncode(const std::wstring& str) {
         }
     }
     return encoded.str();
+}
+
+// Download parameters for threaded download
+struct PodcastDownloadParams {
+    std::wstring url;
+    std::wstring filepath;
+    HWND hwndNotify;
+};
+
+// Thread function to download podcast episode
+static DWORD WINAPI PodcastDownloadThread(LPVOID lpParam) {
+    PodcastDownloadParams* params = static_cast<PodcastDownloadParams*>(lpParam);
+    if (!params) return 1;
+
+    bool success = false;
+
+    // Use InternetOpenUrl for simplicity with redirects
+    HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (hInternet) {
+        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+        HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), nullptr, 0, flags, 0);
+        if (hUrl) {
+            FILE* file = _wfopen(params->filepath.c_str(), L"wb");
+            if (file) {
+                char buffer[8192];
+                DWORD bytesRead;
+                while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+                    fwrite(buffer, 1, bytesRead, file);
+                }
+                fclose(file);
+                success = true;
+            }
+            InternetCloseHandle(hUrl);
+        }
+        InternetCloseHandle(hInternet);
+    }
+
+    // Notify completion (post message to main thread)
+    if (params->hwndNotify) {
+        PostMessageW(params->hwndNotify, WM_USER + 100, success ? 1 : 0, 0);
+    }
+
+    delete params;
+    return success ? 0 : 1;
+}
+
+// Sanitize filename for saving
+static std::wstring SanitizeFilename(const std::wstring& name) {
+    std::wstring result;
+    for (wchar_t c : name) {
+        if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' ||
+            c == L'"' || c == L'<' || c == L'>' || c == L'|') {
+            result += L'_';
+        } else {
+            result += c;
+        }
+    }
+    // Trim trailing spaces and dots
+    while (!result.empty() && (result.back() == L' ' || result.back() == L'.')) {
+        result.pop_back();
+    }
+    return result;
+}
+
+// Get file extension from URL
+static std::wstring GetUrlExtension(const std::wstring& url) {
+    size_t queryPos = url.find(L'?');
+    std::wstring path = (queryPos != std::wstring::npos) ? url.substr(0, queryPos) : url;
+    size_t dotPos = path.rfind(L'.');
+    if (dotPos != std::wstring::npos && dotPos > path.rfind(L'/')) {
+        return path.substr(dotPos);
+    }
+    return L".mp3";  // Default to mp3
 }
 
 // Extract text content from an XML element
@@ -3553,12 +3721,13 @@ static int ParseDuration(const std::wstring& duration) {
     return 0;
 }
 
-// Parse RSS feed and extract episodes
+// Parse RSS feed and extract episodes (with optional authentication)
 static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle,
-                             std::vector<PodcastEpisode>& episodes) {
+                             std::vector<PodcastEpisode>& episodes,
+                             const std::wstring& username = L"", const std::wstring& password = L"") {
     episodes.clear();
 
-    std::wstring xml = PodcastHttpGet(feedUrl);
+    std::wstring xml = PodcastHttpGetAuth(feedUrl, username, password);
     if (xml.empty()) return false;
 
     // Extract channel title
@@ -3794,7 +3963,7 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     // Subscriptions tab controls (tab 0)
     int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES, IDC_PODCAST_EP_DESC,
-                       IDC_PODCAST_REFRESH,
+                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_REFRESH,
                        IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
@@ -3809,40 +3978,46 @@ static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     }
 }
 
+// Podcast add dialog data
+struct PodcastAddData {
+    std::wstring url;
+    std::wstring username;
+    std::wstring password;
+};
+
 // Add podcast dialog procedure
 static INT_PTR CALLBACK PodcastAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    static std::wstring* pName = nullptr;
-    static std::wstring* pUrl = nullptr;
+    static PodcastAddData* pData = nullptr;
 
     switch (msg) {
         case WM_INITDIALOG:
-            pName = reinterpret_cast<std::wstring*>(lParam);
-            pUrl = pName + 1;
-            SetDlgItemTextW(hwnd, IDC_PODCAST_NAME, pName->c_str());
-            SetDlgItemTextW(hwnd, IDC_PODCAST_FEED_URL, pUrl->c_str());
+            pData = reinterpret_cast<PodcastAddData*>(lParam);
+            SetDlgItemTextW(hwnd, IDC_PODCAST_FEED_URL, pData->url.c_str());
+            SetDlgItemTextW(hwnd, IDC_PODCAST_USERNAME, pData->username.c_str());
+            SetDlgItemTextW(hwnd, IDC_PODCAST_PASSWORD, pData->password.c_str());
             return TRUE;
 
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case IDOK: {
-                    wchar_t name[256], url[512];
-                    GetDlgItemTextW(hwnd, IDC_PODCAST_NAME, name, 256);
+                    wchar_t url[512], user[128], pass[128];
                     GetDlgItemTextW(hwnd, IDC_PODCAST_FEED_URL, url, 512);
+                    GetDlgItemTextW(hwnd, IDC_PODCAST_USERNAME, user, 128);
+                    GetDlgItemTextW(hwnd, IDC_PODCAST_PASSWORD, pass, 128);
 
-                    // Trim whitespace
-                    std::wstring n = name, u = url;
-                    while (!n.empty() && (n.front() == L' ' || n.front() == L'\t')) n.erase(0, 1);
-                    while (!n.empty() && (n.back() == L' ' || n.back() == L'\t')) n.pop_back();
+                    // Trim whitespace from url
+                    std::wstring u = url;
                     while (!u.empty() && (u.front() == L' ' || u.front() == L'\t')) u.erase(0, 1);
                     while (!u.empty() && (u.back() == L' ' || u.back() == L'\t')) u.pop_back();
 
-                    if (n.empty() || u.empty()) {
-                        MessageBoxW(hwnd, L"Please enter both a name and feed URL.", L"Add Podcast", MB_ICONWARNING);
+                    if (u.empty()) {
+                        MessageBoxW(hwnd, L"Please enter a feed URL.", L"Add Podcast", MB_ICONWARNING);
                         return TRUE;
                     }
 
-                    *pName = n;
-                    *pUrl = u;
+                    pData->url = u;
+                    pData->username = user;
+                    pData->password = pass;
                     EndDialog(hwnd, IDOK);
                     return TRUE;
                 }
@@ -3938,6 +4113,57 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     return TRUE;
                 }
 
+                case IDC_PODCAST_DOWNLOAD: {
+                    // Download currently selected episode
+                    int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
+                    if (sel < 0 || sel >= static_cast<int>(g_podcastEpisodes.size())) {
+                        Speak("No episode selected");
+                        return TRUE;
+                    }
+
+                    if (g_downloadPath.empty()) {
+                        Speak("Please set a downloads folder in Options");
+                        return TRUE;
+                    }
+
+                    const auto& ep = g_podcastEpisodes[sel];
+                    if (ep.audioUrl.empty()) {
+                        Speak("No audio URL for this episode");
+                        return TRUE;
+                    }
+
+                    // Build filename from episode title
+                    std::wstring filename = SanitizeFilename(ep.title);
+                    if (filename.empty()) filename = L"episode";
+                    filename += GetUrlExtension(ep.audioUrl);
+
+                    std::wstring filepath = g_downloadPath;
+                    if (!filepath.empty() && filepath.back() != L'\\') filepath += L'\\';
+                    filepath += filename;
+
+                    // Check if file already exists
+                    if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                        Speak("File already exists");
+                        return TRUE;
+                    }
+
+                    // Start download in background thread
+                    PodcastDownloadParams* params = new PodcastDownloadParams();
+                    params->url = ep.audioUrl;
+                    params->filepath = filepath;
+                    params->hwndNotify = hwnd;
+
+                    HANDLE hThread = CreateThread(nullptr, 0, PodcastDownloadThread, params, 0, nullptr);
+                    if (hThread) {
+                        CloseHandle(hThread);
+                        Speak("Downloading");
+                    } else {
+                        delete params;
+                        Speak("Failed to start download");
+                    }
+                    return TRUE;
+                }
+
                 case IDC_PODCAST_SEARCH_BTN: {
                     wchar_t query[256];
                     GetDlgItemTextW(hwnd, IDC_PODCAST_SEARCH_EDIT, query, 256);
@@ -3983,37 +4209,17 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 }
 
                 case IDC_PODCAST_ADD_URL: {
-                    // Use URL dialog to get feed URL, then fetch name from feed
-                    wchar_t urlBuf[2048] = {0};
-                    if (DialogBoxParamW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_URL),
-                                        hwnd, [](HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) -> INT_PTR {
-                        static wchar_t* pUrl = nullptr;
-                        switch (msg) {
-                            case WM_INITDIALOG:
-                                pUrl = reinterpret_cast<wchar_t*>(lParam);
-                                SetWindowTextW(hDlg, L"Add Podcast Feed");
-                                SetDlgItemTextW(hDlg, -1, L"Enter podcast feed URL:");
-                                return TRUE;
-                            case WM_COMMAND:
-                                if (LOWORD(wParam) == IDOK) {
-                                    GetDlgItemTextW(hDlg, IDC_URL_EDIT, pUrl, 2048);
-                                    EndDialog(hDlg, IDOK);
-                                    return TRUE;
-                                } else if (LOWORD(wParam) == IDCANCEL) {
-                                    EndDialog(hDlg, IDCANCEL);
-                                    return TRUE;
-                                }
-                                break;
-                        }
-                        return FALSE;
-                    }, reinterpret_cast<LPARAM>(urlBuf)) == IDOK && urlBuf[0]) {
+                    // Use Add Podcast dialog with authentication support
+                    PodcastAddData addData;
+                    if (DialogBoxParamW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_PODCAST_ADD),
+                                        hwnd, PodcastAddDlgProc,
+                                        reinterpret_cast<LPARAM>(&addData)) == IDOK && !addData.url.empty()) {
                         Speak("Fetching feed");
-                        std::wstring feedUrl = urlBuf;
                         std::wstring title;
                         std::vector<PodcastEpisode> eps;
-                        if (ParsePodcastFeed(feedUrl, title, eps)) {
+                        if (ParsePodcastFeed(addData.url, title, eps, addData.username, addData.password)) {
                             if (title.empty()) title = L"Unknown Podcast";
-                            if (AddPodcastSubscription(title, feedUrl) > 0) {
+                            if (AddPodcastSubscription(title, addData.url) > 0) {
                                 RefreshPodcastSubsList(hwnd);
                                 Speak("Podcast added");
                             } else {
@@ -4082,6 +4288,10 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                             while ((pos = desc.find(L"&lt;")) != std::wstring::npos) desc.replace(pos, 4, L"<");
                             while ((pos = desc.find(L"&gt;")) != std::wstring::npos) desc.replace(pos, 4, L">");
                             while ((pos = desc.find(L"&#39;")) != std::wstring::npos) desc.replace(pos, 5, L"'");
+                            // Collapse multiple consecutive newlines (max 2)
+                            while ((pos = desc.find(L"\n\n\n")) != std::wstring::npos) {
+                                desc.erase(pos, 1);
+                            }
                             // Convert standalone \n to \r\n for edit control (skip existing \r\n)
                             pos = 0;
                             while ((pos = desc.find(L'\n', pos)) != std::wstring::npos) {
@@ -4146,7 +4356,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EP_DESC), nullptr, epsX, descY, epsWidth, descHeight, SWP_NOZORDER);
 
             // Reposition buttons
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 130, height - 46, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 190, height - 46, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD), nullptr, width - 124, height - 46, 50, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_REFRESH), nullptr, width - 64, height - 46, 50, 14, SWP_NOZORDER);
 
             // Search tab controls
@@ -4169,6 +4380,15 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             mmi->ptMinTrackSize.y = 250;
             return 0;
         }
+
+        case WM_USER + 100:
+            // Download completion notification
+            if (wParam) {
+                Speak("Download complete");
+            } else {
+                Speak("Download failed");
+            }
+            return TRUE;
     }
     return FALSE;
 }
