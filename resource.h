@@ -334,6 +334,7 @@
 #define IDC_PODCAST_USERNAME    973
 #define IDC_PODCAST_PASSWORD    974
 #define IDC_PODCAST_DOWNLOAD    975
+#define IDC_PODCAST_IMPORT_OPML 976
 
 // Downloads path in Playback tab
 #define IDC_DOWNLOAD_PATH       980

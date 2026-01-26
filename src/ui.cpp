@@ -3721,6 +3721,86 @@ static int ParseDuration(const std::wstring& duration) {
     return 0;
 }
 
+// Extract attribute value from an XML element string
+static std::wstring ExtractXmlAttribute(const std::wstring& element, const std::wstring& attrName) {
+    std::wstring search = attrName + L"=\"";
+    size_t start = element.find(search);
+    if (start == std::wstring::npos) {
+        // Try single quotes
+        search = attrName + L"='";
+        start = element.find(search);
+        if (start == std::wstring::npos) return L"";
+    }
+    start += search.length();
+    char quoteChar = (search.back() == L'"') ? L'"' : L'\'';
+    size_t end = element.find(quoteChar, start);
+    if (end == std::wstring::npos) return L"";
+    return element.substr(start, end - start);
+}
+
+// Structure for OPML feed entry
+struct OpmlFeed {
+    std::wstring title;
+    std::wstring feedUrl;
+};
+
+// Parse OPML file and extract feed URLs
+static std::vector<OpmlFeed> ParseOpmlFile(const std::wstring& filePath) {
+    std::vector<OpmlFeed> feeds;
+
+    // Read file content
+    FILE* f = _wfopen(filePath.c_str(), L"rb");
+    if (!f) return feeds;
+
+    fseek(f, 0, SEEK_END);
+    long fileSize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fileSize <= 0 || fileSize > 10 * 1024 * 1024) {  // Max 10MB
+        fclose(f);
+        return feeds;
+    }
+
+    std::vector<char> buffer(fileSize + 1);
+    size_t bytesRead = fread(buffer.data(), 1, fileSize, f);
+    fclose(f);
+    buffer[bytesRead] = '\0';
+
+    // Convert to wide string (assuming UTF-8)
+    std::wstring xml = Utf8ToWide(std::string(buffer.data(), bytesRead));
+
+    // Find all <outline elements with xmlUrl attribute
+    size_t pos = 0;
+    while ((pos = xml.find(L"<outline", pos)) != std::wstring::npos) {
+        size_t elementEnd = xml.find(L'>', pos);
+        if (elementEnd == std::wstring::npos) break;
+
+        std::wstring element = xml.substr(pos, elementEnd - pos + 1);
+
+        // Extract xmlUrl attribute (this is the feed URL)
+        std::wstring feedUrl = ExtractXmlAttribute(element, L"xmlUrl");
+        if (feedUrl.empty()) {
+            // Try alternate attribute names
+            feedUrl = ExtractXmlAttribute(element, L"xmlurl");
+        }
+
+        if (!feedUrl.empty()) {
+            OpmlFeed feed;
+            feed.feedUrl = feedUrl;
+            // Try to get title from text attribute
+            feed.title = ExtractXmlAttribute(element, L"text");
+            if (feed.title.empty()) {
+                feed.title = ExtractXmlAttribute(element, L"title");
+            }
+            feeds.push_back(feed);
+        }
+
+        pos = elementEnd;
+    }
+
+    return feeds;
+}
+
 // Parse RSS feed and extract episodes (with optional authentication)
 static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle,
                              std::vector<PodcastEpisode>& episodes,
@@ -3967,8 +4047,8 @@ static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
                        IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
-                         IDC_PODCAST_SEARCH_LIST, IDC_PODCAST_SUBSCRIBE, IDC_PODCAST_ADD_URL,
-                         IDC_PODCAST_SEARCH_LABEL, IDC_PODCAST_SEARCH_HELP};
+                         IDC_PODCAST_SEARCH_LIST, IDC_PODCAST_IMPORT_OPML, IDC_PODCAST_SUBSCRIBE,
+                         IDC_PODCAST_ADD_URL, IDC_PODCAST_SEARCH_LABEL, IDC_PODCAST_SEARCH_HELP};
 
     for (int id : subsCtrls) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 0 ? SW_SHOW : SW_HIDE);
@@ -4030,6 +4110,34 @@ static INT_PTR CALLBACK PodcastAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LP
     return FALSE;
 }
 
+// Subclass proc for podcast subscriptions list - handle Delete key
+static WNDPROC g_origPodcastSubsListProc = nullptr;
+
+static LRESULT CALLBACK PodcastSubsListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_DELETE) {
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
+                // Confirm deletion
+                std::wstring msg = L"Unsubscribe from \"" + g_podcastSubs[sel].name + L"\"?";
+                if (MessageBoxW(GetParent(hwnd), msg.c_str(), L"Unsubscribe", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                    RemovePodcastSubscription(g_podcastSubs[sel].id);
+                    RefreshPodcastSubsList(GetParent(hwnd));
+                    Speak("Unsubscribed");
+                }
+            }
+            return 0;
+        }
+    } else if (msg == WM_GETDLGCODE) {
+        MSG* pmsg = reinterpret_cast<MSG*>(lParam);
+        if (pmsg && pmsg->wParam == VK_DELETE) {
+            return DLGC_WANTMESSAGE;
+        }
+        return CallWindowProcW(g_origPodcastSubsListProc, hwnd, msg, wParam, lParam);
+    }
+    return CallWindowProcW(g_origPodcastSubsListProc, hwnd, msg, wParam, lParam);
+}
+
 // Podcast dialog procedure
 static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -4047,6 +4155,11 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             HWND hDesc = GetDlgItem(hwnd, IDC_PODCAST_EP_DESC);
             g_origDescProc = reinterpret_cast<WNDPROC>(
                 SetWindowLongPtrW(hDesc, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(PodcastDescSubclassProc)));
+
+            // Subclass subscriptions list to handle Delete key
+            HWND hSubsList = GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST);
+            g_origPodcastSubsListProc = reinterpret_cast<WNDPROC>(
+                SetWindowLongPtrW(hSubsList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(PodcastSubsListSubclassProc)));
 
             // Load subscriptions
             RefreshPodcastSubsList(hwnd);
@@ -4232,6 +4345,64 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     return TRUE;
                 }
 
+                case IDC_PODCAST_IMPORT_OPML: {
+                    // Open file dialog to select OPML file
+                    wchar_t filePath[MAX_PATH] = {0};
+                    OPENFILENAMEW ofn = {0};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = hwnd;
+                    ofn.lpstrFilter = L"OPML Files (*.opml;*.xml)\0*.opml;*.xml\0All Files (*.*)\0*.*\0";
+                    ofn.lpstrFile = filePath;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrTitle = L"Import OPML";
+                    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+                    if (GetOpenFileNameW(&ofn)) {
+                        std::vector<OpmlFeed> feeds = ParseOpmlFile(filePath);
+                        if (feeds.empty()) {
+                            Speak("No feeds found in file");
+                            return TRUE;
+                        }
+
+                        int added = 0;
+                        int skipped = 0;
+                        Speak("Importing feeds");
+
+                        for (const auto& feed : feeds) {
+                            // Try to fetch the feed to verify it works and get the title
+                            std::wstring title = feed.title;
+                            std::vector<PodcastEpisode> eps;
+
+                            // If we don't have a title, try to get it from the feed
+                            if (title.empty()) {
+                                ParsePodcastFeed(feed.feedUrl, title, eps);
+                            }
+
+                            if (title.empty()) {
+                                title = L"Unknown Podcast";
+                            }
+
+                            if (AddPodcastSubscription(title, feed.feedUrl) > 0) {
+                                added++;
+                            } else {
+                                skipped++;
+                            }
+                        }
+
+                        RefreshPodcastSubsList(hwnd);
+
+                        // Report results
+                        char msg[128];
+                        if (skipped > 0) {
+                            snprintf(msg, sizeof(msg), "Imported %d feeds, %d skipped", added, skipped);
+                        } else {
+                            snprintf(msg, sizeof(msg), "Imported %d feeds", added);
+                        }
+                        Speak(msg);
+                    }
+                    return TRUE;
+                }
+
                 case IDC_PODCAST_SUBS_LIST:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
                         // Load episodes on double-click
@@ -4364,8 +4535,9 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_EDIT), nullptr, 72, 28, width - 140, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_BTN), nullptr, width - 64, 27, 50, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_LIST), nullptr, 14, 48, width - 28, height - 120, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SUBSCRIBE), nullptr, width - 130, height - 66, 55, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_URL), nullptr, width - 70, height - 66, 55, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SUBSCRIBE), nullptr, width - 190, height - 66, 55, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_IMPORT_OPML), nullptr, width - 130, height - 66, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_URL), nullptr, width - 65, height - 66, 55, 14, SWP_NOZORDER);
 
             // Close button
             SetWindowPos(GetDlgItem(hwnd, IDCANCEL), nullptr, width - 64, height - 28, 50, 14, SWP_NOZORDER);
