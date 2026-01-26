@@ -825,12 +825,12 @@ void PlayPause() {
 
     DWORD state = BASS_ChannelIsActive(g_fxStream);
     if (state == BASS_ACTIVE_PLAYING) {
-        BASS_ChannelPause(g_fxStream);
+        Pause();
     } else {
         BASS_ChannelPlay(g_fxStream, FALSE);
+        UpdateWindowTitle();
+        UpdateStatusBar();
     }
-    UpdateWindowTitle();
-    UpdateStatusBar();
 }
 
 // Play (restart if playing, resume if paused/stopped)
@@ -860,6 +860,11 @@ void Play() {
 void Pause() {
     if (g_fxStream) {
         BASS_ChannelPause(g_fxStream);
+
+        if (g_rewindOnPauseMs > 0) {
+            Seek(-g_rewindOnPauseMs / 1000.0);
+        }
+
         UpdateWindowTitle();
         UpdateStatusBar();
     }

@@ -30,6 +30,9 @@ void LoadSettings() {
     g_selectedDeviceName = deviceName;
     g_selectedDevice = -1;  // Will be resolved by name in InitBass
 
+    g_rewindOnPauseMs = GetPrivateProfileIntW(L"Playback", L"RewindOnPauseMs", 0, g_configPath.c_str());
+    if (g_rewindOnPauseMs < 0) g_rewindOnPauseMs = 0;
+
     g_allowAmplify = GetPrivateProfileIntW(L"Playback", L"AllowAmplify", 0, g_configPath.c_str()) != 0;
     g_rememberState = GetPrivateProfileIntW(L"Playback", L"RememberState", 0, g_configPath.c_str()) != 0;
     g_rememberPosMinutes = GetPrivateProfileIntW(L"Playback", L"RememberPosMinutes", 0, g_configPath.c_str());
@@ -334,6 +337,9 @@ void SaveSettings() {
 
     // Save device name (empty for default device)
     WritePrivateProfileStringW(L"Playback", L"DeviceName", g_selectedDeviceName.c_str(), g_configPath.c_str());
+
+    swprintf(buf, 32, L"%d", g_rewindOnPauseMs);
+    WritePrivateProfileStringW(L"Playback", L"RewindOnPauseMs", buf, g_configPath.c_str());
 
     WritePrivateProfileStringW(L"Playback", L"AllowAmplify", g_allowAmplify ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"RememberState", g_rememberState ? L"1" : L"0", g_configPath.c_str());

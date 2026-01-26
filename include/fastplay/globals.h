@@ -60,6 +60,7 @@ extern bool g_isBusy;
 // Options state
 extern int g_selectedDevice;
 extern std::wstring g_selectedDeviceName;  // Device name for persistent storage
+extern int g_rewindOnPauseMs;
 extern bool g_allowAmplify;
 extern bool g_rememberState;
 extern int g_rememberPosMinutes;

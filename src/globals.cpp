@@ -37,6 +37,7 @@ bool g_isBusy = false;
 // Options state
 int g_selectedDevice = -1;
 std::wstring g_selectedDeviceName;  // Device name for persistent storage
+int g_rewindOnPauseMs = 0;
 bool g_allowAmplify = false;
 bool g_rememberState = false;
 int g_rememberPosMinutes = 0;

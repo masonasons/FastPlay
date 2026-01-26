@@ -742,7 +742,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Rubber Band, 11=Speedy, 12=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Speech tab controls (tab 2)
@@ -921,6 +921,8 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_MINIMIZE_TO_TRAY, g_minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SHOW_TITLE, g_showTitleInWindow ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
+
+            SetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, g_rewindOnPauseMs, FALSE);
 
             // Set download path
             SetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, g_downloadPath.c_str());
@@ -1257,6 +1259,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_showTitleInWindow = (IsDlgButtonChecked(hwnd, IDC_SHOW_TITLE) == BST_CHECKED);
                     g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
+
+                    g_rewindOnPauseMs = GetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, nullptr, FALSE);
+                    if (g_rewindOnPauseMs < 0) g_rewindOnPauseMs = 0;
 
                     // Get download path
                     {
