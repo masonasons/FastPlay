@@ -191,6 +191,17 @@ if exist "UniversalSpeechStatic.lib" (
     echo WARNING: Universal Speech build failed.
     echo Make sure Python, pip, and Visual C++ Build Tools are installed.
 )
+REM Copy screen reader DLLs from build x64 folder
+if exist "bin-x64\nvdaControllerClient64.dll" (
+    copy /y "bin-x64\nvdaControllerClient64.dll" "..\..\lib\" >nul
+    echo NVDA controller client DLL copied.
+) else (
+    echo WARNING: nvdaControllerClient64.dll not found in bin-x64 folder.
+)
+if exist "bin-x64\SAAPI64.dll" (
+    copy /y "bin-x64\SAAPI64.dll" "..\..\lib\" >nul
+    echo SAAPI64.dll copied.
+)
 popd
 
 echo.
