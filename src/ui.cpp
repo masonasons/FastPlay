@@ -19,6 +19,7 @@
 #include <ctime>
 #include <algorithm>
 #include <sstream>
+#include <iomanip>
 
 // External globals (defined in globals.cpp)
 extern HWND g_hwnd;
@@ -3362,6 +3363,737 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 // Show radio dialog
 void ShowRadioDialog() {
     DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_RADIO), g_hwnd, RadioDlgProc);
+}
+
+// ========== Podcast Dialog ==========
+
+// Podcast search result (from iTunes API)
+struct PodcastSearchResult {
+    std::wstring name;
+    std::wstring feedUrl;
+    std::wstring imageUrl;
+    std::wstring artistName;
+};
+
+// Podcast dialog state
+static std::vector<PodcastSubscription> g_podcastSubs;
+static std::vector<PodcastEpisode> g_podcastEpisodes;
+static std::vector<PodcastSearchResult> g_podcastSearchResults;
+static int g_currentPodcastId = -1;
+
+// HTTP GET for podcast operations
+static std::wstring PodcastHttpGet(const std::wstring& url) {
+    std::wstring result;
+
+    // Parse URL to get host and path
+    std::wstring host, path;
+    bool secure = false;
+
+    if (url.find(L"https://") == 0) {
+        secure = true;
+        size_t hostStart = 8;
+        size_t pathStart = url.find(L'/', hostStart);
+        if (pathStart == std::wstring::npos) {
+            host = url.substr(hostStart);
+            path = L"/";
+        } else {
+            host = url.substr(hostStart, pathStart - hostStart);
+            path = url.substr(pathStart);
+        }
+    } else if (url.find(L"http://") == 0) {
+        size_t hostStart = 7;
+        size_t pathStart = url.find(L'/', hostStart);
+        if (pathStart == std::wstring::npos) {
+            host = url.substr(hostStart);
+            path = L"/";
+        } else {
+            host = url.substr(hostStart, pathStart - hostStart);
+            path = url.substr(pathStart);
+        }
+    } else {
+        return result;
+    }
+
+    HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hInternet) return result;
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    if (secure) flags |= INTERNET_FLAG_SECURE;
+
+    HINTERNET hConnect = InternetConnectW(hInternet, host.c_str(),
+                                          secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT,
+                                          nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 0);
+    if (hConnect) {
+        HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr, flags, 0);
+        if (hRequest) {
+            if (HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0)) {
+                char buffer[4096];
+                DWORD bytesRead;
+                std::string response;
+                while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+                    response.append(buffer, bytesRead);
+                }
+                result = Utf8ToWide(response);
+            }
+            InternetCloseHandle(hRequest);
+        }
+        InternetCloseHandle(hConnect);
+    }
+    InternetCloseHandle(hInternet);
+
+    return result;
+}
+
+// URL encode for podcast searches
+static std::wstring PodcastUrlEncode(const std::wstring& str) {
+    std::string utf8 = WideToUtf8(str);
+    std::wostringstream encoded;
+    for (unsigned char c : utf8) {
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded << static_cast<wchar_t>(c);
+        } else if (c == ' ') {
+            encoded << L'+';
+        } else {
+            encoded << L'%' << std::hex << std::uppercase << std::setw(2) << std::setfill(L'0') << static_cast<int>(c);
+        }
+    }
+    return encoded.str();
+}
+
+// Extract text content from an XML element
+static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstring& tagName) {
+    std::wstring startTag = L"<" + tagName;
+    std::wstring endTag = L"</" + tagName + L">";
+
+    size_t start = xml.find(startTag);
+    if (start == std::wstring::npos) return L"";
+
+    // Find the end of the opening tag
+    size_t tagEnd = xml.find(L'>', start);
+    if (tagEnd == std::wstring::npos) return L"";
+
+    // Check for CDATA
+    size_t contentStart = tagEnd + 1;
+    size_t end = xml.find(endTag, contentStart);
+    if (end == std::wstring::npos) return L"";
+
+    std::wstring content = xml.substr(contentStart, end - contentStart);
+
+    // Strip CDATA wrapper if present
+    if (content.find(L"<![CDATA[") == 0) {
+        size_t cdataEnd = content.rfind(L"]]>");
+        if (cdataEnd != std::wstring::npos) {
+            content = content.substr(9, cdataEnd - 9);
+        }
+    }
+
+    // Basic HTML entity decode
+    size_t pos = 0;
+    while ((pos = content.find(L"&amp;", pos)) != std::wstring::npos) {
+        content.replace(pos, 5, L"&");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&lt;", pos)) != std::wstring::npos) {
+        content.replace(pos, 4, L"<");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&gt;", pos)) != std::wstring::npos) {
+        content.replace(pos, 4, L">");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&quot;", pos)) != std::wstring::npos) {
+        content.replace(pos, 6, L"\"");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&apos;", pos)) != std::wstring::npos) {
+        content.replace(pos, 6, L"'");
+    }
+
+    return content;
+}
+
+// Extract enclosure URL from an item
+static std::wstring ExtractEnclosureUrl(const std::wstring& item) {
+    size_t encPos = item.find(L"<enclosure");
+    if (encPos == std::wstring::npos) return L"";
+
+    size_t urlStart = item.find(L"url=\"", encPos);
+    if (urlStart == std::wstring::npos) {
+        urlStart = item.find(L"url='", encPos);
+        if (urlStart == std::wstring::npos) return L"";
+        urlStart += 5;
+        size_t urlEnd = item.find(L"'", urlStart);
+        if (urlEnd == std::wstring::npos) return L"";
+        return item.substr(urlStart, urlEnd - urlStart);
+    }
+    urlStart += 5;
+    size_t urlEnd = item.find(L"\"", urlStart);
+    if (urlEnd == std::wstring::npos) return L"";
+    return item.substr(urlStart, urlEnd - urlStart);
+}
+
+// Parse iTunes duration (HH:MM:SS or MM:SS or seconds)
+static int ParseDuration(const std::wstring& duration) {
+    if (duration.empty()) return 0;
+
+    // Check if it's just seconds
+    bool hasColon = duration.find(L':') != std::wstring::npos;
+    if (!hasColon) {
+        return _wtoi(duration.c_str());
+    }
+
+    // Parse HH:MM:SS or MM:SS
+    int h = 0, m = 0, s = 0;
+    if (swscanf(duration.c_str(), L"%d:%d:%d", &h, &m, &s) == 3) {
+        return h * 3600 + m * 60 + s;
+    } else if (swscanf(duration.c_str(), L"%d:%d", &m, &s) == 2) {
+        return m * 60 + s;
+    }
+    return 0;
+}
+
+// Parse RSS feed and extract episodes
+static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle,
+                             std::vector<PodcastEpisode>& episodes) {
+    episodes.clear();
+
+    std::wstring xml = PodcastHttpGet(feedUrl);
+    if (xml.empty()) return false;
+
+    // Extract channel title
+    size_t channelStart = xml.find(L"<channel");
+    if (channelStart != std::wstring::npos) {
+        size_t channelEnd = xml.find(L"</channel>", channelStart);
+        if (channelEnd != std::wstring::npos) {
+            std::wstring channel = xml.substr(channelStart, channelEnd - channelStart);
+            // Get title before first <item>
+            size_t firstItem = channel.find(L"<item");
+            if (firstItem != std::wstring::npos) {
+                std::wstring header = channel.substr(0, firstItem);
+                outTitle = ExtractXmlContent(header, L"title");
+            }
+        }
+    }
+
+    // Find all <item> elements
+    size_t pos = 0;
+    while ((pos = xml.find(L"<item", pos)) != std::wstring::npos) {
+        size_t itemEnd = xml.find(L"</item>", pos);
+        if (itemEnd == std::wstring::npos) break;
+
+        std::wstring item = xml.substr(pos, itemEnd - pos + 7);
+        PodcastEpisode ep;
+
+        ep.title = ExtractXmlContent(item, L"title");
+        ep.description = ExtractXmlContent(item, L"description");
+        ep.pubDate = ExtractXmlContent(item, L"pubDate");
+        ep.guid = ExtractXmlContent(item, L"guid");
+        ep.audioUrl = ExtractEnclosureUrl(item);
+
+        // Try to get duration from itunes:duration
+        std::wstring durationStr = ExtractXmlContent(item, L"itunes:duration");
+        ep.durationSeconds = ParseDuration(durationStr);
+
+        if (!ep.audioUrl.empty() && !ep.title.empty()) {
+            episodes.push_back(ep);
+        }
+
+        pos = itemEnd;
+    }
+
+    return !episodes.empty();
+}
+
+// Search iTunes podcast directory
+static bool SearchItunesPodcasts(const std::wstring& query, std::vector<PodcastSearchResult>& results) {
+    results.clear();
+
+    std::wstring url = L"https://itunes.apple.com/search?term=" +
+                       PodcastUrlEncode(query) + L"&media=podcast&limit=25";
+
+    std::wstring json = PodcastHttpGet(url);
+    if (json.empty()) return false;
+
+    // Parse JSON results - look for each result object
+    size_t pos = 0;
+    while ((pos = json.find(L"\"collectionName\"", pos)) != std::wstring::npos) {
+        PodcastSearchResult r;
+
+        // Extract collectionName
+        size_t valueStart = json.find(L":", pos);
+        if (valueStart != std::wstring::npos) {
+            size_t strStart = json.find(L"\"", valueStart + 1);
+            if (strStart != std::wstring::npos) {
+                strStart++;
+                size_t strEnd = json.find(L"\"", strStart);
+                if (strEnd != std::wstring::npos) {
+                    r.name = json.substr(strStart, strEnd - strStart);
+                }
+            }
+        }
+
+        // Find feedUrl in the same object (search backwards and forwards)
+        size_t searchStart = (pos > 500) ? pos - 500 : 0;
+        size_t searchEnd = pos + 1000;
+        if (searchEnd > json.length()) searchEnd = json.length();
+        std::wstring context = json.substr(searchStart, searchEnd - searchStart);
+
+        size_t feedPos = context.find(L"\"feedUrl\"");
+        if (feedPos != std::wstring::npos) {
+            size_t fvalueStart = context.find(L":", feedPos);
+            if (fvalueStart != std::wstring::npos) {
+                size_t fstrStart = context.find(L"\"", fvalueStart + 1);
+                if (fstrStart != std::wstring::npos) {
+                    fstrStart++;
+                    size_t fstrEnd = context.find(L"\"", fstrStart);
+                    if (fstrEnd != std::wstring::npos) {
+                        r.feedUrl = context.substr(fstrStart, fstrEnd - fstrStart);
+                    }
+                }
+            }
+        }
+
+        // Extract artistName
+        size_t artistPos = context.find(L"\"artistName\"");
+        if (artistPos != std::wstring::npos) {
+            size_t avalueStart = context.find(L":", artistPos);
+            if (avalueStart != std::wstring::npos) {
+                size_t astrStart = context.find(L"\"", avalueStart + 1);
+                if (astrStart != std::wstring::npos) {
+                    astrStart++;
+                    size_t astrEnd = context.find(L"\"", astrStart);
+                    if (astrEnd != std::wstring::npos) {
+                        r.artistName = context.substr(astrStart, astrEnd - astrStart);
+                    }
+                }
+            }
+        }
+
+        if (!r.name.empty() && !r.feedUrl.empty()) {
+            results.push_back(r);
+        }
+
+        pos++;
+    }
+
+    return !results.empty();
+}
+
+// Refresh podcast subscriptions list
+static void RefreshPodcastSubsList(HWND hwnd) {
+    HWND hList = GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST);
+    SendMessageW(hList, LB_RESETCONTENT, 0, 0);
+
+    g_podcastSubs = GetPodcastSubscriptions();
+    // Sort alphabetically by name (case-insensitive)
+    std::sort(g_podcastSubs.begin(), g_podcastSubs.end(),
+              [](const PodcastSubscription& a, const PodcastSubscription& b) {
+                  return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
+              });
+    for (const auto& sub : g_podcastSubs) {
+        SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(sub.name.c_str()));
+    }
+}
+
+// Load episodes for a subscription
+static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
+    HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
+    SendMessageW(hList, LB_RESETCONTENT, 0, 0);
+    g_podcastEpisodes.clear();
+
+    Speak("Loading episodes");
+
+    std::wstring title;
+    if (ParsePodcastFeed(feedUrl, title, g_podcastEpisodes)) {
+        for (const auto& ep : g_podcastEpisodes) {
+            std::wstring display = ep.title;
+            if (!ep.pubDate.empty()) {
+                // Truncate pub date to just the date part
+                size_t commaPos = ep.pubDate.find(L',');
+                if (commaPos != std::wstring::npos && commaPos + 12 < ep.pubDate.length()) {
+                    display += L" (" + ep.pubDate.substr(commaPos + 2, 11) + L")";
+                }
+            }
+            if (!ep.description.empty()) {
+                // Clean up description - remove HTML tags and limit length
+                std::wstring desc = ep.description;
+                // Remove HTML tags
+                size_t pos;
+                while ((pos = desc.find(L'<')) != std::wstring::npos) {
+                    size_t endPos = desc.find(L'>', pos);
+                    if (endPos != std::wstring::npos) {
+                        desc.erase(pos, endPos - pos + 1);
+                    } else {
+                        break;
+                    }
+                }
+                // Replace &nbsp; and other entities
+                while ((pos = desc.find(L"&nbsp;")) != std::wstring::npos) {
+                    desc.replace(pos, 6, L" ");
+                }
+                while ((pos = desc.find(L"&amp;")) != std::wstring::npos) {
+                    desc.replace(pos, 5, L"&");
+                }
+                while ((pos = desc.find(L"&quot;")) != std::wstring::npos) {
+                    desc.replace(pos, 6, L"\"");
+                }
+                while ((pos = desc.find(L"&apos;")) != std::wstring::npos) {
+                    desc.replace(pos, 6, L"'");
+                }
+                while ((pos = desc.find(L"&lt;")) != std::wstring::npos) {
+                    desc.replace(pos, 4, L"<");
+                }
+                while ((pos = desc.find(L"&gt;")) != std::wstring::npos) {
+                    desc.replace(pos, 4, L">");
+                }
+                // Trim whitespace and collapse multiple spaces
+                while (!desc.empty() && (desc[0] == L' ' || desc[0] == L'\n' || desc[0] == L'\r' || desc[0] == L'\t')) {
+                    desc.erase(0, 1);
+                }
+                // Truncate to reasonable length
+                if (desc.length() > 150) {
+                    desc = desc.substr(0, 147) + L"...";
+                }
+                if (!desc.empty()) {
+                    display += L" - " + desc;
+                }
+            }
+            SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(display.c_str()));
+        }
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%d episodes", static_cast<int>(g_podcastEpisodes.size()));
+        Speak(buf);
+    } else {
+        Speak("Failed to load episodes");
+    }
+}
+
+// Update visibility of podcast tab controls
+static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
+    // Subscriptions tab controls (tab 0)
+    int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES,
+                       IDC_PODCAST_REFRESH,
+                       IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
+    // Search tab controls (tab 1)
+    int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
+                         IDC_PODCAST_SEARCH_LIST, IDC_PODCAST_SUBSCRIBE, IDC_PODCAST_ADD_URL,
+                         IDC_PODCAST_SEARCH_LABEL, IDC_PODCAST_SEARCH_HELP};
+
+    for (int id : subsCtrls) {
+        ShowWindow(GetDlgItem(hwnd, id), tab == 0 ? SW_SHOW : SW_HIDE);
+    }
+    for (int id : searchCtrls) {
+        ShowWindow(GetDlgItem(hwnd, id), tab == 1 ? SW_SHOW : SW_HIDE);
+    }
+}
+
+// Add podcast dialog procedure
+static INT_PTR CALLBACK PodcastAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    static std::wstring* pName = nullptr;
+    static std::wstring* pUrl = nullptr;
+
+    switch (msg) {
+        case WM_INITDIALOG:
+            pName = reinterpret_cast<std::wstring*>(lParam);
+            pUrl = pName + 1;
+            SetDlgItemTextW(hwnd, IDC_PODCAST_NAME, pName->c_str());
+            SetDlgItemTextW(hwnd, IDC_PODCAST_FEED_URL, pUrl->c_str());
+            return TRUE;
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    wchar_t name[256], url[512];
+                    GetDlgItemTextW(hwnd, IDC_PODCAST_NAME, name, 256);
+                    GetDlgItemTextW(hwnd, IDC_PODCAST_FEED_URL, url, 512);
+
+                    // Trim whitespace
+                    std::wstring n = name, u = url;
+                    while (!n.empty() && (n.front() == L' ' || n.front() == L'\t')) n.erase(0, 1);
+                    while (!n.empty() && (n.back() == L' ' || n.back() == L'\t')) n.pop_back();
+                    while (!u.empty() && (u.front() == L' ' || u.front() == L'\t')) u.erase(0, 1);
+                    while (!u.empty() && (u.back() == L' ' || u.back() == L'\t')) u.pop_back();
+
+                    if (n.empty() || u.empty()) {
+                        MessageBoxW(hwnd, L"Please enter both a name and feed URL.", L"Add Podcast", MB_ICONWARNING);
+                        return TRUE;
+                    }
+
+                    *pName = n;
+                    *pUrl = u;
+                    EndDialog(hwnd, IDOK);
+                    return TRUE;
+                }
+                case IDCANCEL:
+                    EndDialog(hwnd, IDCANCEL);
+                    return TRUE;
+            }
+            break;
+    }
+    return FALSE;
+}
+
+// Podcast dialog procedure
+static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_INITDIALOG: {
+            // Initialize tab control
+            HWND hTab = GetDlgItem(hwnd, IDC_PODCAST_TAB);
+            TCITEMW tie = {0};
+            tie.mask = TCIF_TEXT;
+            tie.pszText = const_cast<LPWSTR>(L"Subscriptions");
+            SendMessageW(hTab, TCM_INSERTITEMW, 0, reinterpret_cast<LPARAM>(&tie));
+            tie.pszText = const_cast<LPWSTR>(L"Search");
+            SendMessageW(hTab, TCM_INSERTITEMW, 1, reinterpret_cast<LPARAM>(&tie));
+
+            // Load subscriptions
+            RefreshPodcastSubsList(hwnd);
+            g_podcastEpisodes.clear();
+            g_podcastSearchResults.clear();
+            g_currentPodcastId = -1;
+
+            UpdatePodcastTabVisibility(hwnd, 0);
+            SetFocus(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST));
+            return FALSE;
+        }
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    // Handle Enter key based on focus
+                    HWND hFocus = GetFocus();
+                    if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST)) {
+                        // Load episodes for selected subscription
+                        int sel = static_cast<int>(SendMessageW(hFocus, LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
+                            g_currentPodcastId = g_podcastSubs[sel].id;
+                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                            SetFocus(GetDlgItem(hwnd, IDC_PODCAST_EPISODES));
+                        }
+                    } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_EPISODES)) {
+                        // Play selected episode
+                        int sel = static_cast<int>(SendMessageW(hFocus, LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
+                            g_playlist.clear();
+                            g_playlist.push_back(g_podcastEpisodes[sel].audioUrl);
+                            PlayTrack(0, true);
+                            Speak("Playing");
+                        }
+                    } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_SEARCH_EDIT)) {
+                        // Trigger search
+                        SendMessageW(hwnd, WM_COMMAND, MAKEWPARAM(IDC_PODCAST_SEARCH_BTN, BN_CLICKED), 0);
+                    } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_SEARCH_LIST)) {
+                        // Preview/play first episode of selected podcast
+                        int sel = static_cast<int>(SendMessageW(hFocus, LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastSearchResults.size())) {
+                            std::vector<PodcastEpisode> eps;
+                            std::wstring title;
+                            Speak("Loading preview");
+                            if (ParsePodcastFeed(g_podcastSearchResults[sel].feedUrl, title, eps) && !eps.empty()) {
+                                g_playlist.clear();
+                                g_playlist.push_back(eps[0].audioUrl);
+                                PlayTrack(0, true);
+                                Speak("Playing");
+                            } else {
+                                Speak("No episodes found");
+                            }
+                        }
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_REFRESH: {
+                    int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), LB_GETCURSEL, 0, 0));
+                    if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
+                        LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                        UpdatePodcastLastUpdated(g_podcastSubs[sel].id);
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_SEARCH_BTN: {
+                    wchar_t query[256];
+                    GetDlgItemTextW(hwnd, IDC_PODCAST_SEARCH_EDIT, query, 256);
+                    if (wcslen(query) == 0) return TRUE;
+
+                    Speak("Searching");
+                    HWND hList = GetDlgItem(hwnd, IDC_PODCAST_SEARCH_LIST);
+                    SendMessageW(hList, LB_RESETCONTENT, 0, 0);
+
+                    if (SearchItunesPodcasts(query, g_podcastSearchResults)) {
+                        for (const auto& r : g_podcastSearchResults) {
+                            std::wstring display = r.name;
+                            if (!r.artistName.empty()) {
+                                display += L" - " + r.artistName;
+                            }
+                            SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(display.c_str()));
+                        }
+                        SendMessageW(hList, LB_SETCURSEL, 0, 0);
+                        SetFocus(hList);
+                        char buf[64];
+                        snprintf(buf, sizeof(buf), "%d results", static_cast<int>(g_podcastSearchResults.size()));
+                        Speak(buf);
+                    } else {
+                        Speak("No results");
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_SUBSCRIBE: {
+                    int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_LIST), LB_GETCURSEL, 0, 0));
+                    if (sel >= 0 && sel < static_cast<int>(g_podcastSearchResults.size())) {
+                        const auto& r = g_podcastSearchResults[sel];
+                        if (AddPodcastSubscription(r.name, r.feedUrl, r.imageUrl) > 0) {
+                            RefreshPodcastSubsList(hwnd);
+                            Speak("Subscribed");
+                        } else {
+                            Speak("Already subscribed or failed");
+                        }
+                    } else {
+                        Speak("Select a podcast first");
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_ADD_URL: {
+                    // Use URL dialog to get feed URL, then fetch name from feed
+                    wchar_t urlBuf[2048] = {0};
+                    if (DialogBoxParamW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_URL),
+                                        hwnd, [](HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) -> INT_PTR {
+                        static wchar_t* pUrl = nullptr;
+                        switch (msg) {
+                            case WM_INITDIALOG:
+                                pUrl = reinterpret_cast<wchar_t*>(lParam);
+                                SetWindowTextW(hDlg, L"Add Podcast Feed");
+                                SetDlgItemTextW(hDlg, -1, L"Enter podcast feed URL:");
+                                return TRUE;
+                            case WM_COMMAND:
+                                if (LOWORD(wParam) == IDOK) {
+                                    GetDlgItemTextW(hDlg, IDC_URL_EDIT, pUrl, 2048);
+                                    EndDialog(hDlg, IDOK);
+                                    return TRUE;
+                                } else if (LOWORD(wParam) == IDCANCEL) {
+                                    EndDialog(hDlg, IDCANCEL);
+                                    return TRUE;
+                                }
+                                break;
+                        }
+                        return FALSE;
+                    }, reinterpret_cast<LPARAM>(urlBuf)) == IDOK && urlBuf[0]) {
+                        Speak("Fetching feed");
+                        std::wstring feedUrl = urlBuf;
+                        std::wstring title;
+                        std::vector<PodcastEpisode> eps;
+                        if (ParsePodcastFeed(feedUrl, title, eps)) {
+                            if (title.empty()) title = L"Unknown Podcast";
+                            if (AddPodcastSubscription(title, feedUrl) > 0) {
+                                RefreshPodcastSubsList(hwnd);
+                                Speak("Podcast added");
+                            } else {
+                                Speak("Already subscribed or failed");
+                            }
+                        } else {
+                            Speak("Failed to fetch feed");
+                        }
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_SUBS_LIST:
+                    if (HIWORD(wParam) == LBN_DBLCLK) {
+                        // Load episodes on double-click
+                        int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
+                            g_currentPodcastId = g_podcastSubs[sel].id;
+                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                            SetFocus(GetDlgItem(hwnd, IDC_PODCAST_EPISODES));
+                        }
+                    }
+                    break;
+
+                case IDC_PODCAST_EPISODES:
+                    if (HIWORD(wParam) == LBN_DBLCLK) {
+                        // Play episode on double-click
+                        int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
+                        if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
+                            g_playlist.clear();
+                            g_playlist.push_back(g_podcastEpisodes[sel].audioUrl);
+                            PlayTrack(0, true);
+                            Speak("Playing");
+                        }
+                    }
+                    break;
+
+                case IDC_PODCAST_SEARCH_LIST:
+                    if (HIWORD(wParam) == LBN_DBLCLK) {
+                        // Subscribe on double-click
+                        SendMessageW(hwnd, WM_COMMAND, MAKEWPARAM(IDC_PODCAST_SUBSCRIBE, BN_CLICKED), 0);
+                    }
+                    break;
+
+                case IDCANCEL:
+                    EndDialog(hwnd, IDCANCEL);
+                    return TRUE;
+            }
+            break;
+
+        case WM_NOTIFY: {
+            NMHDR* pnmh = reinterpret_cast<NMHDR*>(lParam);
+            if (pnmh->idFrom == IDC_PODCAST_TAB && pnmh->code == TCN_SELCHANGE) {
+                int tab = static_cast<int>(SendMessageW(pnmh->hwndFrom, TCM_GETCURSEL, 0, 0));
+                UpdatePodcastTabVisibility(hwnd, tab);
+            }
+            break;
+        }
+
+        case WM_SIZE: {
+            int width = LOWORD(lParam);
+            int height = HIWORD(lParam);
+
+            // Resize tab control
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_TAB), nullptr, 7, 7, width - 14, height - 42, SWP_NOZORDER);
+
+            // Resize subscriptions list (left side)
+            int subsWidth = (width - 28) / 3;
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), nullptr, 14, 40, subsWidth, height - 90, SWP_NOZORDER);
+
+            // Resize episodes list (right side)
+            int epsX = 14 + subsWidth + 8;
+            int epsWidth = width - epsX - 14;
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), nullptr, epsX, 40, epsWidth, height - 90, SWP_NOZORDER);
+
+            // Reposition buttons
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 130, height - 46, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_REFRESH), nullptr, width - 64, height - 46, 50, 14, SWP_NOZORDER);
+
+            // Search tab controls
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_EDIT), nullptr, 72, 28, width - 140, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_BTN), nullptr, width - 64, 27, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SEARCH_LIST), nullptr, 14, 48, width - 28, height - 120, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_SUBSCRIBE), nullptr, width - 130, height - 66, 55, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_URL), nullptr, width - 70, height - 66, 55, 14, SWP_NOZORDER);
+
+            // Close button
+            SetWindowPos(GetDlgItem(hwnd, IDCANCEL), nullptr, width - 64, height - 28, 50, 14, SWP_NOZORDER);
+
+            InvalidateRect(hwnd, nullptr, TRUE);
+            return TRUE;
+        }
+
+        case WM_GETMINMAXINFO: {
+            MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+            mmi->ptMinTrackSize.x = 400;
+            mmi->ptMinTrackSize.y = 250;
+            return 0;
+        }
+    }
+    return FALSE;
+}
+
+// Show podcast dialog
+void ShowPodcastDialog() {
+    DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_PODCAST), g_hwnd, PodcastDlgProc);
 }
 
 // ========== Scheduler Dialog ==========

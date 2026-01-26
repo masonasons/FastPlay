@@ -11,6 +11,7 @@ BEGIN
         MENUITEM "Open &URL...\tCtrl+U", IDM_FILE_OPEN_URL
         MENUITEM "&YouTube...\tCtrl+Y", IDM_FILE_YOUTUBE
         MENUITEM "&Radio...\tCtrl+R", IDM_FILE_RADIO
+        MENUITEM "&Podcasts...\tCtrl+Shift+P", IDM_FILE_PODCAST
         MENUITEM "&Schedule...\tCtrl+S", IDM_FILE_SCHEDULE
         MENUITEM SEPARATOR
         MENUITEM "&Hide to Tray\tCtrl+H", IDM_FILE_HIDE_TRAY
@@ -393,6 +394,47 @@ BEGIN
     LTEXT           "Alt+Up/Down: Move  |  Delete: Remove  |  Enter: Play  |  Ctrl+V: Paste  |  Esc: Close", -1, 7, 232, 336, 10
 END
 
+// Podcast dialog
+IDD_PODCAST DIALOGEX 0, 0, 450, 300
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+CAPTION "Podcasts"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    CONTROL         "", IDC_PODCAST_TAB, "SysTabControl32", WS_TABSTOP, 7, 7, 436, 265
+    // Subscriptions tab controls (tab 0)
+    LTEXT           "&Subscriptions:", IDC_PODCAST_SUBS_LABEL, 14, 28, 55, 10
+    LISTBOX         IDC_PODCAST_SUBS_LIST, 14, 40, 150, 200, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Episodes:", IDC_PODCAST_EP_LABEL, 172, 28, 50, 10
+    LISTBOX         IDC_PODCAST_EPISODES, 172, 40, 264, 200, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 280, 10
+    PUSHBUTTON      "&Refresh", IDC_PODCAST_REFRESH, 364, 244, 50, 14
+    // Search tab controls (tab 1)
+    LTEXT           "&Search iTunes:", IDC_PODCAST_SEARCH_LABEL, 14, 30, 55, 10
+    EDITTEXT        IDC_PODCAST_SEARCH_EDIT, 72, 28, 290, 14, ES_AUTOHSCROLL
+    PUSHBUTTON      "&Search", IDC_PODCAST_SEARCH_BTN, 366, 27, 50, 14
+    LISTBOX         IDC_PODCAST_SEARCH_LIST, 14, 48, 402, 175, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Enter = preview, Escape = close", IDC_PODCAST_SEARCH_HELP, 14, 228, 200, 10
+    PUSHBUTTON      "S&ubscribe", IDC_PODCAST_SUBSCRIBE, 300, 226, 55, 14
+    PUSHBUTTON      "Add &URL...", IDC_PODCAST_ADD_URL, 360, 226, 55, 14
+    // Common
+    PUSHBUTTON      "Close", IDCANCEL, 386, 278, 50, 14
+END
+
+// Add podcast subscription dialog
+IDD_PODCAST_ADD DIALOGEX 0, 0, 300, 90
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Add Podcast"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT           "Podcast &name:", -1, 7, 12, 55, 10
+    EDITTEXT        IDC_PODCAST_NAME, 65, 10, 228, 14, ES_AUTOHSCROLL
+    LTEXT           "Feed &URL:", -1, 7, 32, 55, 10
+    EDITTEXT        IDC_PODCAST_FEED_URL, 65, 30, 228, 14, ES_AUTOHSCROLL
+    LTEXT           "(RSS feed URL, e.g., https://example.com/feed.xml)", -1, 65, 48, 220, 10
+    DEFPUSHBUTTON   "OK", IDOK, 189, 68, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 243, 68, 50, 14
+END
+
 IDA_ACCEL ACCELERATORS
 BEGIN
     "O",            IDM_FILE_OPEN,      VIRTKEY, CONTROL
@@ -401,6 +443,7 @@ BEGIN
     "U",            IDM_FILE_OPEN_URL,  VIRTKEY, CONTROL
     "Y",            IDM_FILE_YOUTUBE,   VIRTKEY, CONTROL
     "R",            IDM_FILE_RADIO,     VIRTKEY, CONTROL
+    "P",            IDM_FILE_PODCAST,   VIRTKEY, CONTROL, SHIFT
     "S",            IDM_FILE_SCHEDULE,  VIRTKEY, CONTROL
     "H",            IDM_FILE_HIDE_TRAY, VIRTKEY, CONTROL
     VK_OEM_COMMA,   IDM_TOOLS_OPTIONS,  VIRTKEY, CONTROL

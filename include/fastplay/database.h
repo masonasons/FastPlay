@@ -22,6 +22,25 @@ struct RadioStation {
     int64_t timestamp;
 };
 
+// Podcast subscription structure
+struct PodcastSubscription {
+    int id;
+    std::wstring name;
+    std::wstring feedUrl;
+    std::wstring imageUrl;
+    int64_t lastUpdated;
+};
+
+// Podcast episode structure (not stored in DB - fetched from RSS)
+struct PodcastEpisode {
+    std::wstring title;
+    std::wstring description;
+    std::wstring audioUrl;
+    std::wstring pubDate;
+    int durationSeconds;
+    std::wstring guid;
+};
+
 // Schedule action type
 enum class ScheduleAction {
     Playback = 0,
@@ -90,6 +109,14 @@ bool RemoveRadioStation(int id);
 bool RenameRadioStation(int id, const std::wstring& newName);
 bool UpdateRadioStation(int id, const std::wstring& newName, const std::wstring& newUrl);
 std::vector<RadioStation> GetRadioFavorites();
+
+// Podcast subscription operations
+int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
+                           const std::wstring& imageUrl = L"");
+bool RemovePodcastSubscription(int id);
+bool UpdatePodcastSubscription(int id, const std::wstring& name, const std::wstring& feedUrl);
+bool UpdatePodcastLastUpdated(int id);
+std::vector<PodcastSubscription> GetPodcastSubscriptions();
 
 // Schedule operations
 int AddScheduledEvent(const std::wstring& name, ScheduleAction action,

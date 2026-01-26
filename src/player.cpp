@@ -263,20 +263,21 @@ bool LoadURL(const wchar_t* url) {
     // Convert URL to UTF-8 for BASS
     std::string urlUtf8 = WideToUtf8(url);
 
-    // Create URL stream - try AAC-specific function first (better for YouTube M4A streams)
-    DWORD flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK;
+    // Create URL stream - try without BLOCK first (allows seeking for podcasts)
+    // BLOCK mode is only needed for live streams where seeking isn't expected
+    DWORD flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS;
 
     // Try BASS_AAC_StreamCreateURL first (handles raw AAC/M4A better)
     g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
 
-    // If AAC fails, try generic with BLOCK
+    // If AAC fails, try generic
     if (!g_stream) {
         g_stream = BASS_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
     }
 
-    // If BLOCK fails, try without it
+    // If non-BLOCK fails, try with BLOCK (for live streams)
     if (!g_stream) {
-        flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS;
+        flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK;
         g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
     }
 

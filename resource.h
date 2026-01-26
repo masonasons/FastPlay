@@ -307,5 +307,29 @@
 #define IDM_VIEW_TAG_DURATION   278
 #define IDM_VIEW_TAG_FILENAME   279
 
+// Podcast dialog
+#define IDM_FILE_PODCAST        940
+#define IDD_PODCAST             950
+#define IDC_PODCAST_TAB         951
+#define IDC_PODCAST_SUBS_LIST   952
+#define IDC_PODCAST_EPISODES    953
+#define IDC_PODCAST_ADD_FEED    954
+#define IDC_PODCAST_REFRESH     956
+#define IDC_PODCAST_SEARCH_EDIT 960
+#define IDC_PODCAST_SEARCH_BTN  961
+#define IDC_PODCAST_SEARCH_LIST 962
+#define IDC_PODCAST_SUBSCRIBE   963
+#define IDC_PODCAST_ADD_URL     964
+#define IDC_PODCAST_SUBS_LABEL  965
+#define IDC_PODCAST_EP_LABEL    966
+#define IDC_PODCAST_SUBS_HELP   967
+#define IDC_PODCAST_SEARCH_LABEL 968
+#define IDC_PODCAST_SEARCH_HELP 969
+
+// Add podcast subscription dialog
+#define IDD_PODCAST_ADD         970
+#define IDC_PODCAST_NAME        971
+#define IDC_PODCAST_FEED_URL    972
+
 #define IDOK                1
 #define IDCANCEL            2

@@ -223,6 +223,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_FILE_SCHEDULE:
                     ShowSchedulerDialog();
                     break;
+                case IDM_FILE_PODCAST:
+                    ShowPodcastDialog();
+                    break;
                 case IDM_FILE_EXIT:
                     PostQuitMessage(0);
                     break;

@@ -87,6 +87,22 @@ bool InitDatabase() {
         if (errMsg) sqlite3_free(errMsg);
     }
 
+    // Create podcast subscriptions table
+    const char* podcastSql =
+        "CREATE TABLE IF NOT EXISTS podcast_subscriptions ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  name TEXT NOT NULL,"
+        "  feed_url TEXT NOT NULL UNIQUE,"
+        "  image_url TEXT,"
+        "  last_updated INTEGER NOT NULL"
+        ");";
+
+    errMsg = nullptr;
+    rc = sqlite3_exec(g_db, podcastSql, nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        if (errMsg) sqlite3_free(errMsg);
+    }
+
     // Create scheduled events table
     const char* scheduleSql =
         "CREATE TABLE IF NOT EXISTS scheduled_events ("
@@ -367,6 +383,121 @@ std::vector<RadioStation> GetRadioFavorites() {
     }
 
     return stations;
+}
+
+// Add a podcast subscription, returns the subscription ID or -1 on failure
+int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
+                           const std::wstring& imageUrl) {
+    if (!g_db) return -1;
+
+    std::string nameUtf8 = WideToUtf8(name);
+    std::string feedUtf8 = WideToUtf8(feedUrl);
+    std::string imageUtf8 = WideToUtf8(imageUrl);
+
+    const char* sql =
+        "INSERT INTO podcast_subscriptions (name, feed_url, image_url, last_updated) "
+        "VALUES (?, ?, ?, ?);";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, nameUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, feedUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, imageUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(time(nullptr)));
+
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            return static_cast<int>(sqlite3_last_insert_rowid(g_db));
+        }
+        sqlite3_finalize(stmt);
+    }
+    return -1;
+}
+
+// Remove a podcast subscription by ID
+bool RemovePodcastSubscription(int id) {
+    if (!g_db) return false;
+
+    const char* sql = "DELETE FROM podcast_subscriptions WHERE id = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, id);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+    return false;
+}
+
+// Update a podcast subscription
+bool UpdatePodcastSubscription(int id, const std::wstring& newName, const std::wstring& newFeedUrl) {
+    if (!g_db) return false;
+
+    std::string nameUtf8 = WideToUtf8(newName);
+    std::string feedUtf8 = WideToUtf8(newFeedUrl);
+    const char* sql = "UPDATE podcast_subscriptions SET name = ?, feed_url = ? WHERE id = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, nameUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, feedUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 3, id);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+    return false;
+}
+
+// Update podcast last_updated timestamp
+bool UpdatePodcastLastUpdated(int id) {
+    if (!g_db) return false;
+
+    const char* sql = "UPDATE podcast_subscriptions SET last_updated = ? WHERE id = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(time(nullptr)));
+        sqlite3_bind_int(stmt, 2, id);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+    return false;
+}
+
+// Get all podcast subscriptions
+std::vector<PodcastSubscription> GetPodcastSubscriptions() {
+    std::vector<PodcastSubscription> subscriptions;
+    if (!g_db) return subscriptions;
+
+    const char* sql = "SELECT id, name, feed_url, image_url, last_updated "
+                      "FROM podcast_subscriptions ORDER BY name COLLATE NOCASE ASC;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            PodcastSubscription ps;
+            ps.id = sqlite3_column_int(stmt, 0);
+
+            const char* nameUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            ps.name = Utf8ToWide(nameUtf8 ? nameUtf8 : "");
+
+            const char* feedUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            ps.feedUrl = Utf8ToWide(feedUtf8 ? feedUtf8 : "");
+
+            const char* imageUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            ps.imageUrl = Utf8ToWide(imageUtf8 ? imageUtf8 : "");
+
+            ps.lastUpdated = sqlite3_column_int64(stmt, 4);
+
+            subscriptions.push_back(ps);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    return subscriptions;
 }
 
 // Helper to format schedule time

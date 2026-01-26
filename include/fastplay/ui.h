@@ -26,6 +26,7 @@ void ShowOptionsDialog();
 void ShowBookmarksDialog();
 void ShowRadioDialog();
 void ShowSchedulerDialog();
+void ShowPodcastDialog();
 void CheckScheduledEvents();
 void CalculateNextScheduleTime(int id, int64_t lastRun, ScheduleRepeat repeat);
 void HandleScheduledDurationEnd();
