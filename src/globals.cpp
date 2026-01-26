@@ -13,6 +13,7 @@ HWND g_statusBar = nullptr;
 // BASS state
 HSTREAM g_stream = 0;      // Source stream
 HSTREAM g_fxStream = 0;    // Tempo stream (wraps g_stream for pitch/tempo)
+HSTREAM g_sourceStream = 0; // Original decode stream (for bitrate queries)
 HSYNC g_endSync = 0;
 HSYNC g_metaSync = 0;      // Sync for stream metadata changes
 float g_volume = 1.0f;

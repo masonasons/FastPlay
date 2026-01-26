@@ -36,6 +36,7 @@ extern HWND g_statusBar;
 // BASS state
 extern HSTREAM g_stream;      // Source stream
 extern HSTREAM g_fxStream;    // Tempo stream (wraps g_stream for pitch/tempo)
+extern HSTREAM g_sourceStream; // Original decode stream (for bitrate queries, not freed separately)
 extern HSYNC g_endSync;
 extern HSYNC g_metaSync;      // Sync for stream metadata changes
 extern float g_volume;

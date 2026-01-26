@@ -225,6 +225,7 @@ void FreeBass() {
         BASS_StreamFree(g_stream);
         g_stream = 0;
     }
+    g_sourceStream = 0;  // Don't free - owned by tempo processor
     g_currentBitrate = 0;
     BASS_Free();
 }
@@ -321,7 +322,10 @@ bool LoadURL(const wchar_t* url) {
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
 
-    // Capture bitrate (may come from stream headers or BASS attribute)
+    // Store source stream for bitrate queries
+    g_sourceStream = g_stream;
+
+    // Capture initial bitrate (may come from stream headers or BASS attribute)
     float bitrate = 0;
     BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
     g_currentBitrate = static_cast<int>(bitrate);
@@ -715,7 +719,10 @@ bool LoadFile(const wchar_t* path) {
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
 
-    // Capture bitrate before stream gets wrapped by tempo processor
+    // Store source stream for VBR bitrate queries (not freed separately - owned by tempo processor)
+    g_sourceStream = g_stream;
+
+    // Capture initial bitrate
     float bitrate = 0;
     BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
     g_currentBitrate = static_cast<int>(bitrate);
@@ -2081,11 +2088,11 @@ void SpeakTagBitrate() {
 }
 
 int GetCurrentBitrate() {
-    // Try to get live bitrate from stream (updates for VBR files)
-    HSTREAM stream = g_fxStream ? g_fxStream : g_stream;
-    if (stream) {
+    // Try to get live bitrate from source stream (updates for VBR files)
+    // g_sourceStream is the original decode stream before tempo processing
+    if (g_sourceStream) {
         float bitrate = 0;
-        if (BASS_ChannelGetAttribute(stream, BASS_ATTRIB_BITRATE, &bitrate) && bitrate > 0) {
+        if (BASS_ChannelGetAttribute(g_sourceStream, BASS_ATTRIB_BITRATE, &bitrate) && bitrate > 0) {
             return static_cast<int>(bitrate);
         }
     }
@@ -2094,9 +2101,8 @@ int GetCurrentBitrate() {
     if (g_currentBitrate > 0) return g_currentBitrate;
 
     // Fall back to ICY headers for internet streams
-    HSTREAM sourceStream = g_stream ? g_stream : g_fxStream;
-    if (sourceStream) {
-        int icyBitrate = GetStreamBitrate(sourceStream);
+    if (g_sourceStream) {
+        int icyBitrate = GetStreamBitrate(g_sourceStream);
         if (icyBitrate > 0) return icyBitrate;
     }
 
