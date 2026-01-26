@@ -4053,8 +4053,19 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
                         if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
                             std::wstring desc = g_podcastEpisodes[sel].description;
-                            // Clean up description - remove HTML tags
+                            // Convert HTML line breaks to newlines before stripping tags
                             size_t pos;
+                            while ((pos = desc.find(L"<br")) != std::wstring::npos) {
+                                size_t endPos = desc.find(L'>', pos);
+                                if (endPos != std::wstring::npos) {
+                                    desc.replace(pos, endPos - pos + 1, L"\n");
+                                } else {
+                                    break;
+                                }
+                            }
+                            while ((pos = desc.find(L"</p>")) != std::wstring::npos) desc.replace(pos, 4, L"\n\n");
+                            while ((pos = desc.find(L"</div>")) != std::wstring::npos) desc.replace(pos, 6, L"\n");
+                            // Clean up description - remove remaining HTML tags
                             while ((pos = desc.find(L'<')) != std::wstring::npos) {
                                 size_t endPos = desc.find(L'>', pos);
                                 if (endPos != std::wstring::npos) {
