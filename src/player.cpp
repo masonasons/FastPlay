@@ -2081,8 +2081,16 @@ void SpeakTagBitrate() {
 }
 
 int GetCurrentBitrate() {
-    // Return cached bitrate (captured when file was loaded)
-    // For streams, also check ICY headers
+    // Try to get live bitrate from stream (updates for VBR files)
+    HSTREAM stream = g_fxStream ? g_fxStream : g_stream;
+    if (stream) {
+        float bitrate = 0;
+        if (BASS_ChannelGetAttribute(stream, BASS_ATTRIB_BITRATE, &bitrate) && bitrate > 0) {
+            return static_cast<int>(bitrate);
+        }
+    }
+
+    // Fall back to cached bitrate (captured at load time)
     if (g_currentBitrate > 0) return g_currentBitrate;
 
     // Fall back to ICY headers for internet streams

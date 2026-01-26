@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <set>
 
 // External globals (defined in globals.cpp)
 extern HWND g_hwnd;
@@ -3728,7 +3729,7 @@ static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstrin
         }
     }
 
-    // Basic HTML entity decode
+    // Basic HTML entity decode - named entities
     size_t pos = 0;
     while ((pos = content.find(L"&amp;", pos)) != std::wstring::npos) {
         content.replace(pos, 5, L"&");
@@ -3748,6 +3749,35 @@ static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstrin
     pos = 0;
     while ((pos = content.find(L"&apos;", pos)) != std::wstring::npos) {
         content.replace(pos, 6, L"'");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&nbsp;", pos)) != std::wstring::npos) {
+        content.replace(pos, 6, L" ");
+    }
+
+    // Numeric HTML entities (&#039; &#39; &#34; etc.)
+    pos = 0;
+    while ((pos = content.find(L"&#", pos)) != std::wstring::npos) {
+        size_t semicolon = content.find(L';', pos);
+        if (semicolon != std::wstring::npos && semicolon - pos < 8) {
+            std::wstring numStr = content.substr(pos + 2, semicolon - pos - 2);
+            int codePoint = 0;
+            if (!numStr.empty() && (numStr[0] == L'x' || numStr[0] == L'X')) {
+                // Hex: &#x27;
+                codePoint = wcstol(numStr.c_str() + 1, nullptr, 16);
+            } else {
+                // Decimal: &#39;
+                codePoint = wcstol(numStr.c_str(), nullptr, 10);
+            }
+            if (codePoint > 0 && codePoint < 0x10000) {
+                wchar_t ch = static_cast<wchar_t>(codePoint);
+                content.replace(pos, semicolon - pos + 1, 1, ch);
+            } else {
+                pos++;  // Skip invalid entity
+            }
+        } else {
+            pos++;  // Skip malformed entity
+        }
     }
 
     return content;
@@ -4400,6 +4430,9 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     g_batchDownloadSuccess = 0;
                     g_batchDownloadFailed = 0;
 
+                    // Track used filenames to avoid collisions
+                    std::set<std::wstring> usedFilenames;
+
                     // Start downloads for all episodes
                     int skipped = 0;
                     for (const auto& ep : g_podcastEpisodes) {
@@ -4408,17 +4441,28 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                             continue;
                         }
 
-                        std::wstring filename = SanitizeFilename(ep.title);
-                        if (filename.empty()) filename = L"episode";
-                        filename += GetUrlExtension(ep.audioUrl);
-
+                        std::wstring baseName = SanitizeFilename(ep.title);
+                        if (baseName.empty()) baseName = L"episode";
+                        std::wstring ext = GetUrlExtension(ep.audioUrl);
+                        std::wstring filename = baseName + ext;
                         std::wstring filepath = downloadFolder + filename;
 
-                        // Skip if file already exists
+                        // Skip if file already exists on disk
                         if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
                             skipped++;
                             continue;
                         }
+
+                        // Handle duplicate titles within this batch by adding number suffix
+                        int dupCount = 1;
+                        while (usedFilenames.count(filename) > 0) {
+                            dupCount++;
+                            wchar_t suffix[16];
+                            swprintf(suffix, 16, L" (%d)", dupCount);
+                            filename = baseName + suffix + ext;
+                            filepath = downloadFolder + filename;
+                        }
+                        usedFilenames.insert(filename);
 
                         // Start download in background thread
                         PodcastDownloadParams* params = new PodcastDownloadParams();
