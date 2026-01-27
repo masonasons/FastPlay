@@ -835,16 +835,19 @@ void AnnounceStreamMetadata() {
 // Play or pause current track
 void PlayPause() {
     if (!g_fxStream) {
-        // Nothing loaded, try to play first track
-        if (!g_playlist.empty()) {
-            PlayTrack(0);
-        }
+        // Nothing loaded - try to reload current track or play first
+        Play();
         return;
     }
 
     DWORD state = BASS_ChannelIsActive(g_fxStream);
     if (state == BASS_ACTIVE_PLAYING) {
-        BASS_ChannelPause(g_fxStream);
+        // For live streams, stop instead of pause
+        if (g_isLiveStream) {
+            Stop();
+        } else {
+            BASS_ChannelPause(g_fxStream);
+        }
     } else {
         BASS_ChannelPlay(g_fxStream, FALSE);
     }
@@ -852,10 +855,52 @@ void PlayPause() {
     UpdateStatusBar();
 }
 
+// Free current stream (used when stopping live streams)
+void FreeCurrentStream() {
+    if (g_fxStream) {
+        if (g_endSync) {
+            BASS_ChannelRemoveSync(g_fxStream, g_endSync);
+            g_endSync = 0;
+        }
+        RemoveDSPEffects();
+        BASS_ChannelStop(g_fxStream);
+        BASS_StreamFree(g_fxStream);
+        g_fxStream = 0;
+    }
+    if (g_stream) {
+        if (g_metaSync) {
+            BASS_ChannelRemoveSync(g_stream, g_metaSync);
+            g_metaSync = 0;
+        }
+        BASS_StreamFree(g_stream);
+        g_stream = 0;
+    }
+    g_sourceStream = 0;
+    g_isLiveStream = false;
+    g_currentBitrate = 0;
+    FreeTempoProcessor();
+}
+
 // Play (restart if playing, resume if paused/stopped)
 void Play() {
     if (!g_fxStream) {
-        // Nothing loaded, try to play first track
+        // Nothing loaded - check if we have a current track to reload
+        // (This handles the case where a live stream was stopped/freed)
+        if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+            const std::wstring& path = g_playlist[g_currentTrack];
+            if (IsURL(path.c_str())) {
+                LoadURL(path.c_str());
+            } else {
+                LoadFile(path.c_str());
+            }
+            if (g_fxStream) {
+                BASS_ChannelPlay(g_fxStream, FALSE);
+                UpdateWindowTitle();
+                UpdateStatusBar();
+            }
+            return;
+        }
+        // No current track, try to play first track
         if (!g_playlist.empty()) {
             PlayTrack(0);
         }
@@ -878,6 +923,11 @@ void Play() {
 // Pause playback
 void Pause() {
     if (g_fxStream) {
+        // Don't allow pausing live streams
+        if (g_isLiveStream) {
+            Speak("Cannot pause live stream");
+            return;
+        }
         BASS_ChannelPause(g_fxStream);
         UpdateWindowTitle();
         UpdateStatusBar();
@@ -887,10 +937,16 @@ void Pause() {
 // Stop playback
 void Stop() {
     if (g_fxStream) {
-        BASS_ChannelStop(g_fxStream);
-        TempoProcessor* processor = GetTempoProcessor();
-        if (processor && processor->IsActive()) {
-            processor->SetPosition(0);
+        // For live streams, free the stream entirely to disconnect
+        // (otherwise BASS buffers it and stop/play acts like pause/resume)
+        if (g_isLiveStream) {
+            FreeCurrentStream();
+        } else {
+            BASS_ChannelStop(g_fxStream);
+            TempoProcessor* processor = GetTempoProcessor();
+            if (processor && processor->IsActive()) {
+                processor->SetPosition(0);
+            }
         }
     }
     UpdateWindowTitle();

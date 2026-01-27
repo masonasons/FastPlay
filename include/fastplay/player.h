@@ -20,6 +20,7 @@ void PlayPause();
 void Play();
 void Pause();
 void Stop();
+void FreeCurrentStream();
 
 // Seeking
 void Seek(double seconds);
