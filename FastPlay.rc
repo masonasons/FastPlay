@@ -494,6 +494,10 @@ BEGIN
     VK_OEM_4,       IDM_EFFECT_PREV,    VIRTKEY          // [ key
     VK_OEM_6,       IDM_EFFECT_NEXT,    VIRTKEY          // ] key
     VK_BACK,        IDM_EFFECT_RESET,   VIRTKEY          // Backspace key
+    VK_HOME,        IDM_EFFECT_MIN,     VIRTKEY, CONTROL // Ctrl+Home = min value
+    VK_END,         IDM_EFFECT_MAX,     VIRTKEY, CONTROL // Ctrl+End = max value
+    // Audio device selection
+    "A",            IDM_SHOW_AUDIO_DEVICES, VIRTKEY      // A = show audio devices menu
     // Tag reading (1-0 keys)
     "1",            IDM_READ_TAG_TITLE,     VIRTKEY
     "2",            IDM_READ_TAG_ARTIST,    VIRTKEY

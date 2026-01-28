@@ -117,6 +117,12 @@
 #define IDM_EFFECT_UP       232
 #define IDM_EFFECT_DOWN     233
 #define IDM_EFFECT_RESET    234
+#define IDM_EFFECT_MIN      235
+#define IDM_EFFECT_MAX      236
+
+// Audio device menu
+#define IDM_SHOW_AUDIO_DEVICES  237
+#define IDM_AUDIO_DEVICE_BASE   5000  // Actual device IDs are IDM_AUDIO_DEVICE_BASE + device index
 
 // Effect toggles (for hotkeys)
 #define IDM_TOGGLE_VOLUME       240

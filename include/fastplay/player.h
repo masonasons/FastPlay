@@ -54,6 +54,8 @@ void AnnounceStreamMetadata();
 bool ReinitBass(int device);
 int FindDeviceByName(const std::wstring& name);
 std::wstring GetDeviceName(int device);
+void ShowAudioDeviceMenu(HWND hwnd);
+void SelectAudioDevice(int deviceIndex);
 
 // Speak functions
 void SpeakElapsed();

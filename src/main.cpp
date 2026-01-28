@@ -371,6 +371,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_EFFECT_RESET:
                     ResetCurrentParam();
                     break;
+                case IDM_EFFECT_MIN:
+                    SetCurrentParamToMin();
+                    break;
+                case IDM_EFFECT_MAX:
+                    SetCurrentParamToMax();
+                    break;
                 // Effect toggles
                 case IDM_TOGGLE_VOLUME:
                     ToggleStreamEffect(0);
@@ -470,6 +476,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     break;
                 case IDM_RECORD_TOGGLE:
                     ToggleRecording();
+                    break;
+                case IDM_SHOW_AUDIO_DEVICES:
+                    ShowAudioDeviceMenu(hwnd);
+                    break;
+                default:
+                    // Handle audio device selection (dynamic menu IDs)
+                    {
+                        WORD cmdId = LOWORD(wParam);
+                        if (cmdId >= IDM_AUDIO_DEVICE_BASE && cmdId < IDM_AUDIO_DEVICE_BASE + 100) {
+                            int deviceIndex = cmdId - IDM_AUDIO_DEVICE_BASE;
+                            SelectAudioDevice(deviceIndex);
+                        }
+                    }
                     break;
             }
             return 0;

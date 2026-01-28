@@ -138,6 +138,71 @@ std::wstring GetDeviceName(int device) {
     return L"";
 }
 
+// Show popup menu with audio devices
+void ShowAudioDeviceMenu(HWND hwnd) {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    BASS_DEVICEINFO info;
+    int itemCount = 0;
+
+    for (int i = 1; BASS_GetDeviceInfo(i, &info); i++) {
+        if (info.flags & BASS_DEVICE_ENABLED) {
+            // Convert device name to wide string
+            int len = MultiByteToWideChar(CP_ACP, 0, info.name, -1, nullptr, 0);
+            std::wstring wideName(len, 0);
+            MultiByteToWideChar(CP_ACP, 0, info.name, -1, &wideName[0], len);
+            if (!wideName.empty() && wideName.back() == L'\0') {
+                wideName.pop_back();
+            }
+
+            UINT flags = MF_STRING;
+            // Check if this is the current device
+            if (i == g_selectedDevice || (g_selectedDevice == -1 && (info.flags & BASS_DEVICE_DEFAULT))) {
+                flags |= MF_CHECKED;
+            }
+
+            AppendMenuW(hMenu, flags, IDM_AUDIO_DEVICE_BASE + i, wideName.c_str());
+            itemCount++;
+        }
+    }
+
+    if (itemCount == 0) {
+        DestroyMenu(hMenu);
+        Speak("No audio devices found");
+        return;
+    }
+
+    // Get cursor position for menu
+    POINT pt;
+    GetCursorPos(&pt);
+
+    // Show the popup menu
+    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    DestroyMenu(hMenu);
+}
+
+// Select and switch to an audio device
+void SelectAudioDevice(int deviceIndex) {
+    if (deviceIndex <= 0) return;
+
+    // Get device name for announcement
+    std::wstring deviceName = GetDeviceName(deviceIndex);
+
+    // Try to reinitialize BASS with the new device
+    if (ReinitBass(deviceIndex)) {
+        g_selectedDevice = deviceIndex;
+        g_selectedDeviceName = deviceName;
+        SaveSettings();
+
+        // Announce the change
+        std::string msg = "Switched to " + WideToUtf8(deviceName);
+        Speak(msg.c_str());
+    } else {
+        Speak("Failed to switch audio device");
+    }
+}
+
 // Check if file is a MIDI file by extension
 static bool IsMidiFile(const wchar_t* path) {
     const wchar_t* ext = wcsrchr(path, L'.');
