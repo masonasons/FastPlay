@@ -10,6 +10,7 @@
 #include "tempo_processor.h"
 #include "convolution.h"
 #include "database.h"
+#include "download_manager.h"
 #include "resource.h"
 #include <commdlg.h>
 #include <commctrl.h>
@@ -3634,50 +3635,6 @@ static std::wstring PodcastUrlEncode(const std::wstring& str) {
     return encoded.str();
 }
 
-// Download parameters for threaded download
-struct PodcastDownloadParams {
-    std::wstring url;
-    std::wstring filepath;
-    HWND hwndNotify;
-};
-
-// Thread function to download podcast episode
-static DWORD WINAPI PodcastDownloadThread(LPVOID lpParam) {
-    PodcastDownloadParams* params = static_cast<PodcastDownloadParams*>(lpParam);
-    if (!params) return 1;
-
-    bool success = false;
-
-    // Use InternetOpenUrl for simplicity with redirects
-    HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (hInternet) {
-        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
-        HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), nullptr, 0, flags, 0);
-        if (hUrl) {
-            FILE* file = _wfopen(params->filepath.c_str(), L"wb");
-            if (file) {
-                char buffer[8192];
-                DWORD bytesRead;
-                while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
-                    fwrite(buffer, 1, bytesRead, file);
-                }
-                fclose(file);
-                success = true;
-            }
-            InternetCloseHandle(hUrl);
-        }
-        InternetCloseHandle(hInternet);
-    }
-
-    // Notify completion (post message to main thread)
-    if (params->hwndNotify) {
-        PostMessageW(params->hwndNotify, WM_USER + 100, success ? 1 : 0, 0);
-    }
-
-    delete params;
-    return success ? 0 : 1;
-}
-
 // Sanitize filename for saving
 static std::wstring SanitizeFilename(const std::wstring& name) {
     std::wstring result;
@@ -4275,6 +4232,13 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             g_podcastSearchResults.clear();
             g_currentPodcastId = -1;
 
+            // Set up download manager
+            DownloadManager::Instance().SetNotifyWindow(hwnd);
+            DownloadManager::Instance().onAllComplete = []() {
+                auto& dm = DownloadManager::Instance();
+                // Speak completion (tracked internally via ProcessCompletion)
+            };
+
             UpdatePodcastTabVisibility(hwnd, 0);
             SetFocus(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST));
             return FALSE;
@@ -4384,25 +4348,14 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         return TRUE;
                     }
 
-                    // Start download in background thread
-                    PodcastDownloadParams* params = new PodcastDownloadParams();
-                    params->url = ep.audioUrl;
-                    params->filepath = filepath;
-                    params->hwndNotify = hwnd;
-
-                    HANDLE hThread = CreateThread(nullptr, 0, PodcastDownloadThread, params, 0, nullptr);
-                    if (hThread) {
-                        CloseHandle(hThread);
-                        Speak("Downloading");
-                    } else {
-                        delete params;
-                        Speak("Failed to start download");
-                    }
+                    // Enqueue single download
+                    DownloadManager::Instance().Enqueue(ep.audioUrl, filepath, ep.title);
+                    Speak("Downloading");
                     return TRUE;
                 }
 
                 case IDC_PODCAST_DOWNLOAD_ALL: {
-                    // Download all episodes in the current feed
+                    // Download all episodes in the current feed using download queue
                     if (g_podcastEpisodes.empty()) {
                         Speak("No episodes loaded");
                         return TRUE;
@@ -4431,16 +4384,16 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         }
                     }
 
-                    // Initialize batch download tracking
+                    // Reset batch tracking
                     g_batchDownloadPending = 0;
                     g_batchDownloadSuccess = 0;
                     g_batchDownloadFailed = 0;
 
-                    // Track used filenames to avoid collisions
+                    // Build list of downloads for the queue
+                    std::vector<std::tuple<std::wstring, std::wstring, std::wstring>> downloads;
                     std::set<std::wstring> usedFilenames;
-
-                    // Start downloads for all episodes
                     int skipped = 0;
+
                     for (const auto& ep : g_podcastEpisodes) {
                         if (ep.audioUrl.empty()) {
                             skipped++;
@@ -4470,20 +4423,13 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         }
                         usedFilenames.insert(filename);
 
-                        // Start download in background thread
-                        PodcastDownloadParams* params = new PodcastDownloadParams();
-                        params->url = ep.audioUrl;
-                        params->filepath = filepath;
-                        params->hwndNotify = hwnd;
+                        downloads.push_back(std::make_tuple(ep.audioUrl, filepath, ep.title));
+                        g_batchDownloadPending++;
+                    }
 
-                        HANDLE hThread = CreateThread(nullptr, 0, PodcastDownloadThread, params, 0, nullptr);
-                        if (hThread) {
-                            CloseHandle(hThread);
-                            g_batchDownloadPending++;
-                        } else {
-                            delete params;
-                            skipped++;
-                        }
+                    // Enqueue all downloads (manager handles concurrency limit)
+                    if (!downloads.empty()) {
+                        DownloadManager::Instance().EnqueueMultiple(downloads);
                     }
 
                     char msg[128];
@@ -4776,11 +4722,14 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return 0;
         }
 
-        case WM_USER + 100:
-            // Download completion notification
+        case WM_DOWNLOAD_COMPLETE: {
+            // Download completion from DownloadManager
+            int id = static_cast<int>(wParam);
+            bool success = (lParam != 0);
+
+            // Track batch download stats
             if (g_batchDownloadPending > 0) {
-                // Batch download mode - track progress
-                if (wParam) {
+                if (success) {
                     g_batchDownloadSuccess++;
                 } else {
                     g_batchDownloadFailed++;
@@ -4799,13 +4748,17 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 }
             } else {
                 // Single download mode - speak immediately
-                if (wParam) {
+                if (success) {
                     Speak("Download complete");
                 } else {
                     Speak("Download failed");
                 }
             }
+
+            // Let DownloadManager process completion and start next queued download
+            DownloadManager::Instance().ProcessCompletion(id, success);
             return TRUE;
+        }
     }
     return FALSE;
 }
