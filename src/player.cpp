@@ -173,13 +173,31 @@ void ShowAudioDeviceMenu(HWND hwnd) {
         return;
     }
 
+    // Check if window was hidden (for global hotkey support)
+    bool wasHidden = !IsWindowVisible(hwnd);
+    if (wasHidden) {
+        ShowWindow(hwnd, SW_SHOW);
+    }
+
     // Get cursor position for menu
     POINT pt;
     GetCursorPos(&pt);
 
-    // Show the popup menu
-    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    // Show the popup menu and get the selected command
+    SetForegroundWindow(hwnd);
+    int cmd = TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, pt.x, pt.y, 0, hwnd, nullptr);
     DestroyMenu(hMenu);
+
+    // Handle device selection
+    if (cmd >= IDM_AUDIO_DEVICE_BASE && cmd < IDM_AUDIO_DEVICE_BASE + 100) {
+        int deviceIndex = cmd - IDM_AUDIO_DEVICE_BASE;
+        SelectAudioDevice(deviceIndex);
+    }
+
+    // Re-hide window if it was hidden before
+    if (wasHidden) {
+        ShowWindow(hwnd, SW_HIDE);
+    }
 }
 
 // Select and switch to an audio device
