@@ -4103,8 +4103,9 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     // Subscriptions tab controls (tab 0)
     int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES, IDC_PODCAST_EP_DESC,
-                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_DOWNLOAD_ALL, IDC_PODCAST_REFRESH,
-                       IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
+                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_DOWNLOAD_ALL, IDC_PODCAST_EXPORT_OPML,
+                       IDC_PODCAST_REFRESH, IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL,
+                       IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
                          IDC_PODCAST_SEARCH_LIST, IDC_PODCAST_IMPORT_OPML, IDC_PODCAST_SUBSCRIBE,
@@ -4424,6 +4425,79 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     } else {
                         snprintf(msg, sizeof(msg), "Downloading %d episodes", downloadCount);
                         Speak(msg);
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_EXPORT_OPML: {
+                    // Export subscriptions to OPML file
+                    if (g_podcastSubs.empty()) {
+                        Speak("No subscriptions to export");
+                        return TRUE;
+                    }
+
+                    wchar_t filePath[MAX_PATH] = L"podcasts.opml";
+                    OPENFILENAMEW ofn = {0};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = hwnd;
+                    ofn.lpstrFilter = L"OPML Files (*.opml)\0*.opml\0All Files (*.*)\0*.*\0";
+                    ofn.lpstrFile = filePath;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrTitle = L"Export OPML";
+                    ofn.lpstrDefExt = L"opml";
+                    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+
+                    if (GetSaveFileNameW(&ofn)) {
+                        FILE* f = _wfopen(filePath, L"wb");
+                        if (f) {
+                            // Write UTF-8 BOM
+                            fwrite("\xEF\xBB\xBF", 1, 3, f);
+
+                            // Write OPML header
+                            fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+                            fprintf(f, "<opml version=\"2.0\">\n");
+                            fprintf(f, "  <head>\n");
+                            fprintf(f, "    <title>FastPlay Podcast Subscriptions</title>\n");
+                            fprintf(f, "  </head>\n");
+                            fprintf(f, "  <body>\n");
+
+                            // Write each subscription
+                            for (const auto& sub : g_podcastSubs) {
+                                std::string title = WideToUtf8(sub.name);
+                                std::string feedUrl = WideToUtf8(sub.feedUrl);
+
+                                // Escape XML special characters
+                                std::string escapedTitle, escapedUrl;
+                                for (char c : title) {
+                                    if (c == '&') escapedTitle += "&amp;";
+                                    else if (c == '<') escapedTitle += "&lt;";
+                                    else if (c == '>') escapedTitle += "&gt;";
+                                    else if (c == '"') escapedTitle += "&quot;";
+                                    else if (c == '\'') escapedTitle += "&apos;";
+                                    else escapedTitle += c;
+                                }
+                                for (char c : feedUrl) {
+                                    if (c == '&') escapedUrl += "&amp;";
+                                    else if (c == '<') escapedUrl += "&lt;";
+                                    else if (c == '>') escapedUrl += "&gt;";
+                                    else if (c == '"') escapedUrl += "&quot;";
+                                    else escapedUrl += c;
+                                }
+
+                                fprintf(f, "    <outline type=\"rss\" text=\"%s\" xmlUrl=\"%s\"/>\n",
+                                        escapedTitle.c_str(), escapedUrl.c_str());
+                            }
+
+                            fprintf(f, "  </body>\n");
+                            fprintf(f, "</opml>\n");
+                            fclose(f);
+
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Exported %d subscriptions", static_cast<int>(g_podcastSubs.size()));
+                            Speak(msg);
+                        } else {
+                            Speak("Failed to create file");
+                        }
                     }
                     return TRUE;
                 }
