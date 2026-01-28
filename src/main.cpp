@@ -20,6 +20,7 @@
 #include "effects.h"
 #include "database.h"
 #include "youtube.h"
+#include "download_manager.h"
 #include "resource.h"
 
 #pragma comment(lib, "bass.lib")
@@ -511,6 +512,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             FreeSpeech();
             PostQuitMessage(0);
             return 0;
+    }
+
+    // Download completion from DownloadManager (posted to main window)
+    if (msg == WM_DOWNLOAD_COMPLETE) {
+        int id = static_cast<int>(wParam);
+        bool success = (lParam != 0);
+        DownloadManager::Instance().ProcessCompletion(id, success);
+        return 0;
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);

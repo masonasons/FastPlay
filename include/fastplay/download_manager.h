@@ -60,6 +60,11 @@ private:
     int m_maxConcurrent = 3;
     HWND m_hwndNotify = nullptr;
     CRITICAL_SECTION m_cs;
+
+    // Batch tracking for speech feedback
+    int m_batchTotal = 0;
+    int m_batchSuccess = 0;
+    int m_batchFailed = 0;
 };
 
 // Custom message for download completion

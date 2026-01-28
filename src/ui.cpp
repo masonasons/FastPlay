@@ -3483,11 +3483,6 @@ static std::vector<PodcastEpisode> g_podcastEpisodes;
 static std::vector<PodcastSearchResult> g_podcastSearchResults;
 static int g_currentPodcastId = -1;
 
-// Batch download tracking
-static int g_batchDownloadPending = 0;
-static int g_batchDownloadSuccess = 0;
-static int g_batchDownloadFailed = 0;
-
 // HTTP GET for podcast operations
 static std::wstring PodcastHttpGet(const std::wstring& url) {
     std::wstring result;
@@ -4232,13 +4227,6 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             g_podcastSearchResults.clear();
             g_currentPodcastId = -1;
 
-            // Set up download manager
-            DownloadManager::Instance().SetNotifyWindow(hwnd);
-            DownloadManager::Instance().onAllComplete = []() {
-                auto& dm = DownloadManager::Instance();
-                // Speak completion (tracked internally via ProcessCompletion)
-            };
-
             UpdatePodcastTabVisibility(hwnd, 0);
             SetFocus(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST));
             return FALSE;
@@ -4384,11 +4372,6 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         }
                     }
 
-                    // Reset batch tracking
-                    g_batchDownloadPending = 0;
-                    g_batchDownloadSuccess = 0;
-                    g_batchDownloadFailed = 0;
-
                     // Build list of downloads for the queue
                     std::vector<std::tuple<std::wstring, std::wstring, std::wstring>> downloads;
                     std::set<std::wstring> usedFilenames;
@@ -4424,22 +4407,22 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         usedFilenames.insert(filename);
 
                         downloads.push_back(std::make_tuple(ep.audioUrl, filepath, ep.title));
-                        g_batchDownloadPending++;
                     }
 
-                    // Enqueue all downloads (manager handles concurrency limit)
+                    // Enqueue all downloads (manager handles concurrency limit and speech)
                     if (!downloads.empty()) {
                         DownloadManager::Instance().EnqueueMultiple(downloads);
                     }
 
                     char msg[128];
-                    if (g_batchDownloadPending == 0) {
+                    int downloadCount = static_cast<int>(downloads.size());
+                    if (downloadCount == 0) {
                         Speak("No episodes to download");
                     } else if (skipped > 0) {
-                        snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", g_batchDownloadPending, skipped);
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", downloadCount, skipped);
                         Speak(msg);
                     } else {
-                        snprintf(msg, sizeof(msg), "Downloading %d episodes", g_batchDownloadPending);
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes", downloadCount);
                         Speak(msg);
                     }
                     return TRUE;
@@ -4720,44 +4703,6 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             mmi->ptMinTrackSize.x = 400;
             mmi->ptMinTrackSize.y = 250;
             return 0;
-        }
-
-        case WM_DOWNLOAD_COMPLETE: {
-            // Download completion from DownloadManager
-            int id = static_cast<int>(wParam);
-            bool success = (lParam != 0);
-
-            // Track batch download stats
-            if (g_batchDownloadPending > 0) {
-                if (success) {
-                    g_batchDownloadSuccess++;
-                } else {
-                    g_batchDownloadFailed++;
-                }
-                g_batchDownloadPending--;
-
-                // Speak only when all downloads complete
-                if (g_batchDownloadPending == 0) {
-                    char msg[128];
-                    if (g_batchDownloadFailed == 0) {
-                        snprintf(msg, sizeof(msg), "%d downloads complete", g_batchDownloadSuccess);
-                    } else {
-                        snprintf(msg, sizeof(msg), "%d complete, %d failed", g_batchDownloadSuccess, g_batchDownloadFailed);
-                    }
-                    Speak(msg);
-                }
-            } else {
-                // Single download mode - speak immediately
-                if (success) {
-                    Speak("Download complete");
-                } else {
-                    Speak("Download failed");
-                }
-            }
-
-            // Let DownloadManager process completion and start next queued download
-            DownloadManager::Instance().ProcessCompletion(id, success);
-            return TRUE;
         }
     }
     return FALSE;

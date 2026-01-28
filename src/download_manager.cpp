@@ -1,5 +1,8 @@
 #include "download_manager.h"
+#include "globals.h"
+#include "accessibility.h"
 #include <wininet.h>
+#include <cstdio>
 
 #pragma comment(lib, "wininet.lib")
 
@@ -8,7 +11,6 @@ struct DownloadThreadParams {
     int id;
     std::wstring url;
     std::wstring destPath;
-    HWND hwndNotify;
 };
 
 // Download thread function
@@ -16,6 +18,7 @@ static DWORD WINAPI DownloadThread(LPVOID lpParam) {
     DownloadThreadParams* params = static_cast<DownloadThreadParams*>(lpParam);
     if (!params) return 1;
 
+    int id = params->id;
     bool success = false;
 
     // Create directory if needed
@@ -28,6 +31,12 @@ static DWORD WINAPI DownloadThread(LPVOID lpParam) {
 
     HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
     if (hInternet) {
+        // Set timeouts to prevent hanging (60 seconds each)
+        DWORD timeout = 60000;
+        InternetSetOptionW(hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+        InternetSetOptionW(hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+        InternetSetOptionW(hInternet, INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
+
         DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
         HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), nullptr, 0, flags, 0);
         if (hUrl) {
@@ -46,12 +55,12 @@ static DWORD WINAPI DownloadThread(LPVOID lpParam) {
         InternetCloseHandle(hInternet);
     }
 
-    // Notify completion via window message
-    if (params->hwndNotify) {
-        PostMessageW(params->hwndNotify, WM_DOWNLOAD_COMPLETE, params->id, success ? 1 : 0);
-    }
-
     delete params;
+
+    // Notify completion via main window (always valid while app runs)
+    if (g_hwnd) {
+        PostMessageW(g_hwnd, WM_DOWNLOAD_COMPLETE, id, success ? 1 : 0);
+    }
     return success ? 0 : 1;
 }
 
@@ -100,6 +109,12 @@ void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destP
     item.thread = nullptr;
 
     m_queue.push_back(item);
+
+    // Reset batch tracking for single download
+    m_batchTotal = 1;
+    m_batchSuccess = 0;
+    m_batchFailed = 0;
+
     LeaveCriticalSection(&m_cs);
 
     if (onQueueChanged) onQueueChanged();
@@ -108,6 +123,11 @@ void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destP
 
 void DownloadManager::EnqueueMultiple(const std::vector<std::tuple<std::wstring, std::wstring, std::wstring>>& items) {
     EnterCriticalSection(&m_cs);
+
+    // Reset batch tracking
+    m_batchTotal = 0;
+    m_batchSuccess = 0;
+    m_batchFailed = 0;
 
     int addedCount = 0;
     for (const auto& tuple : items) {
@@ -138,6 +158,8 @@ void DownloadManager::EnqueueMultiple(const std::vector<std::tuple<std::wstring,
         m_queue.push_back(item);
         addedCount++;
     }
+
+    m_batchTotal = addedCount;
 
     LeaveCriticalSection(&m_cs);
 
@@ -198,14 +220,13 @@ void DownloadManager::StartDownload(DownloadItem& item) {
     params->id = item.id;
     params->url = item.url;
     params->destPath = item.destPath;
-    params->hwndNotify = m_hwndNotify;
 
     item.thread = CreateThread(nullptr, 0, DownloadThread, params, 0, nullptr);
     if (!item.thread) {
         delete params;
-        // Notify failure
-        if (m_hwndNotify) {
-            PostMessageW(m_hwndNotify, WM_DOWNLOAD_COMPLETE, item.id, 0);
+        // Notify failure via main window
+        if (g_hwnd) {
+            PostMessageW(g_hwnd, WM_DOWNLOAD_COMPLETE, item.id, 0);
         }
     }
 }
@@ -224,7 +245,17 @@ void DownloadManager::ProcessCompletion(int id, bool success) {
         m_active.erase(it);
     }
 
+    // Track batch stats
+    if (success) {
+        m_batchSuccess++;
+    } else {
+        m_batchFailed++;
+    }
+
     bool allDone = m_active.empty() && m_queue.empty();
+    int batchTotal = m_batchTotal;
+    int batchSuccess = m_batchSuccess;
+    int batchFailed = m_batchFailed;
 
     LeaveCriticalSection(&m_cs);
 
@@ -235,6 +266,23 @@ void DownloadManager::ProcessCompletion(int id, bool success) {
 
     if (onQueueChanged) {
         onQueueChanged();
+    }
+
+    // Speak progress when all downloads complete
+    if (allDone && batchTotal > 0) {
+        char msg[128];
+        if (batchTotal == 1) {
+            // Single download
+            Speak(success ? "Download complete" : "Download failed");
+        } else {
+            // Batch download
+            if (batchFailed == 0) {
+                snprintf(msg, sizeof(msg), "%d downloads complete", batchSuccess);
+            } else {
+                snprintf(msg, sizeof(msg), "%d complete, %d failed", batchSuccess, batchFailed);
+            }
+            Speak(msg);
+        }
     }
 
     // Process next in queue

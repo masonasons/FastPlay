@@ -427,7 +427,7 @@ BEGIN
     LTEXT           "Enter = preview, Escape = close", IDC_PODCAST_SEARCH_HELP, 14, 228, 150, 10
     PUSHBUTTON      "S&ubscribe", IDC_PODCAST_SUBSCRIBE, 168, 226, 55, 14
     PUSHBUTTON      "&Import OPML...", IDC_PODCAST_IMPORT_OPML, 228, 226, 60, 14
-    PUSHBUTTON      "Add &URL...", IDC_PODCAST_ADD_URL, 293, 226, 55, 14
+    PUSHBUTTON      "&Add URL...", IDC_PODCAST_ADD_URL, 293, 226, 55, 14
     // Common
     PUSHBUTTON      "Close", IDCANCEL, 386, 278, 50, 14
 END
