@@ -1979,6 +1979,11 @@ static HSTREAM GetTagStream() {
     return g_stream ? g_stream : g_fxStream;
 }
 
+// Helper to speak UTF-8 text with proper Unicode support
+static void SpeakUtf8(const std::string& text) {
+    SpeakW(Utf8ToWide(text));
+}
+
 void SpeakTagTitle() {
     HSTREAM stream = GetTagStream();
     if (!stream) {
@@ -1989,7 +1994,7 @@ void SpeakTagTitle() {
     // For streams, first check if there's a full stream title (often "Artist - Title")
     std::string streamTitle = GetStreamTitle(stream);
     if (!streamTitle.empty()) {
-        Speak(streamTitle);
+        SpeakUtf8(streamTitle);
         return;
     }
 
@@ -2010,11 +2015,11 @@ void SpeakTagTitle() {
     }
 
     if (!artist.empty() && !title.empty()) {
-        Speak(artist + " - " + title);
+        SpeakUtf8(artist + " - " + title);
     } else if (!title.empty()) {
-        Speak(title);
+        SpeakUtf8(title);
     } else if (!artist.empty()) {
-        Speak(artist);
+        SpeakUtf8(artist);
     } else {
         Speak("No title");
     }
@@ -2038,7 +2043,7 @@ void SpeakTagArtist() {
     }
 
     if (!artist.empty()) {
-        Speak("Artist: " + artist);
+        SpeakUtf8("Artist: " + artist);
     } else {
         Speak("No artist");
     }
@@ -2065,13 +2070,13 @@ void SpeakTagAlbum() {
     if (album.empty()) {
         std::string station = GetStationName(stream);
         if (!station.empty()) {
-            Speak("Station: " + station);
+            SpeakUtf8("Station: " + station);
             return;
         }
     }
 
     if (!album.empty()) {
-        Speak("Album: " + album);
+        SpeakUtf8("Album: " + album);
     } else {
         Speak("No album");
     }
@@ -2096,7 +2101,7 @@ void SpeakTagYear() {
     }
 
     if (!year.empty()) {
-        Speak("Year: " + year);
+        SpeakUtf8("Year: " + year);
     } else {
         Speak("No year");
     }
@@ -2125,7 +2130,7 @@ void SpeakTagTrack() {
     }
 
     if (!track.empty()) {
-        Speak("Track: " + track);
+        SpeakUtf8("Track: " + track);
     } else {
         Speak("No track number");
     }
@@ -2149,7 +2154,7 @@ void SpeakTagGenre() {
     }
 
     if (!genre.empty()) {
-        Speak("Genre: " + genre);
+        SpeakUtf8("Genre: " + genre);
     } else {
         Speak("No genre");
     }
@@ -2179,7 +2184,7 @@ void SpeakTagComment() {
     }
 
     if (!comment.empty()) {
-        Speak("Comment: " + comment);
+        SpeakUtf8("Comment: " + comment);
     } else {
         Speak("No comment");
     }
@@ -2300,9 +2305,7 @@ void SpeakTagFilename() {
     // Check if it's a URL
     if (IsURL(path.c_str())) {
         // For streams, show the full URL
-        char buf[1024];
-        WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
-        Speak(std::string("URL: ") + buf);
+        SpeakW(L"URL: " + path);
         return;
     }
 
@@ -2312,11 +2315,7 @@ void SpeakTagFilename() {
 
     std::wstring filename = lastSlash ? (lastSlash + 1) : path;
 
-    // Convert to narrow string for speech
-    char buf[512];
-    WideCharToMultiByte(CP_UTF8, 0, filename.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
-
-    Speak(std::string("Filename: ") + buf);
+    SpeakW(L"Filename: " + filename);
 }
 
 // Tag retrieval functions for display in dialog
