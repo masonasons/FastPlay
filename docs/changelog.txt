@@ -1,3 +1,22 @@
+0.5.0
+Add Ctrl+Home and Ctrl+End to set current effect parameter to minimum or maximum value.
+Add A key to open a popup menu of audio devices. Press enter on one to switch output immediately.
+Add bitrate display in status bar. Press 8 to hear the current bitrate, shows VBR for variable bitrate files.
+Add Downloads tab to podcast dialog with Download All button.
+Add OPML import button for podcast subscriptions.
+Add Delete key to unsubscribe from podcasts in the subscriptions list.
+Add Export button to radio dialog for exporting favorites to M3U.
+Add episode description field to podcast dialog.
+Add podcast episode download support with feed authentication.
+Fix live stream stop/play behavior. Stop now properly disconnects, play reconnects from live.
+Fix playback state restoration for URLs. Internet radio streams now restore on app restart with remember state enabled.
+Fix podcast HTML entity decoding in titles and descriptions.
+Fix podcast download functionality.
+Fix favorites list not refreshing after adding a new station.
+Fix B key not auto-playing when pressed.
+Fix line breaks being lost in podcast episode descriptions.
+Disable tempo and rate effects for live streams to prevent playback issues.
+
 0.4.6
 Add podcast search dialog, control shift P!
 Attempted network buffering fixes.
