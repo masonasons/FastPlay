@@ -1,6 +1,8 @@
 0.5.0
+Add proper unicode support to speech synthesis.
 Add Ctrl+Home and Ctrl+End to set current effect parameter to minimum or maximum value.
 Add A key to open a popup menu of audio devices. Press enter on one to switch output immediately.
+Add the ability for a global hotkey to be assigned to the devices context menu.
 Add bitrate display in status bar. Press 8 to hear the current bitrate, shows VBR for variable bitrate files.
 Add Downloads tab to podcast dialog with Download All button.
 Add OPML import button for podcast subscriptions.
