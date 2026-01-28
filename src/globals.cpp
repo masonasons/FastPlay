@@ -143,7 +143,9 @@ const HotkeyAction g_hotkeyActions[] = {
     // Recording
     {IDM_RECORD_TOGGLE, L"Toggle Recording"},
     // Shuffle
-    {IDM_PLAY_SHUFFLE, L"Toggle Shuffle"}
+    {IDM_PLAY_SHUFFLE, L"Toggle Shuffle"},
+    // Audio device
+    {IDM_SHOW_AUDIO_DEVICES, L"Audio Device Menu"}
 };
 const int g_hotkeyActionCount = sizeof(g_hotkeyActions) / sizeof(g_hotkeyActions[0]);
 
