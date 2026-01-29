@@ -293,6 +293,8 @@
 
 // Auto-advance playlist
 #define IDC_AUTO_ADVANCE    901
+#define IDC_REWIND_ON_PAUSE 902
+#define IDC_REWIND_LABEL    903
 
 // Tag view dialog
 #define IDD_TAG_VIEW        910

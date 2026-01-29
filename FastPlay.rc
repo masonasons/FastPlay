@@ -69,6 +69,8 @@ BEGIN
     AUTOCHECKBOX    "&Minimize to system tray", IDC_MINIMIZE_TO_TRAY, 17, 118, 120, 10
     AUTOCHECKBOX    "Show &track name in window title", IDC_SHOW_TITLE, 17, 131, 150, 10
     AUTOCHECKBOX    "Auto-ad&vance to next playlist item", IDC_AUTO_ADVANCE, 17, 144, 150, 10
+    LTEXT           "Re&wind on pause (ms):", IDC_REWIND_LABEL, 170, 145, 80, 10
+    EDITTEXT        IDC_REWIND_ON_PAUSE, 250, 143, 30, 14, ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
     COMBOBOX        IDC_VOLUME_STEP, 215, 116, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
 

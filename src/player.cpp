@@ -929,13 +929,13 @@ void PlayPause() {
         if (g_isLiveStream) {
             Stop();
         } else {
-            BASS_ChannelPause(g_fxStream);
+            Pause();
         }
     } else {
         BASS_ChannelPlay(g_fxStream, FALSE);
+        UpdateWindowTitle();
+        UpdateStatusBar();
     }
-    UpdateWindowTitle();
-    UpdateStatusBar();
 }
 
 // Free current stream (used when stopping live streams)
@@ -1012,6 +1012,11 @@ void Pause() {
             return;
         }
         BASS_ChannelPause(g_fxStream);
+
+        if (g_rewindOnPauseMs > 0) {
+            Seek(-g_rewindOnPauseMs / 1000.0);
+        }
+
         UpdateWindowTitle();
         UpdateStatusBar();
     }
