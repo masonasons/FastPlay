@@ -348,6 +348,7 @@ BEGIN
     LTEXT           "Scheduled events (Enter = toggle, Delete = remove, Escape = close):", -1, 7, 7, 280, 10
     LISTBOX         IDC_SCHED_LIST, 7, 20, 366, 225, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "&Add...", IDC_SCHED_ADD, 7, 252, 50, 14
+    PUSHBUTTON      "&Edit...", IDC_SCHED_EDIT, 61, 252, 50, 14
     PUSHBUTTON      "Close", IDCANCEL, 323, 260, 50, 14
 END
 

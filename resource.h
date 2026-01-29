@@ -267,6 +267,7 @@
 #define IDD_SCHEDULER       870
 #define IDC_SCHED_LIST      871
 #define IDC_SCHED_ADD       872
+#define IDC_SCHED_EDIT      873
 
 // Add schedule dialog
 #define IDD_SCHED_ADD       880

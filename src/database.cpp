@@ -638,6 +638,43 @@ bool UpdateScheduledEventTime(int id, int64_t scheduledTime) {
     return false;
 }
 
+// Update full scheduled event
+bool UpdateScheduledEvent(int id, const std::wstring& name, ScheduleAction action,
+                          ScheduleSource sourceType, const std::wstring& sourcePath,
+                          int radioStationId, int64_t scheduledTime,
+                          ScheduleRepeat repeat, bool enabled,
+                          int duration, ScheduleStopAction stopAction) {
+    if (!g_db) return false;
+
+    std::string nameUtf8 = WideToUtf8(name);
+    std::string pathUtf8 = WideToUtf8(sourcePath);
+
+    const char* sql =
+        "UPDATE scheduled_events SET name = ?, action = ?, source_type = ?, source_path = ?, "
+        "radio_station_id = ?, scheduled_time = ?, repeat_type = ?, enabled = ?, "
+        "duration = ?, stop_action = ? WHERE id = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, nameUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, static_cast<int>(action));
+        sqlite3_bind_int(stmt, 3, static_cast<int>(sourceType));
+        sqlite3_bind_text(stmt, 4, pathUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 5, radioStationId);
+        sqlite3_bind_int64(stmt, 6, scheduledTime);
+        sqlite3_bind_int(stmt, 7, static_cast<int>(repeat));
+        sqlite3_bind_int(stmt, 8, enabled ? 1 : 0);
+        sqlite3_bind_int(stmt, 9, duration);
+        sqlite3_bind_int(stmt, 10, static_cast<int>(stopAction));
+        sqlite3_bind_int(stmt, 11, id);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+    return false;
+}
+
 // Get all scheduled events
 std::vector<ScheduledEvent> GetAllScheduledEvents() {
     std::vector<ScheduledEvent> events;

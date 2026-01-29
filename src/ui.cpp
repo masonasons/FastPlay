@@ -4921,13 +4921,13 @@ void CheckScheduledEvents() {
                 g_schedulerMuted = true;
             }
 
+            // Always play the track first - recording requires audio to flow through the stream
+            PlayTrack(0);
+
+            // Start recording AFTER playback begins (requires active stream)
             if (shouldRecord && !g_isRecording) {
-                // Start recording before playback
                 ToggleRecording();
             }
-
-            // Always play the track - recording requires audio to flow through the stream
-            PlayTrack(0);
 
             // Set up duration timer if specified
             if (ev.duration > 0) {
@@ -5006,10 +5006,16 @@ static void UpdateSchedSourceControls(HWND hwnd) {
     ShowWindow(GetDlgItem(hwnd, IDC_SCHED_RADIO), isFile ? SW_HIDE : SW_SHOW);
 }
 
-// Add schedule dialog proc
+// Event being edited (nullptr = adding new)
+static ScheduledEvent* g_editingEvent = nullptr;
+
+// Add/Edit schedule dialog proc
 static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_INITDIALOG: {
+            // Set title based on add vs edit mode
+            SetWindowTextW(hwnd, g_editingEvent ? L"Edit Scheduled Event" : L"Add Scheduled Event");
+
             // Action combo
             HWND hAction = GetDlgItem(hwnd, IDC_SCHED_ACTION);
             SendMessageW(hAction, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Playback"));
@@ -5058,28 +5064,67 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             SendMessageW(hStop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Recording only"));
             SendMessageW(hStop, CB_SETCURSEL, 0, 0);
 
-            // Set default date/time to now + 1 hour
-            SYSTEMTIME st;
-            GetLocalTime(&st);
-            // Add 1 hour
-            FILETIME ft;
-            SystemTimeToFileTime(&st, &ft);
-            ULARGE_INTEGER uli;
-            uli.LowPart = ft.dwLowDateTime;
-            uli.HighPart = ft.dwHighDateTime;
-            uli.QuadPart += 36000000000ULL;  // 1 hour in 100ns units
-            ft.dwLowDateTime = uli.LowPart;
-            ft.dwHighDateTime = uli.HighPart;
-            FileTimeToSystemTime(&ft, &st);
+            // Pre-populate fields if editing
+            if (g_editingEvent) {
+                SetDlgItemTextW(hwnd, IDC_SCHED_NAME, g_editingEvent->name.c_str());
+                SendMessageW(hAction, CB_SETCURSEL, static_cast<int>(g_editingEvent->action), 0);
+                SendMessageW(hSource, CB_SETCURSEL, static_cast<int>(g_editingEvent->sourceType), 0);
 
-            SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
-                reinterpret_cast<LPARAM>(&st));
-            SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
-                reinterpret_cast<LPARAM>(&st));
+                if (g_editingEvent->sourceType == ScheduleSource::File) {
+                    SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_editingEvent->sourcePath.c_str());
+                } else {
+                    // Find and select the radio station
+                    for (int i = 0; i < static_cast<int>(stations.size()); i++) {
+                        if (stations[i].id == g_editingEvent->radioStationId) {
+                            SendMessageW(hRadio, CB_SETCURSEL, i, 0);
+                            break;
+                        }
+                    }
+                }
 
-            // If currently playing, prefill file
-            if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
-                SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_playlist[g_currentTrack].c_str());
+                // Convert timestamp to SYSTEMTIME
+                time_t schedTime = static_cast<time_t>(g_editingEvent->scheduledTime);
+                struct tm* tm = localtime(&schedTime);
+                SYSTEMTIME st = {0};
+                st.wYear = static_cast<WORD>(tm->tm_year + 1900);
+                st.wMonth = static_cast<WORD>(tm->tm_mon + 1);
+                st.wDay = static_cast<WORD>(tm->tm_mday);
+                st.wHour = static_cast<WORD>(tm->tm_hour);
+                st.wMinute = static_cast<WORD>(tm->tm_min);
+
+                SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+                SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+
+                SendMessageW(hRepeat, CB_SETCURSEL, static_cast<int>(g_editingEvent->repeat), 0);
+                CheckDlgButton(hwnd, IDC_SCHED_ENABLED, g_editingEvent->enabled ? BST_CHECKED : BST_UNCHECKED);
+                SetDlgItemInt(hwnd, IDC_SCHED_DURATION, g_editingEvent->duration, FALSE);
+                SendMessageW(hStop, CB_SETCURSEL, static_cast<int>(g_editingEvent->stopAction), 0);
+            } else {
+                // Set default date/time to now + 1 hour
+                SYSTEMTIME st;
+                GetLocalTime(&st);
+                // Add 1 hour
+                FILETIME ft;
+                SystemTimeToFileTime(&st, &ft);
+                ULARGE_INTEGER uli;
+                uli.LowPart = ft.dwLowDateTime;
+                uli.HighPart = ft.dwHighDateTime;
+                uli.QuadPart += 36000000000ULL;  // 1 hour in 100ns units
+                ft.dwLowDateTime = uli.LowPart;
+                ft.dwHighDateTime = uli.HighPart;
+                FileTimeToSystemTime(&ft, &st);
+
+                SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+                SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+
+                // If currently playing, prefill file
+                if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+                    SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_playlist[g_currentTrack].c_str());
+                }
             }
 
             UpdateSchedSourceControls(hwnd);
@@ -5201,13 +5246,25 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                     ScheduleStopAction stopAction = static_cast<ScheduleStopAction>(
                         SendDlgItemMessageW(hwnd, IDC_SCHED_STOP, CB_GETCURSEL, 0, 0));
 
-                    int id = AddScheduledEvent(name, action, sourceType, sourcePath,
-                                               radioStationId, scheduledTime, repeat, enabled,
-                                               duration, stopAction);
-                    if (id >= 0) {
+                    bool success = false;
+                    if (g_editingEvent) {
+                        // Update existing event
+                        success = UpdateScheduledEvent(g_editingEvent->id, name, action, sourceType, sourcePath,
+                                                       radioStationId, scheduledTime, repeat, enabled,
+                                                       duration, stopAction);
+                    } else {
+                        // Add new event
+                        int id = AddScheduledEvent(name, action, sourceType, sourcePath,
+                                                   radioStationId, scheduledTime, repeat, enabled,
+                                                   duration, stopAction);
+                        success = (id >= 0);
+                    }
+
+                    if (success) {
                         EndDialog(hwnd, IDOK);
                     } else {
-                        MessageBoxW(hwnd, L"Failed to add scheduled event.", L"Add Schedule", MB_ICONERROR);
+                        MessageBoxW(hwnd, g_editingEvent ? L"Failed to update scheduled event." : L"Failed to add scheduled event.",
+                                    g_editingEvent ? L"Edit Schedule" : L"Add Schedule", MB_ICONERROR);
                     }
                     return TRUE;
                 }
@@ -5242,12 +5299,31 @@ static INT_PTR CALLBACK SchedulerDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case IDC_SCHED_ADD:
+                    g_editingEvent = nullptr;
                     if (DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_SCHED_ADD),
                                    hwnd, SchedAddDlgProc) == IDOK) {
                         RefreshScheduleList(hwnd);
                         Speak("Schedule added");
                     }
                     return TRUE;
+
+                case IDC_SCHED_EDIT: {
+                    HWND hList = GetDlgItem(hwnd, IDC_SCHED_LIST);
+                    int sel = static_cast<int>(SendMessageW(hList, LB_GETCURSEL, 0, 0));
+                    if (sel < 0 || sel >= static_cast<int>(g_schedEvents.size())) {
+                        Speak("No schedule selected");
+                        return TRUE;
+                    }
+                    g_editingEvent = &g_schedEvents[sel];
+                    if (DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_SCHED_ADD),
+                                   hwnd, SchedAddDlgProc) == IDOK) {
+                        RefreshScheduleList(hwnd);
+                        SendMessageW(hList, LB_SETCURSEL, sel, 0);
+                        Speak("Schedule updated");
+                    }
+                    g_editingEvent = nullptr;
+                    return TRUE;
+                }
 
                 case IDC_SCHED_LIST:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
@@ -5279,6 +5355,7 @@ static INT_PTR CALLBACK SchedulerDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
 
             SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_LIST), nullptr, 7, 20, w - 14, h - 60, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_ADD), nullptr, 7, h - 32, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_EDIT), nullptr, 64, h - 32, 50, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDCANCEL), nullptr, w - 64, h - 22, 50, 14, SWP_NOZORDER);
             return TRUE;
         }
