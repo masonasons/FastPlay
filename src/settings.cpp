@@ -161,6 +161,7 @@ void LoadSettings() {
     wchar_t dlBuf[512] = {0};
     GetPrivateProfileStringW(L"Downloads", L"Path", L"", dlBuf, 512, g_configPath.c_str());
     g_downloadPath = dlBuf;
+    g_downloadOrganizeByFeed = GetPrivateProfileIntW(L"Downloads", L"OrganizeByFeed", 0, g_configPath.c_str()) != 0;
 
     // Load recording settings
     wchar_t recBuf[512] = {0};
@@ -432,6 +433,7 @@ void SaveSettings() {
 
     // Save downloads settings
     WritePrivateProfileStringW(L"Downloads", L"Path", g_downloadPath.c_str(), g_configPath.c_str());
+    WritePrivateProfileStringW(L"Downloads", L"OrganizeByFeed", g_downloadOrganizeByFeed ? L"1" : L"0", g_configPath.c_str());
 
     // Save recording settings
     WritePrivateProfileStringW(L"Recording", L"Path", g_recordPath.c_str(), g_configPath.c_str());
@@ -608,10 +610,11 @@ void LoadPlaybackState() {
         for (int i = 0; i < trackCount; i++) {
             wchar_t key[32];
             swprintf(key, 32, L"Track%d", i);
-            wchar_t filePath[MAX_PATH] = {0};
-            GetPrivateProfileStringW(L"Playlist", key, L"", filePath, MAX_PATH, g_configPath.c_str());
+            wchar_t filePath[2048] = {0};  // Larger buffer for URLs
+            GetPrivateProfileStringW(L"Playlist", key, L"", filePath, 2048, g_configPath.c_str());
 
-            if (filePath[0] != L'\0' && GetFileAttributesW(filePath) != INVALID_FILE_ATTRIBUTES) {
+            // Add to playlist if non-empty (trust save code - don't validate files/URLs here)
+            if (filePath[0] != L'\0') {
                 g_playlist.push_back(filePath);
             }
         }
@@ -623,14 +626,17 @@ void LoadPlaybackState() {
             }
             g_currentTrack = currentTrack;
 
+            // LoadFile handles both files and URLs
             if (LoadFile(g_playlist[g_currentTrack].c_str())) {
-                // Restore position (use SeekToPosition for tempo processor compatibility)
-                wchar_t posBuf[32] = {0};
-                GetPrivateProfileStringW(L"State", L"LastPosition", L"0", posBuf, 32, g_configPath.c_str());
-                double position = _wtof(posBuf);
+                // Restore position for seekable streams only (not live streams)
+                if (!g_isLiveStream) {
+                    wchar_t posBuf[32] = {0};
+                    GetPrivateProfileStringW(L"State", L"LastPosition", L"0", posBuf, 32, g_configPath.c_str());
+                    double position = _wtof(posBuf);
 
-                if (position > 0) {
-                    SeekToPosition(position);
+                    if (position > 0) {
+                        SeekToPosition(position);
+                    }
                 }
             }
             return;
@@ -638,21 +644,25 @@ void LoadPlaybackState() {
     }
 
     // Fall back to single file (backwards compatibility)
-    wchar_t lastFile[MAX_PATH] = {0};
-    GetPrivateProfileStringW(L"State", L"LastFile", L"", lastFile, MAX_PATH, g_configPath.c_str());
+    wchar_t lastFile[2048] = {0};  // Larger buffer for URLs
+    GetPrivateProfileStringW(L"State", L"LastFile", L"", lastFile, 2048, g_configPath.c_str());
 
-    if (lastFile[0] != L'\0' && GetFileAttributesW(lastFile) != INVALID_FILE_ATTRIBUTES) {
+    // Trust save code - don't validate files/URLs here
+    if (lastFile[0] != L'\0') {
         g_playlist.push_back(lastFile);
         g_currentTrack = 0;
 
+        // LoadFile handles both files and URLs
         if (LoadFile(lastFile)) {
-            // Restore position (use SeekToPosition for tempo processor compatibility)
-            wchar_t posBuf[32] = {0};
-            GetPrivateProfileStringW(L"State", L"LastPosition", L"0", posBuf, 32, g_configPath.c_str());
-            double position = _wtof(posBuf);
+            // Restore position for seekable streams only (not live streams)
+            if (!g_isLiveStream) {
+                wchar_t posBuf[32] = {0};
+                GetPrivateProfileStringW(L"State", L"LastPosition", L"0", posBuf, 32, g_configPath.c_str());
+                double position = _wtof(posBuf);
 
-            if (position > 0) {
-                SeekToPosition(position);
+                if (position > 0) {
+                    SeekToPosition(position);
+                }
             }
         }
     }

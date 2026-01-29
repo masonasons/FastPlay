@@ -128,6 +128,11 @@ bool RemoveScheduledEvent(int id);
 bool UpdateScheduledEventEnabled(int id, bool enabled);
 bool UpdateScheduledEventLastRun(int id, int64_t lastRun);
 bool UpdateScheduledEventTime(int id, int64_t scheduledTime);
+bool UpdateScheduledEvent(int id, const std::wstring& name, ScheduleAction action,
+                          ScheduleSource sourceType, const std::wstring& sourcePath,
+                          int radioStationId, int64_t scheduledTime,
+                          ScheduleRepeat repeat, bool enabled,
+                          int duration, ScheduleStopAction stopAction);
 std::vector<ScheduledEvent> GetAllScheduledEvents();
 std::vector<ScheduledEvent> GetPendingScheduledEvents();
 

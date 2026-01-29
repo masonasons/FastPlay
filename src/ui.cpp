@@ -10,6 +10,7 @@
 #include "tempo_processor.h"
 #include "convolution.h"
 #include "database.h"
+#include "download_manager.h"
 #include "resource.h"
 #include <commdlg.h>
 #include <commctrl.h>
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <set>
 
 // External globals (defined in globals.cpp)
 extern HWND g_hwnd;
@@ -129,6 +131,21 @@ void UpdateStatusBar() {
             case BASS_ACTIVE_PAUSED:  stateText = L"Paused"; break;
             case BASS_ACTIVE_STOPPED: stateText = L"Stopped"; break;
             default: stateText = L""; break;
+        }
+
+        // Add bitrate if available
+        int bitrate = GetCurrentBitrate();
+        if (bitrate > 0) {
+            if (!stateText.empty()) stateText += L" | ";
+            wchar_t brBuf[48];
+            // Check if VBR
+            float vbr = 0;
+            if (g_sourceStream && BASS_ChannelGetAttribute(g_sourceStream, BASS_ATTRIB_VBR, &vbr) && vbr > 0) {
+                swprintf(brBuf, 48, L"~%d kbps VBR", bitrate);
+            } else {
+                swprintf(brBuf, 48, L"%d kbps", bitrate);
+            }
+            stateText += brBuf;
         }
 
         // Add recording indicator
@@ -738,43 +755,45 @@ void ShowPlaylistDialog() {
 
 // Helper to show/hide tab controls
 void ShowTabControls(HWND hwnd, int tab) {
-    // Tab indices: 0=Playback, 1=Recording, 2=Speech, 3=Movement, 4=File Types, 5=Global Hotkeys,
-    //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Rubber Band, 11=Speedy, 12=MIDI
+    // Tab indices: 0=Playback, 1=Recording, 2=Downloads, 3=Speech, 4=Movement, 5=File Types, 6=Global Hotkeys,
+    //              7=Effects, 8=Advanced, 9=YouTube, 10=SoundTouch, 11=Rubber Band, 12=Speedy, 13=MIDI
 
     // Playback tab controls (tab 0)
     int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
-    // Speech tab controls (tab 2)
+    // Downloads tab controls (tab 2)
+    int downloadsCtrls[] = {IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_DOWNLOAD_ORGANIZE};
+    // Speech tab controls (tab 3)
     int speechCtrls[] = {IDC_SPEECH_TRACKCHANGE, IDC_SPEECH_VOLUME, IDC_SPEECH_EFFECT};
-    // Movement tab controls (tab 3)
+    // Movement tab controls (tab 4)
     int movementCtrls[] = {IDC_SEEK_1S, IDC_SEEK_5S, IDC_SEEK_10S, IDC_SEEK_30S, IDC_SEEK_1M, IDC_SEEK_5M, IDC_SEEK_10M,
                            IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
-    // File Types tab controls (tab 4)
+    // File Types tab controls (tab 5)
     int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_WMA,
                            IDC_ASSOC_AAC, IDC_ASSOC_OPUS, IDC_ASSOC_AIFF, IDC_ASSOC_APE, IDC_ASSOC_WV,
                            IDC_ASSOC_M3U, IDC_ASSOC_M3U8, IDC_ASSOC_PLS, IDC_ASSOC_MID, IDC_ASSOC_MIDI};
-    // Global Hotkeys tab controls (tab 5)
+    // Global Hotkeys tab controls (tab 6)
     int hotkeyCtrls[] = {IDC_HOTKEY_ENABLED, IDC_HOTKEY_LIST, IDC_HOTKEY_ADD, IDC_HOTKEY_EDIT, IDC_HOTKEY_REMOVE};
-    // Effects tab controls (tab 6)
+    // Effects tab controls (tab 7)
     int effectCtrls[] = {IDC_EFFECT_VOLUME, IDC_EFFECT_PITCH, IDC_EFFECT_TEMPO, IDC_EFFECT_RATE, IDC_RATE_STEP_MODE,
                          IDC_DSP_REVERB, IDC_DSP_ECHO, IDC_DSP_EQ, IDC_DSP_COMPRESSOR, IDC_DSP_STEREOWIDTH,
                          IDC_DSP_CENTERCANCEL, IDC_DSP_CONVOLUTION, IDC_CONV_IR, IDC_CONV_BROWSE};
-    // Advanced tab controls (tab 7)
+    // Advanced tab controls (tab 8)
     int advancedCtrls[] = {IDC_BUFFER_SIZE, IDC_UPDATE_PERIOD, IDC_TEMPO_ALGORITHM,
                            IDC_EQ_BASS_FREQ, IDC_EQ_MID_FREQ, IDC_EQ_TREBLE_FREQ,
                            IDC_LEGACY_VOLUME};
-    // YouTube tab controls (tab 8)
+    // YouTube tab controls (tab 9)
     int youtubeCtrls[] = {IDC_YTDLP_PATH, IDC_YTDLP_BROWSE, IDC_YT_APIKEY};
-    // SoundTouch tab controls (tab 9)
+    // SoundTouch tab controls (tab 10)
     int soundtouchCtrls[] = {IDC_ST_AA_FILTER, IDC_ST_AA_LENGTH, IDC_ST_QUICK_ALGO, IDC_ST_SEQUENCE,
                              IDC_ST_SEEKWINDOW, IDC_ST_OVERLAP, IDC_ST_PREVENT_CLICK, IDC_ST_ALGORITHM};
-    // Rubber Band tab controls (tab 10)
+    // Rubber Band tab controls (tab 11)
     int rubberbandCtrls[] = {IDC_RB_FORMANT, IDC_RB_PITCH_MODE, IDC_RB_WINDOW, IDC_RB_TRANSIENTS,
                              IDC_RB_DETECTOR, IDC_RB_CHANNELS, IDC_RB_PHASE, IDC_RB_SMOOTHING};
-    // Speedy tab controls (tab 11)
+    // Speedy tab controls (tab 12)
     int speedyCtrls[] = {IDC_SPEEDY_NONLINEAR};
-    // MIDI tab controls (tab 12)
+    // MIDI tab controls (tab 13)
     int midiCtrls[] = {IDC_MIDI_SOUNDFONT, IDC_MIDI_SF_BROWSE, IDC_MIDI_VOICES, IDC_MIDI_SINC};
 
     // Show/hide playback controls
@@ -787,59 +806,64 @@ void ShowTabControls(HWND hwnd, int tab) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 1 ? SW_SHOW : SW_HIDE);
     }
 
+    // Show/hide downloads controls
+    for (int id : downloadsCtrls) {
+        ShowWindow(GetDlgItem(hwnd, id), tab == 2 ? SW_SHOW : SW_HIDE);
+    }
+
     // Show/hide speech controls
     for (int id : speechCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 2 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 3 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide movement controls
     for (int id : movementCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 3 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 4 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide file type controls
     for (int id : fileTypeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 4 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide hotkey controls
     for (int id : hotkeyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide effect controls
     for (int id : effectCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide advanced controls
     for (int id : advancedCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide YouTube controls
     for (int id : youtubeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide SoundTouch controls
     for (int id : soundtouchCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Rubber Band controls
     for (int id : rubberbandCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Speedy controls
     for (int id : speedyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide MIDI controls
     for (int id : midiCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 13 ? SW_SHOW : SW_HIDE);
     }
 }
 
@@ -855,28 +879,30 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             TabCtrl_InsertItem(hTab, 0, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Recording");
             TabCtrl_InsertItem(hTab, 1, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Speech");
+            tie.pszText = const_cast<LPWSTR>(L"Downloads");
             TabCtrl_InsertItem(hTab, 2, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Movement");
+            tie.pszText = const_cast<LPWSTR>(L"Speech");
             TabCtrl_InsertItem(hTab, 3, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"File Types");
+            tie.pszText = const_cast<LPWSTR>(L"Movement");
             TabCtrl_InsertItem(hTab, 4, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Global Hotkeys");
+            tie.pszText = const_cast<LPWSTR>(L"File Types");
             TabCtrl_InsertItem(hTab, 5, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Effects");
+            tie.pszText = const_cast<LPWSTR>(L"Global Hotkeys");
             TabCtrl_InsertItem(hTab, 6, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Advanced");
+            tie.pszText = const_cast<LPWSTR>(L"Effects");
             TabCtrl_InsertItem(hTab, 7, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"YouTube");
+            tie.pszText = const_cast<LPWSTR>(L"Advanced");
             TabCtrl_InsertItem(hTab, 8, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"SoundTouch");
+            tie.pszText = const_cast<LPWSTR>(L"YouTube");
             TabCtrl_InsertItem(hTab, 9, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Rubber Band");
+            tie.pszText = const_cast<LPWSTR>(L"SoundTouch");
             TabCtrl_InsertItem(hTab, 10, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Speedy");
+            tie.pszText = const_cast<LPWSTR>(L"Rubber Band");
             TabCtrl_InsertItem(hTab, 11, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            tie.pszText = const_cast<LPWSTR>(L"Speedy");
             TabCtrl_InsertItem(hTab, 12, &tie);
+            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            TabCtrl_InsertItem(hTab, 13, &tie);
 
             // Populate hotkey list and set enabled checkbox
             CheckDlgButton(hwnd, IDC_HOTKEY_ENABLED, g_hotkeysEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -924,8 +950,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
             SetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, g_rewindOnPauseMs, FALSE);
 
-            // Set download path
+            // Set download path and organize checkbox
             SetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, g_downloadPath.c_str());
+            CheckDlgButton(hwnd, IDC_DOWNLOAD_ORGANIZE, g_downloadOrganizeByFeed ? BST_CHECKED : BST_UNCHECKED);
 
             // Populate volume step combo box
             {
@@ -1263,11 +1290,12 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_rewindOnPauseMs = GetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, nullptr, FALSE);
                     if (g_rewindOnPauseMs < 0) g_rewindOnPauseMs = 0;
 
-                    // Get download path
+                    // Get download settings
                     {
                         wchar_t dlPath[MAX_PATH];
                         GetDlgItemTextW(hwnd, IDC_DOWNLOAD_PATH, dlPath, MAX_PATH);
                         g_downloadPath = dlPath;
+                        g_downloadOrganizeByFeed = (IsDlgButtonChecked(hwnd, IDC_DOWNLOAD_ORGANIZE) == BST_CHECKED);
                     }
 
                     // Get volume step setting
@@ -2840,7 +2868,7 @@ static std::wstring ResolveRadioStreamUrl(const RadioSearchResult& result) {
 // Show/hide radio dialog controls based on tab
 static void UpdateRadioTabVisibility(HWND hwnd, int tab) {
     // Favorites tab controls (tab 0)
-    int favCtrls[] = {IDC_RADIO_LIST, IDC_RADIO_ADD, IDC_RADIO_IMPORT};
+    int favCtrls[] = {IDC_RADIO_LIST, IDC_RADIO_ADD, IDC_RADIO_IMPORT, IDC_RADIO_EXPORT};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_RADIO_SEARCH_SOURCE, IDC_RADIO_SEARCH_EDIT, IDC_RADIO_SEARCH_BTN,
                          IDC_RADIO_SEARCH_LIST, IDC_RADIO_SEARCH_ADD};
@@ -3218,6 +3246,51 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     return TRUE;
                 }
 
+                case IDC_RADIO_EXPORT: {
+                    // Export favorites to M3U file
+                    if (g_radioStations.empty()) {
+                        Speak("No favorites to export");
+                        return TRUE;
+                    }
+
+                    wchar_t szFile[MAX_PATH] = L"radio_favorites.m3u";
+                    OPENFILENAMEW ofn = {0};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = hwnd;
+                    ofn.lpstrFile = szFile;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrFilter = L"M3U Playlist\0*.m3u\0All Files (*.*)\0*.*\0";
+                    ofn.nFilterIndex = 1;
+                    ofn.lpstrDefExt = L"m3u";
+                    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+
+                    if (GetSaveFileNameW(&ofn)) {
+                        FILE* f = _wfopen(szFile, L"wb");
+                        if (f) {
+                            // Write UTF-8 BOM
+                            fwrite("\xEF\xBB\xBF", 1, 3, f);
+                            // Write M3U header
+                            fprintf(f, "#EXTM3U\r\n");
+
+                            for (const auto& station : g_radioStations) {
+                                // Write EXTINF with station name
+                                std::string name = WideToUtf8(station.name);
+                                std::string url = WideToUtf8(station.url);
+                                fprintf(f, "#EXTINF:-1,%s\r\n", name.c_str());
+                                fprintf(f, "%s\r\n", url.c_str());
+                            }
+                            fclose(f);
+
+                            wchar_t msg[64];
+                            swprintf(msg, 64, L"Exported %d stations", static_cast<int>(g_radioStations.size()));
+                            Speak(WideToUtf8(msg).c_str());
+                        } else {
+                            Speak("Failed to write file");
+                        }
+                    }
+                    return TRUE;
+                }
+
                 case IDC_RADIO_LIST:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
                         // Double-click to play
@@ -3305,6 +3378,7 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                         SetCursor(LoadCursor(nullptr, IDC_ARROW));
                         if (!streamUrl.empty()) {
                             if (AddRadioStation(r.name, streamUrl) >= 0) {
+                                RefreshRadioList(hwnd);
                                 Speak("Added to favorites");
                             } else {
                                 Speak("Failed to add station");
@@ -3368,8 +3442,9 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
             // Favorites tab controls
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_LIST), nullptr, 14, 28, w - 28, h - 92, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_ADD), nullptr, w - 174, h - 54, 50, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_IMPORT), nullptr, w - 120, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_ADD), nullptr, w - 228, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_IMPORT), nullptr, w - 174, h - 54, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_EXPORT), nullptr, w - 120, h - 54, 50, 14, SWP_NOZORDER);
 
             // Search tab controls
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_EDIT), nullptr, 142, 28, w - 210, 14, SWP_NOZORDER);
@@ -3560,50 +3635,6 @@ static std::wstring PodcastUrlEncode(const std::wstring& str) {
     return encoded.str();
 }
 
-// Download parameters for threaded download
-struct PodcastDownloadParams {
-    std::wstring url;
-    std::wstring filepath;
-    HWND hwndNotify;
-};
-
-// Thread function to download podcast episode
-static DWORD WINAPI PodcastDownloadThread(LPVOID lpParam) {
-    PodcastDownloadParams* params = static_cast<PodcastDownloadParams*>(lpParam);
-    if (!params) return 1;
-
-    bool success = false;
-
-    // Use InternetOpenUrl for simplicity with redirects
-    HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (hInternet) {
-        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
-        HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), nullptr, 0, flags, 0);
-        if (hUrl) {
-            FILE* file = _wfopen(params->filepath.c_str(), L"wb");
-            if (file) {
-                char buffer[8192];
-                DWORD bytesRead;
-                while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
-                    fwrite(buffer, 1, bytesRead, file);
-                }
-                fclose(file);
-                success = true;
-            }
-            InternetCloseHandle(hUrl);
-        }
-        InternetCloseHandle(hInternet);
-    }
-
-    // Notify completion (post message to main thread)
-    if (params->hwndNotify) {
-        PostMessageW(params->hwndNotify, WM_USER + 100, success ? 1 : 0, 0);
-    }
-
-    delete params;
-    return success ? 0 : 1;
-}
-
 // Sanitize filename for saving
 static std::wstring SanitizeFilename(const std::wstring& name) {
     std::wstring result;
@@ -3661,7 +3692,7 @@ static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstrin
         }
     }
 
-    // Basic HTML entity decode
+    // Basic HTML entity decode - named entities
     size_t pos = 0;
     while ((pos = content.find(L"&amp;", pos)) != std::wstring::npos) {
         content.replace(pos, 5, L"&");
@@ -3681,6 +3712,35 @@ static std::wstring ExtractXmlContent(const std::wstring& xml, const std::wstrin
     pos = 0;
     while ((pos = content.find(L"&apos;", pos)) != std::wstring::npos) {
         content.replace(pos, 6, L"'");
+    }
+    pos = 0;
+    while ((pos = content.find(L"&nbsp;", pos)) != std::wstring::npos) {
+        content.replace(pos, 6, L" ");
+    }
+
+    // Numeric HTML entities (&#039; &#39; &#34; etc.)
+    pos = 0;
+    while ((pos = content.find(L"&#", pos)) != std::wstring::npos) {
+        size_t semicolon = content.find(L';', pos);
+        if (semicolon != std::wstring::npos && semicolon - pos < 8) {
+            std::wstring numStr = content.substr(pos + 2, semicolon - pos - 2);
+            int codePoint = 0;
+            if (!numStr.empty() && (numStr[0] == L'x' || numStr[0] == L'X')) {
+                // Hex: &#x27;
+                codePoint = wcstol(numStr.c_str() + 1, nullptr, 16);
+            } else {
+                // Decimal: &#39;
+                codePoint = wcstol(numStr.c_str(), nullptr, 10);
+            }
+            if (codePoint > 0 && codePoint < 0x10000) {
+                wchar_t ch = static_cast<wchar_t>(codePoint);
+                content.replace(pos, semicolon - pos + 1, 1, ch);
+            } else {
+                pos++;  // Skip invalid entity
+            }
+        } else {
+            pos++;  // Skip malformed entity
+        }
     }
 
     return content;
@@ -4048,8 +4108,9 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 static void UpdatePodcastTabVisibility(HWND hwnd, int tab) {
     // Subscriptions tab controls (tab 0)
     int subsCtrls[] = {IDC_PODCAST_SUBS_LIST, IDC_PODCAST_EPISODES, IDC_PODCAST_EP_DESC,
-                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_REFRESH,
-                       IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL, IDC_PODCAST_SUBS_HELP};
+                       IDC_PODCAST_DOWNLOAD, IDC_PODCAST_DOWNLOAD_ALL, IDC_PODCAST_EXPORT_OPML,
+                       IDC_PODCAST_REFRESH, IDC_PODCAST_SUBS_LABEL, IDC_PODCAST_EP_LABEL,
+                       IDC_PODCAST_SUBS_HELP};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_PODCAST_SEARCH_EDIT, IDC_PODCAST_SEARCH_BTN,
                          IDC_PODCAST_SEARCH_LIST, IDC_PODCAST_IMPORT_OPML, IDC_PODCAST_SUBSCRIBE,
@@ -4250,14 +4311,30 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         return TRUE;
                     }
 
+                    // Build download folder path
+                    std::wstring downloadFolder = g_downloadPath;
+                    if (!downloadFolder.empty() && downloadFolder.back() != L'\\') downloadFolder += L'\\';
+
+                    // If organize by feed is enabled, create subfolder
+                    if (g_downloadOrganizeByFeed && g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                std::wstring feedFolder = SanitizeFilename(sub.name);
+                                if (!feedFolder.empty()) {
+                                    downloadFolder += feedFolder + L'\\';
+                                    CreateDirectoryW(downloadFolder.c_str(), nullptr);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
                     // Build filename from episode title
                     std::wstring filename = SanitizeFilename(ep.title);
                     if (filename.empty()) filename = L"episode";
                     filename += GetUrlExtension(ep.audioUrl);
 
-                    std::wstring filepath = g_downloadPath;
-                    if (!filepath.empty() && filepath.back() != L'\\') filepath += L'\\';
-                    filepath += filename;
+                    std::wstring filepath = downloadFolder + filename;
 
                     // Check if file already exists
                     if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -4265,19 +4342,167 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         return TRUE;
                     }
 
-                    // Start download in background thread
-                    PodcastDownloadParams* params = new PodcastDownloadParams();
-                    params->url = ep.audioUrl;
-                    params->filepath = filepath;
-                    params->hwndNotify = hwnd;
+                    // Enqueue single download
+                    DownloadManager::Instance().Enqueue(ep.audioUrl, filepath, ep.title);
+                    Speak("Downloading");
+                    return TRUE;
+                }
 
-                    HANDLE hThread = CreateThread(nullptr, 0, PodcastDownloadThread, params, 0, nullptr);
-                    if (hThread) {
-                        CloseHandle(hThread);
-                        Speak("Downloading");
+                case IDC_PODCAST_DOWNLOAD_ALL: {
+                    // Download all episodes in the current feed using download queue
+                    if (g_podcastEpisodes.empty()) {
+                        Speak("No episodes loaded");
+                        return TRUE;
+                    }
+
+                    if (g_downloadPath.empty()) {
+                        Speak("Please set a downloads folder in Options");
+                        return TRUE;
+                    }
+
+                    // Build download folder path
+                    std::wstring downloadFolder = g_downloadPath;
+                    if (!downloadFolder.empty() && downloadFolder.back() != L'\\') downloadFolder += L'\\';
+
+                    // If organize by feed is enabled, create subfolder
+                    if (g_downloadOrganizeByFeed && g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                std::wstring feedFolder = SanitizeFilename(sub.name);
+                                if (!feedFolder.empty()) {
+                                    downloadFolder += feedFolder + L'\\';
+                                    CreateDirectoryW(downloadFolder.c_str(), nullptr);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Build list of downloads for the queue
+                    std::vector<std::tuple<std::wstring, std::wstring, std::wstring>> downloads;
+                    std::set<std::wstring> usedFilenames;
+                    int skipped = 0;
+
+                    for (const auto& ep : g_podcastEpisodes) {
+                        if (ep.audioUrl.empty()) {
+                            skipped++;
+                            continue;
+                        }
+
+                        std::wstring baseName = SanitizeFilename(ep.title);
+                        if (baseName.empty()) baseName = L"episode";
+                        std::wstring ext = GetUrlExtension(ep.audioUrl);
+                        std::wstring filename = baseName + ext;
+                        std::wstring filepath = downloadFolder + filename;
+
+                        // Skip if file already exists on disk
+                        if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                            skipped++;
+                            continue;
+                        }
+
+                        // Handle duplicate titles within this batch by adding number suffix
+                        int dupCount = 1;
+                        while (usedFilenames.count(filename) > 0) {
+                            dupCount++;
+                            wchar_t suffix[16];
+                            swprintf(suffix, 16, L" (%d)", dupCount);
+                            filename = baseName + suffix + ext;
+                            filepath = downloadFolder + filename;
+                        }
+                        usedFilenames.insert(filename);
+
+                        downloads.push_back(std::make_tuple(ep.audioUrl, filepath, ep.title));
+                    }
+
+                    // Enqueue all downloads (manager handles concurrency limit and speech)
+                    if (!downloads.empty()) {
+                        DownloadManager::Instance().EnqueueMultiple(downloads);
+                    }
+
+                    char msg[128];
+                    int downloadCount = static_cast<int>(downloads.size());
+                    if (downloadCount == 0) {
+                        Speak("No episodes to download");
+                    } else if (skipped > 0) {
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", downloadCount, skipped);
+                        Speak(msg);
                     } else {
-                        delete params;
-                        Speak("Failed to start download");
+                        snprintf(msg, sizeof(msg), "Downloading %d episodes", downloadCount);
+                        Speak(msg);
+                    }
+                    return TRUE;
+                }
+
+                case IDC_PODCAST_EXPORT_OPML: {
+                    // Export subscriptions to OPML file
+                    if (g_podcastSubs.empty()) {
+                        Speak("No subscriptions to export");
+                        return TRUE;
+                    }
+
+                    wchar_t filePath[MAX_PATH] = L"podcasts.opml";
+                    OPENFILENAMEW ofn = {0};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = hwnd;
+                    ofn.lpstrFilter = L"OPML Files (*.opml)\0*.opml\0All Files (*.*)\0*.*\0";
+                    ofn.lpstrFile = filePath;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrTitle = L"Export OPML";
+                    ofn.lpstrDefExt = L"opml";
+                    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+
+                    if (GetSaveFileNameW(&ofn)) {
+                        FILE* f = _wfopen(filePath, L"wb");
+                        if (f) {
+                            // Write UTF-8 BOM
+                            fwrite("\xEF\xBB\xBF", 1, 3, f);
+
+                            // Write OPML header
+                            fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+                            fprintf(f, "<opml version=\"2.0\">\n");
+                            fprintf(f, "  <head>\n");
+                            fprintf(f, "    <title>FastPlay Podcast Subscriptions</title>\n");
+                            fprintf(f, "  </head>\n");
+                            fprintf(f, "  <body>\n");
+
+                            // Write each subscription
+                            for (const auto& sub : g_podcastSubs) {
+                                std::string title = WideToUtf8(sub.name);
+                                std::string feedUrl = WideToUtf8(sub.feedUrl);
+
+                                // Escape XML special characters
+                                std::string escapedTitle, escapedUrl;
+                                for (char c : title) {
+                                    if (c == '&') escapedTitle += "&amp;";
+                                    else if (c == '<') escapedTitle += "&lt;";
+                                    else if (c == '>') escapedTitle += "&gt;";
+                                    else if (c == '"') escapedTitle += "&quot;";
+                                    else if (c == '\'') escapedTitle += "&apos;";
+                                    else escapedTitle += c;
+                                }
+                                for (char c : feedUrl) {
+                                    if (c == '&') escapedUrl += "&amp;";
+                                    else if (c == '<') escapedUrl += "&lt;";
+                                    else if (c == '>') escapedUrl += "&gt;";
+                                    else if (c == '"') escapedUrl += "&quot;";
+                                    else escapedUrl += c;
+                                }
+
+                                fprintf(f, "    <outline type=\"rss\" text=\"%s\" xmlUrl=\"%s\"/>\n",
+                                        escapedTitle.c_str(), escapedUrl.c_str());
+                            }
+
+                            fprintf(f, "  </body>\n");
+                            fprintf(f, "</opml>\n");
+                            fclose(f);
+
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Exported %d subscriptions", static_cast<int>(g_podcastSubs.size()));
+                            Speak(msg);
+                        } else {
+                            Speak("Failed to create file");
+                        }
                     }
                     return TRUE;
                 }
@@ -4532,8 +4757,9 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_EP_DESC), nullptr, epsX, descY, epsWidth, descHeight, SWP_NOZORDER);
 
             // Reposition buttons
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 190, height - 46, 60, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD), nullptr, width - 124, height - 46, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_ADD_FEED), nullptr, width - 248, height - 46, 60, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD), nullptr, width - 184, height - 46, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_DOWNLOAD_ALL), nullptr, width - 130, height - 46, 58, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_PODCAST_REFRESH), nullptr, width - 64, height - 46, 50, 14, SWP_NOZORDER);
 
             // Search tab controls
@@ -4557,15 +4783,6 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             mmi->ptMinTrackSize.y = 250;
             return 0;
         }
-
-        case WM_USER + 100:
-            // Download completion notification
-            if (wParam) {
-                Speak("Download complete");
-            } else {
-                Speak("Download failed");
-            }
-            return TRUE;
     }
     return FALSE;
 }
@@ -4709,13 +4926,13 @@ void CheckScheduledEvents() {
                 g_schedulerMuted = true;
             }
 
+            // Always play the track first - recording requires audio to flow through the stream
+            PlayTrack(0);
+
+            // Start recording AFTER playback begins (requires active stream)
             if (shouldRecord && !g_isRecording) {
-                // Start recording before playback
                 ToggleRecording();
             }
-
-            // Always play the track - recording requires audio to flow through the stream
-            PlayTrack(0);
 
             // Set up duration timer if specified
             if (ev.duration > 0) {
@@ -4794,10 +5011,16 @@ static void UpdateSchedSourceControls(HWND hwnd) {
     ShowWindow(GetDlgItem(hwnd, IDC_SCHED_RADIO), isFile ? SW_HIDE : SW_SHOW);
 }
 
-// Add schedule dialog proc
+// Event being edited (nullptr = adding new)
+static ScheduledEvent* g_editingEvent = nullptr;
+
+// Add/Edit schedule dialog proc
 static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_INITDIALOG: {
+            // Set title based on add vs edit mode
+            SetWindowTextW(hwnd, g_editingEvent ? L"Edit Scheduled Event" : L"Add Scheduled Event");
+
             // Action combo
             HWND hAction = GetDlgItem(hwnd, IDC_SCHED_ACTION);
             SendMessageW(hAction, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Playback"));
@@ -4846,28 +5069,67 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             SendMessageW(hStop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Recording only"));
             SendMessageW(hStop, CB_SETCURSEL, 0, 0);
 
-            // Set default date/time to now + 1 hour
-            SYSTEMTIME st;
-            GetLocalTime(&st);
-            // Add 1 hour
-            FILETIME ft;
-            SystemTimeToFileTime(&st, &ft);
-            ULARGE_INTEGER uli;
-            uli.LowPart = ft.dwLowDateTime;
-            uli.HighPart = ft.dwHighDateTime;
-            uli.QuadPart += 36000000000ULL;  // 1 hour in 100ns units
-            ft.dwLowDateTime = uli.LowPart;
-            ft.dwHighDateTime = uli.HighPart;
-            FileTimeToSystemTime(&ft, &st);
+            // Pre-populate fields if editing
+            if (g_editingEvent) {
+                SetDlgItemTextW(hwnd, IDC_SCHED_NAME, g_editingEvent->name.c_str());
+                SendMessageW(hAction, CB_SETCURSEL, static_cast<int>(g_editingEvent->action), 0);
+                SendMessageW(hSource, CB_SETCURSEL, static_cast<int>(g_editingEvent->sourceType), 0);
 
-            SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
-                reinterpret_cast<LPARAM>(&st));
-            SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
-                reinterpret_cast<LPARAM>(&st));
+                if (g_editingEvent->sourceType == ScheduleSource::File) {
+                    SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_editingEvent->sourcePath.c_str());
+                } else {
+                    // Find and select the radio station
+                    for (int i = 0; i < static_cast<int>(stations.size()); i++) {
+                        if (stations[i].id == g_editingEvent->radioStationId) {
+                            SendMessageW(hRadio, CB_SETCURSEL, i, 0);
+                            break;
+                        }
+                    }
+                }
 
-            // If currently playing, prefill file
-            if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
-                SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_playlist[g_currentTrack].c_str());
+                // Convert timestamp to SYSTEMTIME
+                time_t schedTime = static_cast<time_t>(g_editingEvent->scheduledTime);
+                struct tm* tm = localtime(&schedTime);
+                SYSTEMTIME st = {0};
+                st.wYear = static_cast<WORD>(tm->tm_year + 1900);
+                st.wMonth = static_cast<WORD>(tm->tm_mon + 1);
+                st.wDay = static_cast<WORD>(tm->tm_mday);
+                st.wHour = static_cast<WORD>(tm->tm_hour);
+                st.wMinute = static_cast<WORD>(tm->tm_min);
+
+                SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+                SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+
+                SendMessageW(hRepeat, CB_SETCURSEL, static_cast<int>(g_editingEvent->repeat), 0);
+                CheckDlgButton(hwnd, IDC_SCHED_ENABLED, g_editingEvent->enabled ? BST_CHECKED : BST_UNCHECKED);
+                SetDlgItemInt(hwnd, IDC_SCHED_DURATION, g_editingEvent->duration, FALSE);
+                SendMessageW(hStop, CB_SETCURSEL, static_cast<int>(g_editingEvent->stopAction), 0);
+            } else {
+                // Set default date/time to now + 1 hour
+                SYSTEMTIME st;
+                GetLocalTime(&st);
+                // Add 1 hour
+                FILETIME ft;
+                SystemTimeToFileTime(&st, &ft);
+                ULARGE_INTEGER uli;
+                uli.LowPart = ft.dwLowDateTime;
+                uli.HighPart = ft.dwHighDateTime;
+                uli.QuadPart += 36000000000ULL;  // 1 hour in 100ns units
+                ft.dwLowDateTime = uli.LowPart;
+                ft.dwHighDateTime = uli.HighPart;
+                FileTimeToSystemTime(&ft, &st);
+
+                SendDlgItemMessageW(hwnd, IDC_SCHED_DATE, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+                SendDlgItemMessageW(hwnd, IDC_SCHED_TIME, DTM_SETSYSTEMTIME, GDT_VALID,
+                    reinterpret_cast<LPARAM>(&st));
+
+                // If currently playing, prefill file
+                if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+                    SetDlgItemTextW(hwnd, IDC_SCHED_FILE, g_playlist[g_currentTrack].c_str());
+                }
             }
 
             UpdateSchedSourceControls(hwnd);
@@ -4989,13 +5251,25 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                     ScheduleStopAction stopAction = static_cast<ScheduleStopAction>(
                         SendDlgItemMessageW(hwnd, IDC_SCHED_STOP, CB_GETCURSEL, 0, 0));
 
-                    int id = AddScheduledEvent(name, action, sourceType, sourcePath,
-                                               radioStationId, scheduledTime, repeat, enabled,
-                                               duration, stopAction);
-                    if (id >= 0) {
+                    bool success = false;
+                    if (g_editingEvent) {
+                        // Update existing event
+                        success = UpdateScheduledEvent(g_editingEvent->id, name, action, sourceType, sourcePath,
+                                                       radioStationId, scheduledTime, repeat, enabled,
+                                                       duration, stopAction);
+                    } else {
+                        // Add new event
+                        int id = AddScheduledEvent(name, action, sourceType, sourcePath,
+                                                   radioStationId, scheduledTime, repeat, enabled,
+                                                   duration, stopAction);
+                        success = (id >= 0);
+                    }
+
+                    if (success) {
                         EndDialog(hwnd, IDOK);
                     } else {
-                        MessageBoxW(hwnd, L"Failed to add scheduled event.", L"Add Schedule", MB_ICONERROR);
+                        MessageBoxW(hwnd, g_editingEvent ? L"Failed to update scheduled event." : L"Failed to add scheduled event.",
+                                    g_editingEvent ? L"Edit Schedule" : L"Add Schedule", MB_ICONERROR);
                     }
                     return TRUE;
                 }
@@ -5030,12 +5304,31 @@ static INT_PTR CALLBACK SchedulerDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case IDC_SCHED_ADD:
+                    g_editingEvent = nullptr;
                     if (DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_SCHED_ADD),
                                    hwnd, SchedAddDlgProc) == IDOK) {
                         RefreshScheduleList(hwnd);
                         Speak("Schedule added");
                     }
                     return TRUE;
+
+                case IDC_SCHED_EDIT: {
+                    HWND hList = GetDlgItem(hwnd, IDC_SCHED_LIST);
+                    int sel = static_cast<int>(SendMessageW(hList, LB_GETCURSEL, 0, 0));
+                    if (sel < 0 || sel >= static_cast<int>(g_schedEvents.size())) {
+                        Speak("No schedule selected");
+                        return TRUE;
+                    }
+                    g_editingEvent = &g_schedEvents[sel];
+                    if (DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_SCHED_ADD),
+                                   hwnd, SchedAddDlgProc) == IDOK) {
+                        RefreshScheduleList(hwnd);
+                        SendMessageW(hList, LB_SETCURSEL, sel, 0);
+                        Speak("Schedule updated");
+                    }
+                    g_editingEvent = nullptr;
+                    return TRUE;
+                }
 
                 case IDC_SCHED_LIST:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
@@ -5067,6 +5360,7 @@ static INT_PTR CALLBACK SchedulerDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
 
             SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_LIST), nullptr, 7, 20, w - 14, h - 60, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_ADD), nullptr, 7, h - 32, 50, 14, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_SCHED_EDIT), nullptr, 64, h - 32, 50, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDCANCEL), nullptr, w - 64, h - 22, 50, 14, SWP_NOZORDER);
             return TRUE;
         }

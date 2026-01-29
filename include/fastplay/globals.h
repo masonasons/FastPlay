@@ -36,6 +36,7 @@ extern HWND g_statusBar;
 // BASS state
 extern HSTREAM g_stream;      // Source stream
 extern HSTREAM g_fxStream;    // Tempo stream (wraps g_stream for pitch/tempo)
+extern HSTREAM g_sourceStream; // Original decode stream (for bitrate queries, not freed separately)
 extern HSYNC g_endSync;
 extern HSYNC g_metaSync;      // Sync for stream metadata changes
 extern float g_volume;
@@ -48,6 +49,7 @@ extern float g_pitch;
 extern float g_rate;
 extern float g_originalFreq;  // Original sample rate for rate control
 extern bool g_isLiveStream;   // True if current stream is non-seekable (live stream)
+extern int g_currentBitrate;  // Cached bitrate of current file (kbps)
 
 // Playlist
 extern std::vector<std::wstring> g_playlist;
@@ -168,7 +170,8 @@ extern std::wstring g_ytdlpPath;    // Path to yt-dlp executable
 extern std::wstring g_ytApiKey;     // YouTube Data API key (optional)
 
 // Downloads settings
-extern std::wstring g_downloadPath; // Output directory for podcast downloads
+extern std::wstring g_downloadPath;      // Output directory for podcast downloads
+extern bool g_downloadOrganizeByFeed;    // Organize downloads into folders by feed title
 
 // Recording settings
 extern std::wstring g_recordPath;       // Output directory for recordings

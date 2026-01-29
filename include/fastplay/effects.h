@@ -36,6 +36,8 @@ void SetParamValue(ParamId id, float value);
 void CycleParam(int direction);
 void AdjustCurrentParam(int direction);
 void ResetCurrentParam();
+void SetCurrentParamToMin();
+void SetCurrentParamToMax();
 void AnnounceCurrentParam();
 int GetAvailableParamCount();
 

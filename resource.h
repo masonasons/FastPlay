@@ -117,6 +117,12 @@
 #define IDM_EFFECT_UP       232
 #define IDM_EFFECT_DOWN     233
 #define IDM_EFFECT_RESET    234
+#define IDM_EFFECT_MIN      235
+#define IDM_EFFECT_MAX      236
+
+// Audio device menu
+#define IDM_SHOW_AUDIO_DEVICES  237
+#define IDM_AUDIO_DEVICE_BASE   5000  // Actual device IDs are IDM_AUDIO_DEVICE_BASE + device index
 
 // Effect toggles (for hotkeys)
 #define IDM_TOGGLE_VOLUME       240
@@ -254,12 +260,14 @@
 #define IDD_RADIO_ADD       860
 #define IDC_RADIO_NAME      861
 #define IDC_RADIO_URL       862
+#define IDC_RADIO_EXPORT    863
 
 // Scheduler
 #define IDM_FILE_SCHEDULE   108
 #define IDD_SCHEDULER       870
 #define IDC_SCHED_LIST      871
 #define IDC_SCHED_ADD       872
+#define IDC_SCHED_EDIT      873
 
 // Add schedule dialog
 #define IDD_SCHED_ADD       880
@@ -337,10 +345,13 @@
 #define IDC_PODCAST_PASSWORD    974
 #define IDC_PODCAST_DOWNLOAD    975
 #define IDC_PODCAST_IMPORT_OPML 976
+#define IDC_PODCAST_DOWNLOAD_ALL 977
+#define IDC_PODCAST_EXPORT_OPML 978
 
-// Downloads path in Playback tab
+// Downloads tab
 #define IDC_DOWNLOAD_PATH       980
 #define IDC_DOWNLOAD_BROWSE     981
+#define IDC_DOWNLOAD_ORGANIZE   982
 
 #define IDOK                1
 #define IDCANCEL            2

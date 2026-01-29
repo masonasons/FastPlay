@@ -20,6 +20,7 @@
 #include "effects.h"
 #include "database.h"
 #include "youtube.h"
+#include "download_manager.h"
 #include "resource.h"
 
 #pragma comment(lib, "bass.lib")
@@ -371,6 +372,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_EFFECT_RESET:
                     ResetCurrentParam();
                     break;
+                case IDM_EFFECT_MIN:
+                    SetCurrentParamToMin();
+                    break;
+                case IDM_EFFECT_MAX:
+                    SetCurrentParamToMax();
+                    break;
                 // Effect toggles
                 case IDM_TOGGLE_VOLUME:
                     ToggleStreamEffect(0);
@@ -471,6 +478,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_RECORD_TOGGLE:
                     ToggleRecording();
                     break;
+                case IDM_SHOW_AUDIO_DEVICES:
+                    ShowAudioDeviceMenu(hwnd);
+                    break;
+                default:
+                    // Handle audio device selection (dynamic menu IDs)
+                    {
+                        WORD cmdId = LOWORD(wParam);
+                        if (cmdId >= IDM_AUDIO_DEVICE_BASE && cmdId < IDM_AUDIO_DEVICE_BASE + 100) {
+                            int deviceIndex = cmdId - IDM_AUDIO_DEVICE_BASE;
+                            SelectAudioDevice(deviceIndex);
+                        }
+                    }
+                    break;
             }
             return 0;
 
@@ -492,6 +512,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             FreeSpeech();
             PostQuitMessage(0);
             return 0;
+    }
+
+    // Download completion from DownloadManager (posted to main window)
+    if (msg == WM_DOWNLOAD_COMPLETE) {
+        int id = static_cast<int>(wParam);
+        bool success = (lParam != 0);
+        DownloadManager::Instance().ProcessCompletion(id, success);
+        return 0;
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);

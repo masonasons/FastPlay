@@ -62,7 +62,7 @@ set "SOURCES=src\main.cpp src\globals.cpp src\utils.cpp src\player.cpp"
 set "SOURCES=%SOURCES% src\settings.cpp src\hotkeys.cpp src\tray.cpp"
 set "SOURCES=%SOURCES% src\accessibility.cpp src\ui.cpp src\effects.cpp"
 set "SOURCES=%SOURCES% src\database.cpp src\sqlite3.c"
-set "SOURCES=%SOURCES% src\tempo_processor.cpp src\youtube.cpp src\center_cancel.cpp src\convolution.cpp"
+set "SOURCES=%SOURCES% src\tempo_processor.cpp src\youtube.cpp src\center_cancel.cpp src\convolution.cpp src\download_manager.cpp"
 
 REM Add Rubber Band source if enabled
 if defined RUBBERBAND_SRC set "SOURCES=%SOURCES% %RUBBERBAND_SRC%"

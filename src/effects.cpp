@@ -969,6 +969,74 @@ void ResetCurrentParam() {
     AnnounceCurrentParam();
 }
 
+void SetCurrentParamToMin() {
+    std::vector<ParamId> params = GetAvailableParams();
+    if (params.empty()) return;
+
+    // Check if current param is available
+    bool found = false;
+    for (const auto& p : params) {
+        if ((int)p == g_currentParamIndex) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        g_currentParamIndex = (int)params[0];
+    }
+
+    ParamId id = (ParamId)g_currentParamIndex;
+    const ParamDef* def = GetParamDef(id);
+    if (!def) return;
+
+    // Block tempo and rate min for live streams
+    if (g_isLiveStream && (id == ParamId::Tempo || id == ParamId::Rate)) {
+        Speak("Not available for live streams");
+        return;
+    }
+
+    SetParamValue(id, def->minValue);
+    AnnounceCurrentParam();
+}
+
+void SetCurrentParamToMax() {
+    std::vector<ParamId> params = GetAvailableParams();
+    if (params.empty()) return;
+
+    // Check if current param is available
+    bool found = false;
+    for (const auto& p : params) {
+        if ((int)p == g_currentParamIndex) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        g_currentParamIndex = (int)params[0];
+    }
+
+    ParamId id = (ParamId)g_currentParamIndex;
+    const ParamDef* def = GetParamDef(id);
+    if (!def) return;
+
+    // Block tempo and rate max for live streams
+    if (g_isLiveStream && (id == ParamId::Tempo || id == ParamId::Rate)) {
+        Speak("Not available for live streams");
+        return;
+    }
+
+    // Use maxValue, but respect g_allowAmplify for volume
+    float maxVal = def->maxValue;
+    if (id == ParamId::Volume && !g_allowAmplify && maxVal > 1.0f) {
+        maxVal = 1.0f;
+    }
+
+    SetParamValue(id, maxVal);
+    AnnounceCurrentParam();
+}
+
 void AnnounceCurrentParam() {
     if (!g_speechEffect) return;
 

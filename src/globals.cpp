@@ -13,6 +13,7 @@ HWND g_statusBar = nullptr;
 // BASS state
 HSTREAM g_stream = 0;      // Source stream
 HSTREAM g_fxStream = 0;    // Tempo stream (wraps g_stream for pitch/tempo)
+HSTREAM g_sourceStream = 0; // Original decode stream (for bitrate queries)
 HSYNC g_endSync = 0;
 HSYNC g_metaSync = 0;      // Sync for stream metadata changes
 float g_volume = 1.0f;
@@ -25,6 +26,7 @@ float g_pitch = 0.0f;
 float g_rate = 1.0f;
 float g_originalFreq = 44100.0f;  // Default, updated when loading files
 bool g_isLiveStream = false;      // True if current stream is non-seekable
+int g_currentBitrate = 0;         // Cached bitrate of current file (kbps)
 
 // Playlist
 std::vector<std::wstring> g_playlist;
@@ -142,7 +144,9 @@ const HotkeyAction g_hotkeyActions[] = {
     // Recording
     {IDM_RECORD_TOGGLE, L"Toggle Recording"},
     // Shuffle
-    {IDM_PLAY_SHUFFLE, L"Toggle Shuffle"}
+    {IDM_PLAY_SHUFFLE, L"Toggle Shuffle"},
+    // Audio device
+    {IDM_SHOW_AUDIO_DEVICES, L"Audio Device Menu"}
 };
 const int g_hotkeyActionCount = sizeof(g_hotkeyActions) / sizeof(g_hotkeyActions[0]);
 
@@ -218,7 +222,8 @@ std::wstring g_ytdlpPath;   // Path to yt-dlp executable
 std::wstring g_ytApiKey;    // YouTube Data API key (optional)
 
 // Downloads settings
-std::wstring g_downloadPath;  // Output directory for podcast downloads
+std::wstring g_downloadPath;             // Output directory for podcast downloads
+bool g_downloadOrganizeByFeed = false;   // Organize downloads into folders by feed title
 
 // Recording settings
 std::wstring g_recordPath;                          // Output directory

@@ -73,9 +73,6 @@ BEGIN
     EDITTEXT        IDC_REWIND_ON_PAUSE, 250, 143, 30, 14, ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
     COMBOBOX        IDC_VOLUME_STEP, 215, 116, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "&Downloads folder:", -1, 17, 160, 65, 10
-    EDITTEXT        IDC_DOWNLOAD_PATH, 17, 172, 205, 14, ES_AUTOHSCROLL | ES_READONLY
-    PUSHBUTTON      "Br&owse...", IDC_DOWNLOAD_BROWSE, 225, 171, 45, 14
 
     // Recording tab controls (shown when tab 1 selected)
     LTEXT           "Record audio output to file. Press R to toggle recording.", -1, 17, 30, 230, 10
@@ -91,7 +88,14 @@ BEGIN
     COMBOBOX        IDC_REC_BITRATE, 163, 106, 70, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "(Bitrate only applies to MP3 and OGG formats)", -1, 17, 125, 200, 10
 
-    // Speech tab controls (shown when Speech tab selected)
+    // Downloads tab controls (shown when tab 2 selected)
+    LTEXT           "Configure podcast episode download settings.", -1, 17, 30, 230, 10
+    LTEXT           "&Downloads folder:", -1, 17, 50, 65, 10
+    EDITTEXT        IDC_DOWNLOAD_PATH, 17, 62, 205, 14, ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "&Browse...", IDC_DOWNLOAD_BROWSE, 225, 61, 45, 14
+    AUTOCHECKBOX    "&Organize downloads into folders by feed title", IDC_DOWNLOAD_ORGANIZE, 17, 82, 200, 10
+
+    // Speech tab controls (shown when tab 3 selected)
     LTEXT           "Configure speech feedback for various events.", -1, 17, 30, 230, 10
     AUTOCHECKBOX    "&Announce track changes", IDC_SPEECH_TRACKCHANGE, 17, 50, 150, 10
     AUTOCHECKBOX    "Speak &volume when adjusted", IDC_SPEECH_VOLUME, 17, 70, 150, 10
@@ -309,8 +313,9 @@ BEGIN
     // Favorites tab controls
     LISTBOX         IDC_RADIO_LIST, 14, 28, 322, 195, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Enter = play, Delete = remove, Escape = close", -1, 14, 228, 200, 10
-    PUSHBUTTON      "&Add...", IDC_RADIO_ADD, 170, 226, 50, 14
-    PUSHBUTTON      "&Import...", IDC_RADIO_IMPORT, 224, 226, 50, 14
+    PUSHBUTTON      "&Add...", IDC_RADIO_ADD, 116, 226, 50, 14
+    PUSHBUTTON      "&Import...", IDC_RADIO_IMPORT, 170, 226, 50, 14
+    PUSHBUTTON      "&Export...", IDC_RADIO_EXPORT, 224, 226, 50, 14
     // Search tab controls
     LTEXT           "&Source:", -1, 14, 30, 30, 10
     COMBOBOX        IDC_RADIO_SEARCH_SOURCE, 47, 28, 90, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
@@ -345,6 +350,7 @@ BEGIN
     LTEXT           "Scheduled events (Enter = toggle, Delete = remove, Escape = close):", -1, 7, 7, 280, 10
     LISTBOX         IDC_SCHED_LIST, 7, 20, 366, 225, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "&Add...", IDC_SCHED_ADD, 7, 252, 50, 14
+    PUSHBUTTON      "&Edit...", IDC_SCHED_EDIT, 61, 252, 50, 14
     PUSHBUTTON      "Close", IDCANCEL, 323, 260, 50, 14
 END
 
@@ -412,9 +418,11 @@ BEGIN
     LTEXT           "&Episodes:", IDC_PODCAST_EP_LABEL, 172, 28, 50, 10
     LISTBOX         IDC_PODCAST_EPISODES, 172, 40, 264, 130, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        IDC_PODCAST_EP_DESC, 172, 174, 264, 66, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
-    LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 280, 10
-    PUSHBUTTON      "&Download", IDC_PODCAST_DOWNLOAD, 300, 244, 50, 14
-    PUSHBUTTON      "&Refresh", IDC_PODCAST_REFRESH, 364, 244, 50, 14
+    LTEXT           "Enter = load/play, Delete = unsubscribe, F5 = refresh, Escape = close", IDC_PODCAST_SUBS_HELP, 14, 246, 230, 10
+    PUSHBUTTON      "&Download", IDC_PODCAST_DOWNLOAD, 172, 244, 50, 14
+    PUSHBUTTON      "Download &All", IDC_PODCAST_DOWNLOAD_ALL, 226, 244, 58, 14
+    PUSHBUTTON      "&Export OPML...", IDC_PODCAST_EXPORT_OPML, 288, 244, 60, 14
+    PUSHBUTTON      "&Refresh", IDC_PODCAST_REFRESH, 352, 244, 50, 14
     // Search tab controls (tab 1)
     LTEXT           "&Search iTunes:", IDC_PODCAST_SEARCH_LABEL, 14, 30, 55, 10
     EDITTEXT        IDC_PODCAST_SEARCH_EDIT, 72, 28, 290, 14, ES_AUTOHSCROLL
@@ -423,7 +431,7 @@ BEGIN
     LTEXT           "Enter = preview, Escape = close", IDC_PODCAST_SEARCH_HELP, 14, 228, 150, 10
     PUSHBUTTON      "S&ubscribe", IDC_PODCAST_SUBSCRIBE, 168, 226, 55, 14
     PUSHBUTTON      "&Import OPML...", IDC_PODCAST_IMPORT_OPML, 228, 226, 60, 14
-    PUSHBUTTON      "Add &URL...", IDC_PODCAST_ADD_URL, 293, 226, 55, 14
+    PUSHBUTTON      "&Add URL...", IDC_PODCAST_ADD_URL, 293, 226, 55, 14
     // Common
     PUSHBUTTON      "Close", IDCANCEL, 386, 278, 50, 14
 END
@@ -490,6 +498,10 @@ BEGIN
     VK_OEM_4,       IDM_EFFECT_PREV,    VIRTKEY          // [ key
     VK_OEM_6,       IDM_EFFECT_NEXT,    VIRTKEY          // ] key
     VK_BACK,        IDM_EFFECT_RESET,   VIRTKEY          // Backspace key
+    VK_HOME,        IDM_EFFECT_MIN,     VIRTKEY, CONTROL // Ctrl+Home = min value
+    VK_END,         IDM_EFFECT_MAX,     VIRTKEY, CONTROL // Ctrl+End = max value
+    // Audio device selection
+    "A",            IDM_SHOW_AUDIO_DEVICES, VIRTKEY      // A = show audio devices menu
     // Tag reading (1-0 keys)
     "1",            IDM_READ_TAG_TITLE,     VIRTKEY
     "2",            IDM_READ_TAG_ARTIST,    VIRTKEY

@@ -138,6 +138,89 @@ std::wstring GetDeviceName(int device) {
     return L"";
 }
 
+// Show popup menu with audio devices
+void ShowAudioDeviceMenu(HWND hwnd) {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    BASS_DEVICEINFO info;
+    int itemCount = 0;
+
+    for (int i = 1; BASS_GetDeviceInfo(i, &info); i++) {
+        if (info.flags & BASS_DEVICE_ENABLED) {
+            // Convert device name to wide string
+            int len = MultiByteToWideChar(CP_ACP, 0, info.name, -1, nullptr, 0);
+            std::wstring wideName(len, 0);
+            MultiByteToWideChar(CP_ACP, 0, info.name, -1, &wideName[0], len);
+            if (!wideName.empty() && wideName.back() == L'\0') {
+                wideName.pop_back();
+            }
+
+            UINT flags = MF_STRING;
+            // Check if this is the current device
+            if (i == g_selectedDevice || (g_selectedDevice == -1 && (info.flags & BASS_DEVICE_DEFAULT))) {
+                flags |= MF_CHECKED;
+            }
+
+            AppendMenuW(hMenu, flags, IDM_AUDIO_DEVICE_BASE + i, wideName.c_str());
+            itemCount++;
+        }
+    }
+
+    if (itemCount == 0) {
+        DestroyMenu(hMenu);
+        Speak("No audio devices found");
+        return;
+    }
+
+    // Check if window was hidden (for global hotkey support)
+    bool wasHidden = !IsWindowVisible(hwnd);
+    if (wasHidden) {
+        ShowWindow(hwnd, SW_SHOW);
+    }
+
+    // Get cursor position for menu
+    POINT pt;
+    GetCursorPos(&pt);
+
+    // Show the popup menu and get the selected command
+    SetForegroundWindow(hwnd);
+    int cmd = TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, pt.x, pt.y, 0, hwnd, nullptr);
+    DestroyMenu(hMenu);
+
+    // Handle device selection
+    if (cmd >= IDM_AUDIO_DEVICE_BASE && cmd < IDM_AUDIO_DEVICE_BASE + 100) {
+        int deviceIndex = cmd - IDM_AUDIO_DEVICE_BASE;
+        SelectAudioDevice(deviceIndex);
+    }
+
+    // Re-hide window if it was hidden before
+    if (wasHidden) {
+        ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+// Select and switch to an audio device
+void SelectAudioDevice(int deviceIndex) {
+    if (deviceIndex <= 0) return;
+
+    // Get device name for announcement
+    std::wstring deviceName = GetDeviceName(deviceIndex);
+
+    // Try to reinitialize BASS with the new device
+    if (ReinitBass(deviceIndex)) {
+        g_selectedDevice = deviceIndex;
+        g_selectedDeviceName = deviceName;
+        SaveSettings();
+
+        // Announce the change
+        std::string msg = "Switched to " + WideToUtf8(deviceName);
+        Speak(msg.c_str());
+    } else {
+        Speak("Failed to switch audio device");
+    }
+}
+
 // Check if file is a MIDI file by extension
 static bool IsMidiFile(const wchar_t* path) {
     const wchar_t* ext = wcsrchr(path, L'.');
@@ -225,6 +308,8 @@ void FreeBass() {
         BASS_StreamFree(g_stream);
         g_stream = 0;
     }
+    g_sourceStream = 0;  // Don't free - owned by tempo processor
+    g_currentBitrate = 0;
     BASS_Free();
 }
 
@@ -319,6 +404,15 @@ bool LoadURL(const wchar_t* url) {
     BASS_CHANNELINFO info;
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
+
+    // Store source stream for bitrate queries
+    g_sourceStream = g_stream;
+
+    // Capture initial bitrate (may come from stream headers or BASS attribute)
+    float bitrate = 0;
+    BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
+    g_currentBitrate = static_cast<int>(bitrate);
+    // If no BASS bitrate, ICY headers will be checked by GetCurrentBitrate()
 
     // Set up metadata sync for stream title changes (internet radio)
     g_metaSync = BASS_ChannelSetSync(g_stream, BASS_SYNC_META, 0, OnMetaChange, nullptr);
@@ -708,6 +802,14 @@ bool LoadFile(const wchar_t* path) {
     BASS_ChannelGetInfo(g_stream, &info);
     g_originalFreq = static_cast<float>(info.freq);
 
+    // Store source stream for VBR bitrate queries (not freed separately - owned by tempo processor)
+    g_sourceStream = g_stream;
+
+    // Capture initial bitrate
+    float bitrate = 0;
+    BASS_ChannelGetAttribute(g_stream, BASS_ATTRIB_BITRATE, &bitrate);
+    g_currentBitrate = static_cast<int>(bitrate);
+
     // Set up tempo processor based on selected algorithm
     TempoAlgorithm algo = static_cast<TempoAlgorithm>(g_tempoAlgorithm);
     SetCurrentAlgorithm(algo);
@@ -816,16 +918,19 @@ void AnnounceStreamMetadata() {
 // Play or pause current track
 void PlayPause() {
     if (!g_fxStream) {
-        // Nothing loaded, try to play first track
-        if (!g_playlist.empty()) {
-            PlayTrack(0);
-        }
+        // Nothing loaded - try to reload current track or play first
+        Play();
         return;
     }
 
     DWORD state = BASS_ChannelIsActive(g_fxStream);
     if (state == BASS_ACTIVE_PLAYING) {
-        Pause();
+        // For live streams, stop instead of pause
+        if (g_isLiveStream) {
+            Stop();
+        } else {
+            Pause();
+        }
     } else {
         BASS_ChannelPlay(g_fxStream, FALSE);
         UpdateWindowTitle();
@@ -833,10 +938,52 @@ void PlayPause() {
     }
 }
 
+// Free current stream (used when stopping live streams)
+void FreeCurrentStream() {
+    if (g_fxStream) {
+        if (g_endSync) {
+            BASS_ChannelRemoveSync(g_fxStream, g_endSync);
+            g_endSync = 0;
+        }
+        RemoveDSPEffects();
+        BASS_ChannelStop(g_fxStream);
+        BASS_StreamFree(g_fxStream);
+        g_fxStream = 0;
+    }
+    if (g_stream) {
+        if (g_metaSync) {
+            BASS_ChannelRemoveSync(g_stream, g_metaSync);
+            g_metaSync = 0;
+        }
+        BASS_StreamFree(g_stream);
+        g_stream = 0;
+    }
+    g_sourceStream = 0;
+    g_isLiveStream = false;
+    g_currentBitrate = 0;
+    FreeTempoProcessor();
+}
+
 // Play (restart if playing, resume if paused/stopped)
 void Play() {
     if (!g_fxStream) {
-        // Nothing loaded, try to play first track
+        // Nothing loaded - check if we have a current track to reload
+        // (This handles the case where a live stream was stopped/freed)
+        if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+            const std::wstring& path = g_playlist[g_currentTrack];
+            if (IsURL(path.c_str())) {
+                LoadURL(path.c_str());
+            } else {
+                LoadFile(path.c_str());
+            }
+            if (g_fxStream) {
+                BASS_ChannelPlay(g_fxStream, FALSE);
+                UpdateWindowTitle();
+                UpdateStatusBar();
+            }
+            return;
+        }
+        // No current track, try to play first track
         if (!g_playlist.empty()) {
             PlayTrack(0);
         }
@@ -859,6 +1006,11 @@ void Play() {
 // Pause playback
 void Pause() {
     if (g_fxStream) {
+        // Don't allow pausing live streams
+        if (g_isLiveStream) {
+            Speak("Cannot pause live stream");
+            return;
+        }
         BASS_ChannelPause(g_fxStream);
 
         if (g_rewindOnPauseMs > 0) {
@@ -873,10 +1025,16 @@ void Pause() {
 // Stop playback
 void Stop() {
     if (g_fxStream) {
-        BASS_ChannelStop(g_fxStream);
-        TempoProcessor* processor = GetTempoProcessor();
-        if (processor && processor->IsActive()) {
-            processor->SetPosition(0);
+        // For live streams, free the stream entirely to disconnect
+        // (otherwise BASS buffers it and stop/play acts like pause/resume)
+        if (g_isLiveStream) {
+            FreeCurrentStream();
+        } else {
+            BASS_ChannelStop(g_fxStream);
+            TempoProcessor* processor = GetTempoProcessor();
+            if (processor && processor->IsActive()) {
+                processor->SetPosition(0);
+            }
         }
     }
     UpdateWindowTitle();
@@ -1826,6 +1984,11 @@ static HSTREAM GetTagStream() {
     return g_stream ? g_stream : g_fxStream;
 }
 
+// Helper to speak UTF-8 text with proper Unicode support
+static void SpeakUtf8(const std::string& text) {
+    SpeakW(Utf8ToWide(text));
+}
+
 void SpeakTagTitle() {
     HSTREAM stream = GetTagStream();
     if (!stream) {
@@ -1836,7 +1999,7 @@ void SpeakTagTitle() {
     // For streams, first check if there's a full stream title (often "Artist - Title")
     std::string streamTitle = GetStreamTitle(stream);
     if (!streamTitle.empty()) {
-        Speak(streamTitle);
+        SpeakUtf8(streamTitle);
         return;
     }
 
@@ -1857,11 +2020,11 @@ void SpeakTagTitle() {
     }
 
     if (!artist.empty() && !title.empty()) {
-        Speak(artist + " - " + title);
+        SpeakUtf8(artist + " - " + title);
     } else if (!title.empty()) {
-        Speak(title);
+        SpeakUtf8(title);
     } else if (!artist.empty()) {
-        Speak(artist);
+        SpeakUtf8(artist);
     } else {
         Speak("No title");
     }
@@ -1885,7 +2048,7 @@ void SpeakTagArtist() {
     }
 
     if (!artist.empty()) {
-        Speak("Artist: " + artist);
+        SpeakUtf8("Artist: " + artist);
     } else {
         Speak("No artist");
     }
@@ -1912,13 +2075,13 @@ void SpeakTagAlbum() {
     if (album.empty()) {
         std::string station = GetStationName(stream);
         if (!station.empty()) {
-            Speak("Station: " + station);
+            SpeakUtf8("Station: " + station);
             return;
         }
     }
 
     if (!album.empty()) {
-        Speak("Album: " + album);
+        SpeakUtf8("Album: " + album);
     } else {
         Speak("No album");
     }
@@ -1943,7 +2106,7 @@ void SpeakTagYear() {
     }
 
     if (!year.empty()) {
-        Speak("Year: " + year);
+        SpeakUtf8("Year: " + year);
     } else {
         Speak("No year");
     }
@@ -1972,7 +2135,7 @@ void SpeakTagTrack() {
     }
 
     if (!track.empty()) {
-        Speak("Track: " + track);
+        SpeakUtf8("Track: " + track);
     } else {
         Speak("No track number");
     }
@@ -1996,7 +2159,7 @@ void SpeakTagGenre() {
     }
 
     if (!genre.empty()) {
-        Speak("Genre: " + genre);
+        SpeakUtf8("Genre: " + genre);
     } else {
         Speak("No genre");
     }
@@ -2026,7 +2189,7 @@ void SpeakTagComment() {
     }
 
     if (!comment.empty()) {
-        Speak("Comment: " + comment);
+        SpeakUtf8("Comment: " + comment);
     } else {
         Speak("No comment");
     }
@@ -2071,6 +2234,28 @@ void SpeakTagBitrate() {
     }
 
     Speak(buf);
+}
+
+int GetCurrentBitrate() {
+    // Try to get live bitrate from source stream (updates for VBR files)
+    // g_sourceStream is the original decode stream before tempo processing
+    if (g_sourceStream) {
+        float bitrate = 0;
+        if (BASS_ChannelGetAttribute(g_sourceStream, BASS_ATTRIB_BITRATE, &bitrate) && bitrate > 0) {
+            return static_cast<int>(bitrate);
+        }
+    }
+
+    // Fall back to cached bitrate (captured at load time)
+    if (g_currentBitrate > 0) return g_currentBitrate;
+
+    // Fall back to ICY headers for internet streams
+    if (g_sourceStream) {
+        int icyBitrate = GetStreamBitrate(g_sourceStream);
+        if (icyBitrate > 0) return icyBitrate;
+    }
+
+    return 0;
 }
 
 void SpeakTagDuration() {
@@ -2125,9 +2310,7 @@ void SpeakTagFilename() {
     // Check if it's a URL
     if (IsURL(path.c_str())) {
         // For streams, show the full URL
-        char buf[1024];
-        WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
-        Speak(std::string("URL: ") + buf);
+        SpeakW(L"URL: " + path);
         return;
     }
 
@@ -2137,11 +2320,7 @@ void SpeakTagFilename() {
 
     std::wstring filename = lastSlash ? (lastSlash + 1) : path;
 
-    // Convert to narrow string for speech
-    char buf[512];
-    WideCharToMultiByte(CP_UTF8, 0, filename.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
-
-    Speak(std::string("Filename: ") + buf);
+    SpeakW(L"Filename: " + filename);
 }
 
 // Tag retrieval functions for display in dialog

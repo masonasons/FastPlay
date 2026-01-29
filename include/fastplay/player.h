@@ -20,6 +20,7 @@ void PlayPause();
 void Play();
 void Pause();
 void Stop();
+void FreeCurrentStream();
 
 // Seeking
 void Seek(double seconds);
@@ -53,6 +54,8 @@ void AnnounceStreamMetadata();
 bool ReinitBass(int device);
 int FindDeviceByName(const std::wstring& name);
 std::wstring GetDeviceName(int device);
+void ShowAudioDeviceMenu(HWND hwnd);
+void SelectAudioDevice(int deviceIndex);
 
 // Speak functions
 void SpeakElapsed();
@@ -68,6 +71,7 @@ void SpeakTagTrack();
 void SpeakTagGenre();
 void SpeakTagComment();
 void SpeakTagBitrate();
+int GetCurrentBitrate();  // Returns current stream bitrate in kbps, or 0 if unavailable
 void SpeakTagDuration();
 void SpeakTagFilename();
 
