@@ -91,12 +91,14 @@ const SeekAmount g_seekAmounts[] = {
     {60.0, "1 minute", IDC_SEEK_1M, false},
     {300.0, "5 minutes", IDC_SEEK_5M, false},
     {600.0, "10 minutes", IDC_SEEK_10M, false},
+    {1800.0, "30 minutes", IDC_SEEK_30M, false},
+    {3600.0, "1 hour", IDC_SEEK_1H, false},
     {1.0, "1 track", IDC_SEEK_1T, true},
     {5.0, "5 tracks", IDC_SEEK_5T, true},
     {10.0, "10 tracks", IDC_SEEK_10T, true}
 };
 const int g_seekAmountCount = sizeof(g_seekAmounts) / sizeof(g_seekAmounts[0]);
-bool g_seekEnabled[10] = {false, true, false, false, false, false, false, false, false, false};
+bool g_seekEnabled[12] = {false, true, false, false, false, false, false, false, false, false, false, false};
 int g_currentSeekIndex = 1;
 
 // Hotkey actions

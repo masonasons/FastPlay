@@ -768,7 +768,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     int speechCtrls[] = {IDC_SPEECH_TRACKCHANGE, IDC_SPEECH_VOLUME, IDC_SPEECH_EFFECT};
     // Movement tab controls (tab 4)
     int movementCtrls[] = {IDC_SEEK_1S, IDC_SEEK_5S, IDC_SEEK_10S, IDC_SEEK_30S, IDC_SEEK_1M, IDC_SEEK_5M, IDC_SEEK_10M,
-                           IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
+                           IDC_SEEK_30M, IDC_SEEK_1H, IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
     // File Types tab controls (tab 5)
     int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_WMA,
                            IDC_ASSOC_AAC, IDC_ASSOC_OPUS, IDC_ASSOC_AIFF, IDC_ASSOC_APE, IDC_ASSOC_WV,
@@ -989,9 +989,11 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_SEEK_1M, g_seekEnabled[4] ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SEEK_5M, g_seekEnabled[5] ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SEEK_10M, g_seekEnabled[6] ? BST_CHECKED : BST_UNCHECKED);
-            CheckDlgButton(hwnd, IDC_SEEK_1T, g_seekEnabled[7] ? BST_CHECKED : BST_UNCHECKED);
-            CheckDlgButton(hwnd, IDC_SEEK_5T, g_seekEnabled[8] ? BST_CHECKED : BST_UNCHECKED);
-            CheckDlgButton(hwnd, IDC_SEEK_10T, g_seekEnabled[9] ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_SEEK_30M, g_seekEnabled[7] ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_SEEK_1H, g_seekEnabled[8] ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_SEEK_1T, g_seekEnabled[9] ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_SEEK_5T, g_seekEnabled[10] ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_SEEK_10T, g_seekEnabled[11] ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHAPTER_SEEK, g_chapterSeekEnabled ? BST_CHECKED : BST_UNCHECKED);
 
             // Set file association checkboxes based on current registry state
@@ -1336,9 +1338,11 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_seekEnabled[4] = (IsDlgButtonChecked(hwnd, IDC_SEEK_1M) == BST_CHECKED);
                     g_seekEnabled[5] = (IsDlgButtonChecked(hwnd, IDC_SEEK_5M) == BST_CHECKED);
                     g_seekEnabled[6] = (IsDlgButtonChecked(hwnd, IDC_SEEK_10M) == BST_CHECKED);
-                    g_seekEnabled[7] = (IsDlgButtonChecked(hwnd, IDC_SEEK_1T) == BST_CHECKED);
-                    g_seekEnabled[8] = (IsDlgButtonChecked(hwnd, IDC_SEEK_5T) == BST_CHECKED);
-                    g_seekEnabled[9] = (IsDlgButtonChecked(hwnd, IDC_SEEK_10T) == BST_CHECKED);
+                    g_seekEnabled[7] = (IsDlgButtonChecked(hwnd, IDC_SEEK_30M) == BST_CHECKED);
+                    g_seekEnabled[8] = (IsDlgButtonChecked(hwnd, IDC_SEEK_1H) == BST_CHECKED);
+                    g_seekEnabled[9] = (IsDlgButtonChecked(hwnd, IDC_SEEK_1T) == BST_CHECKED);
+                    g_seekEnabled[10] = (IsDlgButtonChecked(hwnd, IDC_SEEK_5T) == BST_CHECKED);
+                    g_seekEnabled[11] = (IsDlgButtonChecked(hwnd, IDC_SEEK_10T) == BST_CHECKED);
                     g_chapterSeekEnabled = (IsDlgButtonChecked(hwnd, IDC_CHAPTER_SEEK) == BST_CHECKED);
 
                     // Validate current seek index - ensure it points to an enabled amount

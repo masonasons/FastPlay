@@ -110,6 +110,8 @@ BEGIN
     AUTOCHECKBOX    "1 &minute", IDC_SEEK_1M, 17, 105, 60, 10
     AUTOCHECKBOX    "5 m&inutes", IDC_SEEK_5M, 17, 120, 60, 10
     AUTOCHECKBOX    "10 min&utes", IDC_SEEK_10M, 17, 135, 60, 10
+    AUTOCHECKBOX    "3&0 minutes", IDC_SEEK_30M, 80, 120, 60, 10
+    AUTOCHECKBOX    "1 &hour", IDC_SEEK_1H, 80, 135, 60, 10
     AUTOCHECKBOX    "1 &track", IDC_SEEK_1T, 17, 150, 60, 10
     AUTOCHECKBOX    "5 t&racks", IDC_SEEK_5T, 17, 165, 60, 10
     AUTOCHECKBOX    "10 trac&ks", IDC_SEEK_10T, 80, 165, 60, 10

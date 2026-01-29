@@ -191,9 +191,11 @@ void LoadSettings() {
     g_seekEnabled[4] = GetPrivateProfileIntW(L"Movement", L"Seek1m", 0, g_configPath.c_str()) != 0;
     g_seekEnabled[5] = GetPrivateProfileIntW(L"Movement", L"Seek5m", 0, g_configPath.c_str()) != 0;
     g_seekEnabled[6] = GetPrivateProfileIntW(L"Movement", L"Seek10m", 0, g_configPath.c_str()) != 0;
-    g_seekEnabled[7] = GetPrivateProfileIntW(L"Movement", L"Seek1t", 0, g_configPath.c_str()) != 0;
-    g_seekEnabled[8] = GetPrivateProfileIntW(L"Movement", L"Seek5t", 0, g_configPath.c_str()) != 0;
-    g_seekEnabled[9] = GetPrivateProfileIntW(L"Movement", L"Seek10t", 0, g_configPath.c_str()) != 0;
+    g_seekEnabled[7] = GetPrivateProfileIntW(L"Movement", L"Seek30m", 0, g_configPath.c_str()) != 0;
+    g_seekEnabled[8] = GetPrivateProfileIntW(L"Movement", L"Seek1h", 0, g_configPath.c_str()) != 0;
+    g_seekEnabled[9] = GetPrivateProfileIntW(L"Movement", L"Seek1t", 0, g_configPath.c_str()) != 0;
+    g_seekEnabled[10] = GetPrivateProfileIntW(L"Movement", L"Seek5t", 0, g_configPath.c_str()) != 0;
+    g_seekEnabled[11] = GetPrivateProfileIntW(L"Movement", L"Seek10t", 0, g_configPath.c_str()) != 0;
     g_chapterSeekEnabled = GetPrivateProfileIntW(L"Movement", L"ChapterSeek", 1, g_configPath.c_str()) != 0;
     g_currentSeekIndex = GetPrivateProfileIntW(L"Movement", L"CurrentSeek", 1, g_configPath.c_str());
 
@@ -460,9 +462,11 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"Movement", L"Seek1m", g_seekEnabled[4] ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Movement", L"Seek5m", g_seekEnabled[5] ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Movement", L"Seek10m", g_seekEnabled[6] ? L"1" : L"0", g_configPath.c_str());
-    WritePrivateProfileStringW(L"Movement", L"Seek1t", g_seekEnabled[7] ? L"1" : L"0", g_configPath.c_str());
-    WritePrivateProfileStringW(L"Movement", L"Seek5t", g_seekEnabled[8] ? L"1" : L"0", g_configPath.c_str());
-    WritePrivateProfileStringW(L"Movement", L"Seek10t", g_seekEnabled[9] ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Movement", L"Seek30m", g_seekEnabled[7] ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Movement", L"Seek1h", g_seekEnabled[8] ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Movement", L"Seek1t", g_seekEnabled[9] ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Movement", L"Seek5t", g_seekEnabled[10] ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Movement", L"Seek10t", g_seekEnabled[11] ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Movement", L"ChapterSeek", g_chapterSeekEnabled ? L"1" : L"0", g_configPath.c_str());
 
     swprintf(buf, 32, L"%d", g_currentSeekIndex);

@@ -103,6 +103,8 @@
 #define IDC_SEEK_1M         514
 #define IDC_SEEK_5M         515
 #define IDC_SEEK_10M        516
+#define IDC_SEEK_30M        545
+#define IDC_SEEK_1H         546
 #define IDC_SEEK_1T         517
 #define IDC_SEEK_5T         518
 #define IDC_SEEK_10T        519
