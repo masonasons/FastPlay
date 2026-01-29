@@ -2589,6 +2589,91 @@ static bool IsPlaylistUrl(const std::wstring& url) {
     );
 }
 
+// Stream option for multi-URL selection
+struct StreamOption {
+    std::wstring url;
+    std::wstring label;
+};
+
+// Parse playlist content (M3U or PLS) to extract ALL stream URLs
+static std::vector<StreamOption> ParsePlaylistContentMultiple(const std::string& content) {
+    std::vector<StreamOption> urls;
+
+    // Make lowercase copy for case-insensitive searching
+    std::string lower = content;
+    for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+
+    // Check if it's a PLS file (case-insensitive)
+    if (lower.find("[playlist]") != std::string::npos) {
+        // Look for File1=, File2=, etc.
+        for (int i = 1; i <= 20; i++) {
+            std::string key = "file" + std::to_string(i) + "=";
+            size_t filePos = lower.find(key);
+            if (filePos == std::string::npos) continue;
+
+            filePos += key.length();
+            size_t endPos = content.find_first_of("\r\n", filePos);
+            if (endPos == std::string::npos) endPos = content.length();
+            std::string url = content.substr(filePos, endPos - filePos);
+            // Trim whitespace
+            while (!url.empty() && (url.back() == ' ' || url.back() == '\t')) url.pop_back();
+            while (!url.empty() && (url.front() == ' ' || url.front() == '\t')) url.erase(0, 1);
+
+            if (!url.empty()) {
+                // Look for corresponding Title
+                std::string titleKey = "title" + std::to_string(i) + "=";
+                size_t titlePos = lower.find(titleKey);
+                std::wstring label = L"Stream " + std::to_wstring(i);
+                if (titlePos != std::string::npos) {
+                    titlePos += titleKey.length();
+                    size_t titleEnd = content.find_first_of("\r\n", titlePos);
+                    if (titleEnd == std::string::npos) titleEnd = content.length();
+                    std::string title = content.substr(titlePos, titleEnd - titlePos);
+                    while (!title.empty() && (title.back() == ' ' || title.back() == '\t')) title.pop_back();
+                    while (!title.empty() && (title.front() == ' ' || title.front() == '\t')) title.erase(0, 1);
+                    if (!title.empty()) label = Utf8ToWide(title);
+                }
+                urls.push_back({Utf8ToWide(url), label});
+            }
+        }
+        if (!urls.empty()) return urls;
+    }
+
+    // Check if it's an M3U file - get all http URLs
+    std::istringstream iss(content);
+    std::string line;
+    std::string pendingTitle;
+    int streamNum = 1;
+    while (std::getline(iss, line)) {
+        // Trim
+        while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) line.erase(0, 1);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r')) line.pop_back();
+
+        if (line.empty()) continue;
+
+        // Check for #EXTINF line with title
+        if (line.find("#EXTINF:") == 0) {
+            size_t commaPos = line.find(',');
+            if (commaPos != std::string::npos && commaPos + 1 < line.length()) {
+                pendingTitle = line.substr(commaPos + 1);
+            }
+            continue;
+        }
+
+        if (line[0] == '#') continue;
+
+        if (line.find("http") == 0) {
+            std::wstring label = pendingTitle.empty() ?
+                L"Stream " + std::to_wstring(streamNum) : Utf8ToWide(pendingTitle);
+            urls.push_back({Utf8ToWide(line), label});
+            pendingTitle.clear();
+            streamNum++;
+        }
+    }
+
+    return urls;
+}
+
 // Resolve a TuneIn playlist URL to get the actual stream URL
 static std::wstring ResolveTuneInUrl(const std::wstring& playlistUrl) {
     std::wstring currentUrl = playlistUrl;
@@ -2617,6 +2702,46 @@ static std::wstring ResolveTuneInUrl(const std::wstring& playlistUrl) {
 
     // If we've followed too many redirects, return the last URL we got
     return currentUrl;
+}
+
+// Resolve a TuneIn playlist URL to get ALL stream URLs
+static std::vector<StreamOption> ResolveTuneInUrls(const std::wstring& playlistUrl) {
+    std::vector<StreamOption> result;
+    std::wstring currentUrl = playlistUrl;
+
+    // First fetch the playlist
+    std::wstring content = RadioHttpGet(currentUrl);
+    if (content.empty()) return result;
+
+    std::string narrow = WideToUtf8(content);
+
+    // Get all URLs from the playlist
+    result = ParsePlaylistContentMultiple(narrow);
+
+    // If we got multiple results, check if any are playlists themselves and resolve them
+    if (result.size() == 1 && IsPlaylistUrl(result[0].url)) {
+        // Single result is another playlist, follow it
+        std::wstring nested = RadioHttpGet(result[0].url);
+        if (!nested.empty()) {
+            std::string nestedNarrow = WideToUtf8(nested);
+            auto nestedUrls = ParsePlaylistContentMultiple(nestedNarrow);
+            if (!nestedUrls.empty()) {
+                result = nestedUrls;
+            }
+        }
+    }
+
+    // Filter out any remaining playlist URLs and deduplicate
+    std::vector<StreamOption> filtered;
+    std::set<std::wstring> seen;
+    for (const auto& opt : result) {
+        if (!IsPlaylistUrl(opt.url) && seen.find(opt.url) == seen.end()) {
+            filtered.push_back(opt);
+            seen.insert(opt.url);
+        }
+    }
+
+    return filtered;
 }
 
 // Search TuneIn API (returns OPML/XML)
@@ -2721,6 +2846,45 @@ static std::wstring GetIHeartStreamUrl(const std::wstring& stationId) {
     }
 
     return streamUrl;
+}
+
+// Get ALL stream URLs for an iHeartRadio station by ID
+static std::vector<StreamOption> GetIHeartStreamUrls(const std::wstring& stationId) {
+    std::vector<StreamOption> result;
+
+    // Use the live station API to get stream URLs
+    std::wstring url = L"https://api.iheart.com/api/v2/content/liveStations/" + stationId;
+    std::wstring json = RadioHttpGet(url, L"Accept: application/json\r\n");
+    if (json.empty()) return result;
+
+    // Look for streams section
+    size_t streamsPos = json.find(L"\"streams\"");
+    if (streamsPos == std::wstring::npos) return result;
+
+    std::wstring streamsSection = json.substr(streamsPos);
+
+    // Get all available stream types
+    struct { const wchar_t* key; const wchar_t* label; } streamTypes[] = {
+        {L"shoutcast_stream", L"Shoutcast"},
+        {L"secure_shoutcast_stream", L"Shoutcast (Secure)"},
+        {L"pls_stream", L"PLS"},
+        {L"hls_stream", L"HLS"},
+        {L"stw_stream", L"STW"},
+        {L"flv_stream", L"FLV"},
+        {L"secure_pls_stream", L"PLS (Secure)"},
+        {L"secure_hls_stream", L"HLS (Secure)"},
+    };
+
+    std::set<std::wstring> seenUrls;
+    for (const auto& type : streamTypes) {
+        std::wstring streamUrl = ExtractJsonString(streamsSection, type.key);
+        if (!streamUrl.empty() && seenUrls.find(streamUrl) == seenUrls.end()) {
+            result.push_back({streamUrl, type.label});
+            seenUrls.insert(streamUrl);
+        }
+    }
+
+    return result;
 }
 
 // Search iHeartRadio API
@@ -2869,6 +3033,68 @@ static std::wstring ResolveRadioStreamUrl(const RadioSearchResult& result) {
     return url;
 }
 
+// Resolve ALL stream URLs for a radio search result (for multi-URL selection)
+static std::vector<StreamOption> ResolveRadioStreamUrls(const RadioSearchResult& result) {
+    std::vector<StreamOption> urls;
+
+    if (result.source == 0) {
+        // RadioBrowser - URL is already resolved, just return it
+        if (!result.url.empty()) {
+            urls.push_back({result.url, L"Stream"});
+        }
+    } else if (result.source == 1) {
+        // TuneIn - resolve playlist URL to get all streams
+        urls = ResolveTuneInUrls(result.url);
+    } else if (result.source == 2) {
+        // iHeartRadio - get all stream URLs from station ID
+        urls = GetIHeartStreamUrls(result.stationId);
+    } else {
+        if (!result.url.empty()) {
+            urls.push_back({result.url, L"Stream"});
+        }
+    }
+
+    // Safety check: resolve any remaining playlist URLs
+    for (auto& opt : urls) {
+        if (IsPlaylistUrl(opt.url)) {
+            std::wstring resolved = ResolveTuneInUrl(opt.url);
+            if (!resolved.empty()) {
+                opt.url = resolved;
+            }
+        }
+    }
+
+    return urls;
+}
+
+// Show context menu for stream URL selection
+// Returns the selected URL, or empty string if cancelled
+static std::wstring ShowStreamSelectionMenu(HWND hwnd, const std::vector<StreamOption>& options) {
+    if (options.empty()) return L"";
+    if (options.size() == 1) return options[0].url;  // Only one option, no menu needed
+
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return options[0].url;
+
+    for (size_t i = 0; i < options.size(); i++) {
+        AppendMenuW(hMenu, MF_STRING, i + 1, options[i].label.c_str());
+    }
+
+    // Get cursor position for menu
+    POINT pt;
+    GetCursorPos(&pt);
+
+    // Show the menu and wait for selection
+    int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd, nullptr);
+    DestroyMenu(hMenu);
+
+    if (cmd > 0 && cmd <= static_cast<int>(options.size())) {
+        return options[cmd - 1].url;
+    }
+
+    return L"";  // Cancelled
+}
+
 // Show/hide radio dialog controls based on tab
 static void UpdateRadioTabVisibility(HWND hwnd, int tab) {
     // Favorites tab controls (tab 0)
@@ -2915,17 +3141,37 @@ static LRESULT CALLBACK RadioSearchListSubclassProc(HWND hwnd, UINT msg, WPARAM 
             // Play selected station
             int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
             if (sel >= 0 && sel < static_cast<int>(g_radioSearchResults.size())) {
-                // Resolve the stream URL
-                SetCursor(LoadCursor(nullptr, IDC_WAIT));
-                std::wstring streamUrl = ResolveRadioStreamUrl(g_radioSearchResults[sel]);
-                SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                const auto& r = g_radioSearchResults[sel];
+                std::wstring streamUrl;
+                bool hadOptions = false;
+
+                // For TuneIn and iHeartRadio, check for multiple streams
+                if (r.source == 1 || r.source == 2) {
+                    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                    auto urls = ResolveRadioStreamUrls(r);
+                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                    hadOptions = !urls.empty();
+                    if (urls.size() > 1) {
+                        streamUrl = ShowStreamSelectionMenu(GetParent(hwnd), urls);
+                    } else if (!urls.empty()) {
+                        streamUrl = urls[0].url;
+                    }
+                } else {
+                    // RadioBrowser - single URL
+                    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                    streamUrl = ResolveRadioStreamUrl(r);
+                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                    hadOptions = !streamUrl.empty();
+                }
+
                 if (!streamUrl.empty()) {
                     g_playlist.clear();
                     g_playlist.push_back(streamUrl);
                     PlayTrack(0);
-                } else {
+                } else if (!hadOptions) {
                     Speak("Could not get stream URL");
                 }
+                // If hadOptions but streamUrl is empty, user cancelled - do nothing
             }
             return 0;
         } else if (wParam == VK_ESCAPE) {
@@ -3376,10 +3622,28 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     int sel = static_cast<int>(SendMessageW(hSearchList, LB_GETCURSEL, 0, 0));
                     if (sel >= 0 && sel < static_cast<int>(g_radioSearchResults.size())) {
                         const auto& r = g_radioSearchResults[sel];
-                        // Resolve the stream URL
-                        SetCursor(LoadCursor(nullptr, IDC_WAIT));
-                        std::wstring streamUrl = ResolveRadioStreamUrl(r);
-                        SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                        std::wstring streamUrl;
+                        bool hadOptions = false;
+
+                        // For TuneIn and iHeartRadio, check for multiple streams
+                        if (r.source == 1 || r.source == 2) {
+                            SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                            auto urls = ResolveRadioStreamUrls(r);
+                            SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                            hadOptions = !urls.empty();
+                            if (urls.size() > 1) {
+                                streamUrl = ShowStreamSelectionMenu(hwnd, urls);
+                            } else if (!urls.empty()) {
+                                streamUrl = urls[0].url;
+                            }
+                        } else {
+                            // RadioBrowser - single URL
+                            SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                            streamUrl = ResolveRadioStreamUrl(r);
+                            SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                            hadOptions = !streamUrl.empty();
+                        }
+
                         if (!streamUrl.empty()) {
                             if (AddRadioStation(r.name, streamUrl) >= 0) {
                                 RefreshRadioList(hwnd);
@@ -3387,9 +3651,10 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                             } else {
                                 Speak("Failed to add station");
                             }
-                        } else {
+                        } else if (!hadOptions) {
                             Speak("Could not get stream URL");
                         }
+                        // If hadOptions but streamUrl is empty, user cancelled - do nothing
                     } else {
                         Speak("Select a station first");
                     }
@@ -3402,17 +3667,37 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                         HWND hSearchList = GetDlgItem(hwnd, IDC_RADIO_SEARCH_LIST);
                         int sel = static_cast<int>(SendMessageW(hSearchList, LB_GETCURSEL, 0, 0));
                         if (sel >= 0 && sel < static_cast<int>(g_radioSearchResults.size())) {
-                            // Resolve the stream URL
-                            SetCursor(LoadCursor(nullptr, IDC_WAIT));
-                            std::wstring streamUrl = ResolveRadioStreamUrl(g_radioSearchResults[sel]);
-                            SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                            const auto& r = g_radioSearchResults[sel];
+                            std::wstring streamUrl;
+                            bool hadOptions = false;
+
+                            // For TuneIn and iHeartRadio, check for multiple streams
+                            if (r.source == 1 || r.source == 2) {
+                                SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                                auto urls = ResolveRadioStreamUrls(r);
+                                SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                                hadOptions = !urls.empty();
+                                if (urls.size() > 1) {
+                                    streamUrl = ShowStreamSelectionMenu(hwnd, urls);
+                                } else if (!urls.empty()) {
+                                    streamUrl = urls[0].url;
+                                }
+                            } else {
+                                // RadioBrowser - single URL
+                                SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                                streamUrl = ResolveRadioStreamUrl(r);
+                                SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                                hadOptions = !streamUrl.empty();
+                            }
+
                             if (!streamUrl.empty()) {
                                 g_playlist.clear();
                                 g_playlist.push_back(streamUrl);
                                 PlayTrack(0);
-                            } else {
+                            } else if (!hadOptions) {
                                 Speak("Could not get stream URL");
                             }
+                            // If hadOptions but streamUrl is empty, user cancelled - do nothing
                         }
                     }
                     return TRUE;
