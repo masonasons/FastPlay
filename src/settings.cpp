@@ -6,6 +6,7 @@
 #include "database.h"
 #include "accessibility.h"
 #include "tempo_processor.h"
+#include "resource.h"
 #include <cstdio>
 
 // Initialize config file path
@@ -332,6 +333,18 @@ void LoadDSPSettings() {
     SetParamValue(ParamId::ConvolutionMix, GetPrivateProfileFloatW(L"DSPParams", L"ConvolutionMix", def->defaultValue, g_configPath.c_str()));
     def = GetParamDef(ParamId::ConvolutionGain);
     SetParamValue(ParamId::ConvolutionGain, GetPrivateProfileFloatW(L"DSPParams", L"ConvolutionGain", def->defaultValue, g_configPath.c_str()));
+
+    // Load recent files
+    g_recentFiles.clear();
+    for (int i = 0; i < MAX_RECENT_FILES; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"File%d", i);
+        wchar_t path[MAX_PATH] = {0};
+        GetPrivateProfileStringW(L"RecentFiles", key, L"", path, MAX_PATH, g_configPath.c_str());
+        if (path[0] != L'\0') {
+            g_recentFiles.push_back(path);
+        }
+    }
 }
 
 // Save settings to INI file
@@ -555,6 +568,15 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"DSPParams", L"ConvolutionMix", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::ConvolutionGain));
     WritePrivateProfileStringW(L"DSPParams", L"ConvolutionGain", buf, g_configPath.c_str());
+
+    // Save recent files
+    // First clear the section
+    WritePrivateProfileSectionW(L"RecentFiles", L"", g_configPath.c_str());
+    for (size_t i = 0; i < g_recentFiles.size() && i < MAX_RECENT_FILES; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"File%d", static_cast<int>(i));
+        WritePrivateProfileStringW(L"RecentFiles", key, g_recentFiles[i].c_str(), g_configPath.c_str());
+    }
 }
 
 // Save current playback state (file and position)
@@ -804,5 +826,76 @@ void SpeakSeekAmount() {
         Speak("1 chapter");
     } else if (g_currentSeekIndex >= 0 && g_currentSeekIndex < g_seekAmountCount) {
         Speak(g_seekAmounts[g_currentSeekIndex].label);
+    }
+}
+
+// Add a file to the recent files list
+void AddToRecentFiles(const std::wstring& filePath) {
+    if (filePath.empty()) return;
+
+    // Don't add URLs to recent files
+    if (filePath.find(L"://") != std::wstring::npos) return;
+
+    // Remove if already in list (to move to top)
+    for (auto it = g_recentFiles.begin(); it != g_recentFiles.end(); ++it) {
+        if (_wcsicmp(it->c_str(), filePath.c_str()) == 0) {
+            g_recentFiles.erase(it);
+            break;
+        }
+    }
+
+    // Add to front
+    g_recentFiles.insert(g_recentFiles.begin(), filePath);
+
+    // Trim to max size
+    if (g_recentFiles.size() > MAX_RECENT_FILES) {
+        g_recentFiles.resize(MAX_RECENT_FILES);
+    }
+}
+
+// Update the Recent Files submenu
+void UpdateRecentFilesMenu(HMENU hMenu) {
+    // Find the File menu
+    HMENU hFileMenu = GetSubMenu(hMenu, 0);
+    if (!hFileMenu) return;
+
+    // Find the Recent Files submenu by iterating through items
+    int itemCount = GetMenuItemCount(hFileMenu);
+    HMENU hRecentMenu = nullptr;
+    for (int i = 0; i < itemCount; i++) {
+        HMENU hSub = GetSubMenu(hFileMenu, i);
+        if (hSub) {
+            wchar_t text[64] = {0};
+            GetMenuStringW(hFileMenu, i, text, 64, MF_BYPOSITION);
+            if (wcsstr(text, L"Recent") != nullptr) {
+                hRecentMenu = hSub;
+                break;
+            }
+        }
+    }
+
+    if (!hRecentMenu) return;
+
+    // Clear the submenu
+    while (GetMenuItemCount(hRecentMenu) > 0) {
+        DeleteMenu(hRecentMenu, 0, MF_BYPOSITION);
+    }
+
+    // Add recent files
+    if (g_recentFiles.empty()) {
+        AppendMenuW(hRecentMenu, MF_STRING | MF_GRAYED, 0, L"(Empty)");
+    } else {
+        for (size_t i = 0; i < g_recentFiles.size(); i++) {
+            // Get just the filename for display
+            std::wstring display = g_recentFiles[i];
+            size_t pos = display.find_last_of(L"\\/");
+            if (pos != std::wstring::npos) {
+                display = display.substr(pos + 1);
+            }
+            // Add number prefix for keyboard access
+            wchar_t menuText[MAX_PATH + 10];
+            swprintf(menuText, MAX_PATH + 10, L"&%d %s", static_cast<int>((i + 1) % 10), display.c_str());
+            AppendMenuW(hRecentMenu, MF_STRING, IDM_FILE_RECENT_BASE + i, menuText);
+        }
     }
 }

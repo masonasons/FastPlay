@@ -57,6 +57,9 @@ bool g_trayIconVisible = false;
 std::vector<std::wstring> g_pendingFiles;
 DWORD g_startupTime = 0;
 
+// Recent files
+std::vector<std::wstring> g_recentFiles;
+
 // File associations
 const FileAssoc g_fileAssocs[] = {
     {L".mp3", L"MP3 Audio", IDC_ASSOC_MP3},

@@ -2,6 +2,7 @@
 #ifndef FASTPLAY_SETTINGS_H
 #define FASTPLAY_SETTINGS_H
 
+#include <windows.h>
 #include <string>
 
 // Config path initialization
@@ -25,5 +26,9 @@ void CycleSeekAmount(int direction);
 double GetCurrentSeekAmount();
 bool IsSeekAmountAvailable(int index);
 void SpeakSeekAmount();
+
+// Recent files
+void AddToRecentFiles(const std::wstring& filePath);
+void UpdateRecentFilesMenu(HMENU hMenu);
 
 #endif // FASTPLAY_SETTINGS_H

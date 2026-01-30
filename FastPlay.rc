@@ -14,6 +14,11 @@ BEGIN
         MENUITEM "&Podcasts...\tCtrl+Shift+P", IDM_FILE_PODCAST
         MENUITEM "&Schedule...\tCtrl+S", IDM_FILE_SCHEDULE
         MENUITEM SEPARATOR
+        POPUP "Recent &Files"
+        BEGIN
+            MENUITEM "(Empty)", 0, GRAYED
+        END
+        MENUITEM SEPARATOR
         MENUITEM "&Hide to Tray\tCtrl+H", IDM_FILE_HIDE_TRAY
         MENUITEM SEPARATOR
         MENUITEM "O&ptions...\tCtrl+,", IDM_TOOLS_OPTIONS
@@ -23,8 +28,8 @@ BEGIN
     POPUP "&Playback"
     BEGIN
         MENUITEM "&Play\tX", IDM_PLAY_PLAY
-        MENUITEM "Pa&use\tSpace", IDM_PLAY_PAUSE
-        MENUITEM "Play/Pause\tC", IDM_PLAY_PLAYPAUSE
+        MENUITEM "Pa&use\tC", IDM_PLAY_PAUSE
+        MENUITEM "Play/Pause\tSpace", IDM_PLAY_PLAYPAUSE
         MENUITEM "&Stop\tV", IDM_PLAY_STOP
         MENUITEM SEPARATOR
         MENUITEM "P&revious\tZ", IDM_PLAY_PREV
@@ -468,7 +473,7 @@ BEGIN
     "S",            IDM_FILE_SCHEDULE,  VIRTKEY, CONTROL
     "H",            IDM_FILE_HIDE_TRAY, VIRTKEY, CONTROL
     VK_OEM_COMMA,   IDM_TOOLS_OPTIONS,  VIRTKEY, CONTROL
-    "C",            IDM_PLAY_PLAYPAUSE, VIRTKEY
+    VK_SPACE,       IDM_PLAY_PLAYPAUSE, VIRTKEY
     VK_LEFT,        IDM_PLAY_SEEKBACK,  VIRTKEY
     VK_RIGHT,       IDM_PLAY_SEEKFWD,   VIRTKEY
     VK_UP,          IDM_EFFECT_UP,      VIRTKEY
@@ -483,7 +488,7 @@ BEGIN
     // Winamp-style shortcuts
     "Z",            IDM_PLAY_PREV,      VIRTKEY
     "X",            IDM_PLAY_PLAY,      VIRTKEY
-    VK_SPACE,       IDM_PLAY_PAUSE,     VIRTKEY
+    "C",            IDM_PLAY_PAUSE,     VIRTKEY
     "V",            IDM_PLAY_STOP,      VIRTKEY
     "B",            IDM_PLAY_NEXT,      VIRTKEY
     "H",            IDM_PLAY_SHUFFLE,   VIRTKEY

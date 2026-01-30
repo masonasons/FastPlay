@@ -201,6 +201,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return TRUE;
         }
 
+        case WM_INITMENUPOPUP:
+            // Update recent files menu when File menu is opened
+            if (HIWORD(lParam) == FALSE) {  // Not a system menu
+                HMENU hMenu = GetMenu(hwnd);
+                if (hMenu) {
+                    UpdateRecentFilesMenu(hMenu);
+                }
+            }
+            break;
+
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case IDM_FILE_OPEN:
@@ -488,6 +498,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         if (cmdId >= IDM_AUDIO_DEVICE_BASE && cmdId < IDM_AUDIO_DEVICE_BASE + 100) {
                             int deviceIndex = cmdId - IDM_AUDIO_DEVICE_BASE;
                             SelectAudioDevice(deviceIndex);
+                        }
+                        // Handle recent file selection
+                        else if (cmdId >= IDM_FILE_RECENT_BASE && cmdId < IDM_FILE_RECENT_BASE + MAX_RECENT_FILES) {
+                            size_t idx = cmdId - IDM_FILE_RECENT_BASE;
+                            if (idx < g_recentFiles.size()) {
+                                g_playlist.clear();
+                                g_playlist.push_back(g_recentFiles[idx]);
+                                g_currentTrack = -1;
+                                PlayTrack(0);
+                            }
                         }
                     }
                     break;

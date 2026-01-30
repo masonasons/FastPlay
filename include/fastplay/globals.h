@@ -80,6 +80,10 @@ extern bool g_trayIconVisible;
 extern std::vector<std::wstring> g_pendingFiles;
 extern DWORD g_startupTime;
 
+// Recent files
+extern std::vector<std::wstring> g_recentFiles;
+const int MAX_RECENT_FILES = 10;
+
 // Seek amounts
 extern const SeekAmount g_seekAmounts[];
 extern const int g_seekAmountCount;

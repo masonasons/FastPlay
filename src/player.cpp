@@ -1294,6 +1294,8 @@ void PlayTrack(int index, bool autoPlay) {
         g_currentTrack = index;
         if (LoadFile(g_playlist[index].c_str())) {
             loadedSuccessfully = true;
+            // Add to recent files (only for local files, not URLs)
+            AddToRecentFiles(g_playlist[index]);
             break;  // Success
         }
         // Try next track if this one failed and we have multiple files
