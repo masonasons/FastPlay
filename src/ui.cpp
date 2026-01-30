@@ -695,6 +695,14 @@ static LRESULT CALLBACK PlaylistListProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         }
     }
 
+    // Tell dialog we want Enter and Escape keys
+    if (msg == WM_GETDLGCODE) {
+        MSG* pmsg = reinterpret_cast<MSG*>(lParam);
+        if (pmsg && (pmsg->wParam == VK_RETURN || pmsg->wParam == VK_ESCAPE)) {
+            return DLGC_WANTMESSAGE;
+        }
+    }
+
     return CallWindowProcW(g_playlistOrigProc, hwnd, msg, wParam, lParam);
 }
 
