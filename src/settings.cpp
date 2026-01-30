@@ -742,8 +742,8 @@ double GetCurrentSeekAmount() {
 
 // Check if a seek amount is currently available (track options need multiple tracks)
 bool IsSeekAmountAvailable(int index) {
-    // Index 10 is chapter seeking (virtual, not in g_seekAmounts array)
-    if (index == 10) {
+    // Index 12 is chapter seeking (virtual, not in g_seekAmounts array)
+    if (index == 12) {
         return g_chapterSeekEnabled && !g_chapters.empty();
     }
     if (index < 0 || index >= g_seekAmountCount) return false;
@@ -753,8 +753,8 @@ bool IsSeekAmountAvailable(int index) {
     return true;
 }
 
-// Total number of seek options including chapter (index 10)
-constexpr int SEEK_AMOUNT_TOTAL = 11;
+// Total number of seek options including chapter (index 12)
+constexpr int SEEK_AMOUNT_TOTAL = 13;
 
 // Cycle through enabled seek amounts
 void CycleSeekAmount(int direction) {
@@ -783,7 +783,7 @@ void CycleSeekAmount(int direction) {
 
     if (availableCount == 1) {
         // Only one available, just announce it
-        if (g_currentSeekIndex == 10) {
+        if (g_currentSeekIndex == 12) {
             Speak("1 chapter");
         } else {
             Speak(g_seekAmounts[g_currentSeekIndex].label);
@@ -799,7 +799,7 @@ void CycleSeekAmount(int direction) {
         // Stop at boundaries instead of wrapping
         if (newIndex >= SEEK_AMOUNT_TOTAL || newIndex < 0) {
             // Already at the edge, just announce current
-            if (g_currentSeekIndex == 10) {
+            if (g_currentSeekIndex == 12) {
                 Speak("1 chapter");
             } else {
                 Speak(g_seekAmounts[g_currentSeekIndex].label);
@@ -814,7 +814,7 @@ void CycleSeekAmount(int direction) {
     }
 
     // Announce the new seek amount
-    if (g_currentSeekIndex == 10) {
+    if (g_currentSeekIndex == 12) {
         Speak("1 chapter");
     } else {
         Speak(g_seekAmounts[g_currentSeekIndex].label);
@@ -822,7 +822,7 @@ void CycleSeekAmount(int direction) {
 }
 
 void SpeakSeekAmount() {
-    if (g_currentSeekIndex == 10) {
+    if (g_currentSeekIndex == 12) {
         Speak("1 chapter");
     } else if (g_currentSeekIndex >= 0 && g_currentSeekIndex < g_seekAmountCount) {
         Speak(g_seekAmounts[g_currentSeekIndex].label);
