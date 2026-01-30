@@ -293,7 +293,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     ShowJumpToTimeDialog();
                     break;
                 case IDM_PLAY_SEEKBACK:
-                    if (g_currentSeekIndex == 10) {
+                    if (g_currentSeekIndex == 12) {
                         // Chapter seeking
                         if (!g_chapters.empty()) {
                             SeekToPrevChapter();
@@ -312,7 +312,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     }
                     break;
                 case IDM_PLAY_SEEKFWD:
-                    if (g_currentSeekIndex == 10) {
+                    if (g_currentSeekIndex == 12) {
                         // Chapter seeking
                         if (!g_chapters.empty()) {
                             SeekToNextChapter();
