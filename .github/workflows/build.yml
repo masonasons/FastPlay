@@ -35,14 +35,51 @@ jobs:
       - name: Build executable
         run: .\build_new.bat
 
-      - name: Create distribution
-        run: .\dist.bat
+      - name: Create distribution folder
+        run: |
+          # Create dist folder with all files for both zip and installer
+          if (Test-Path "dist_temp") { Remove-Item -Recurse -Force "dist_temp" }
+          New-Item -ItemType Directory -Path "dist_temp"
 
-      - name: Upload artifact
+          # Copy exe
+          Copy-Item "FastPlay.exe" "dist_temp\"
+
+          # Copy docs
+          New-Item -ItemType Directory -Path "dist_temp\docs"
+          Copy-Item -Recurse "docs\*" "dist_temp\docs\"
+
+          # Copy lib folder with DLLs
+          New-Item -ItemType Directory -Path "dist_temp\lib"
+          Copy-Item "lib\*.dll" "dist_temp\lib\" -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Create portable zip
+        run: |
+          if (Test-Path "FastPlay.zip") { Remove-Item "FastPlay.zip" }
+          Compress-Archive -Path "dist_temp\*" -DestinationPath "FastPlay.zip" -Force
+        shell: pwsh
+
+      - name: Build installer
+        run: |
+          # Inno Setup is pre-installed on windows-latest
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.0 /DSourceDir="dist_temp" /DOutputDir="." installer.iss
+        shell: pwsh
+
+      - name: Clean up dist folder
+        run: Remove-Item -Recurse -Force "dist_temp"
+        shell: pwsh
+
+      - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
+          name: windows-portable
           path: FastPlay.zip
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: FastPlayInstaller.exe
 
   release:
     needs: [build-windows]
@@ -52,10 +89,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download artifact
+      - name: Download portable zip
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
+          name: windows-portable
+          path: artifacts/
+
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
           path: artifacts/
 
       - name: List artifacts
@@ -80,7 +123,8 @@ jobs:
             This release is automatically updated on every commit to master.
 
             ## Download
-            - **Windows:** FastPlay.zip
+            - **Windows Installer:** FastPlayInstaller.exe (recommended for most users)
+            - **Windows Portable:** FastPlay.zip (no installation required)
           files: artifacts/*
           prerelease: true
           make_latest: false

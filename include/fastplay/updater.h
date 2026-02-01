@@ -11,10 +11,14 @@ struct UpdateInfo {
     bool available;
     std::string latestVersion;
     std::string latestCommit;
-    std::string downloadUrl;
+    std::string downloadUrl;        // URL for portable zip
+    std::string installerUrl;       // URL for installer exe
     std::string releaseNotes;
     std::string errorMessage;
 };
+
+// Check if app was installed (vs portable)
+bool IsInstalledMode();
 
 // Progress callback: (bytesDownloaded, totalBytes) -> bool (return false to cancel)
 using DownloadProgressCallback = std::function<bool(size_t, size_t)>;

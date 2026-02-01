@@ -61,14 +61,22 @@ static std::string ToLower(const std::string& str) {
     return result;
 }
 
-// Find Windows asset in release
-static std::pair<std::string, std::string> FindWindowsAsset(const std::string& releaseJson) {
+// Asset URLs for Windows
+struct WindowsAssets {
+    std::string zipUrl;
+    std::string installerUrl;
+};
+
+// Find Windows assets in release (both zip and installer)
+static WindowsAssets FindWindowsAssets(const std::string& releaseJson) {
+    WindowsAssets assets;
+
     // Look for assets array
     size_t assetsPos = releaseJson.find("\"assets\"");
-    if (assetsPos == std::string::npos) return {"", ""};
+    if (assetsPos == std::string::npos) return assets;
 
     size_t arrayStart = releaseJson.find('[', assetsPos);
-    if (arrayStart == std::string::npos) return {"", ""};
+    if (arrayStart == std::string::npos) return assets;
 
     // Find matching bracket
     int depth = 1;
@@ -81,10 +89,9 @@ static std::pair<std::string, std::string> FindWindowsAsset(const std::string& r
 
     std::string assetsArray = releaseJson.substr(arrayStart, arrayEnd - arrayStart);
 
-    std::string bestAssetName;
-    std::string bestAssetUrl;
+    std::string fallbackZipUrl;
 
-    // Find each asset object and check for Windows zip
+    // Find each asset object
     size_t pos = 0;
     while (pos < assetsArray.length()) {
         size_t objStart = assetsArray.find('{', pos);
@@ -101,42 +108,47 @@ static std::pair<std::string, std::string> FindWindowsAsset(const std::string& r
         std::string asset = assetsArray.substr(objStart, objEnd - objStart);
         std::string name = ExtractJsonString(asset, "name");
         std::string nameLower = ToLower(name);
+        std::string url = ExtractJsonString(asset, "browser_download_url");
 
-        // Check if it's a zip file
-        if (nameLower.find(".zip") != std::string::npos) {
-            std::string url = ExtractJsonString(asset, "browser_download_url");
+        // Skip non-Windows platforms
+        if (nameLower.find("linux") != std::string::npos ||
+            nameLower.find("macos") != std::string::npos ||
+            nameLower.find("darwin") != std::string::npos ||
+            nameLower.find("mac-") != std::string::npos ||
+            nameLower.find("-mac") != std::string::npos) {
+            pos = objEnd;
+            continue;
+        }
 
-            // Prefer Windows-specific zip, but accept any zip
+        // Check for installer exe (Setup.exe, Installer.exe, etc.)
+        if ((nameLower.find("setup") != std::string::npos ||
+             nameLower.find("installer") != std::string::npos) &&
+            nameLower.find(".exe") != std::string::npos) {
+            assets.installerUrl = url;
+        }
+        // Check for zip file
+        else if (nameLower.find(".zip") != std::string::npos) {
+            // Prefer Windows-specific zip
             if (nameLower.find("windows") != std::string::npos ||
                 nameLower.find("win64") != std::string::npos ||
                 nameLower.find("win32") != std::string::npos ||
                 nameLower.find("win-") != std::string::npos ||
                 nameLower.find("-win") != std::string::npos) {
-                // Definitely a Windows asset
-                return {name, url};
-            }
-
-            // Skip if it's clearly for another platform
-            if (nameLower.find("linux") != std::string::npos ||
-                nameLower.find("macos") != std::string::npos ||
-                nameLower.find("darwin") != std::string::npos ||
-                nameLower.find("mac-") != std::string::npos ||
-                nameLower.find("-mac") != std::string::npos) {
-                pos = objEnd;
-                continue;
-            }
-
-            // Keep as fallback (might be a platform-agnostic zip)
-            if (bestAssetUrl.empty()) {
-                bestAssetName = name;
-                bestAssetUrl = url;
+                assets.zipUrl = url;
+            } else if (fallbackZipUrl.empty()) {
+                fallbackZipUrl = url;
             }
         }
 
         pos = objEnd;
     }
 
-    return {bestAssetName, bestAssetUrl};
+    // Use fallback zip if no Windows-specific one found
+    if (assets.zipUrl.empty() && !fallbackZipUrl.empty()) {
+        assets.zipUrl = fallbackZipUrl;
+    }
+
+    return assets;
 }
 
 // HTTP GET request using WinHTTP
@@ -340,8 +352,23 @@ static std::wstring GetAppDirectory() {
     return L".";
 }
 
+// Check if app was installed (vs portable) by looking for installed.txt marker
+bool IsInstalledMode() {
+    std::wstring appDir = GetAppDirectory();
+    std::wstring markerPath = appDir + L"\\installed.txt";
+    DWORD attrs = GetFileAttributesW(markerPath.c_str());
+    return (attrs != INVALID_FILE_ATTRIBUTES);
+}
+
+// Get path to downloaded installer
+static std::wstring GetUpdateInstallerPath() {
+    wchar_t tempPath[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempPath);
+    return std::wstring(tempPath) + L"FastPlay-Setup.exe";
+}
+
 UpdateInfo CheckForUpdates() {
-    UpdateInfo info = {false, "", "", "", "", ""};
+    UpdateInfo info = {false, "", "", "", "", "", ""};
 
     // Fetch releases from GitHub API
     std::string response = HttpGet(L"api.github.com", L"/repos/masonasons/FastPlay/releases");
@@ -378,16 +405,15 @@ UpdateInfo CheckForUpdates() {
         info.latestVersion = tagName;
     }
 
-    // Find Windows asset
-    std::pair<std::string, std::string> asset = FindWindowsAsset(release);
-    std::string assetName = asset.first;
-    std::string downloadUrl = asset.second;
-    if (downloadUrl.empty()) {
+    // Find Windows assets (both zip and installer)
+    WindowsAssets assets = FindWindowsAssets(release);
+    if (assets.zipUrl.empty() && assets.installerUrl.empty()) {
         info.errorMessage = "No Windows download available for this release.";
         return info;
     }
 
-    info.downloadUrl = downloadUrl;
+    info.downloadUrl = assets.zipUrl;
+    info.installerUrl = assets.installerUrl;
     info.releaseNotes = body;
 
     // Compare versions
@@ -408,42 +434,67 @@ UpdateInfo CheckForUpdates() {
     return info;
 }
 
+// Track whether we're updating with installer or zip
+static bool g_updateWithInstaller = false;
+
 bool DownloadUpdate(const std::string& url, DownloadProgressCallback progressCallback) {
-    std::wstring destPath = GetUpdateZipPath();
+    // Determine destination based on file type
+    std::wstring destPath;
+    std::string urlLower = ToLower(url);
+    if ((urlLower.find("setup") != std::string::npos || urlLower.find("installer") != std::string::npos) &&
+        urlLower.find(".exe") != std::string::npos) {
+        destPath = GetUpdateInstallerPath();
+        g_updateWithInstaller = true;
+    } else {
+        destPath = GetUpdateZipPath();
+        g_updateWithInstaller = false;
+    }
     return HttpDownload(url, destPath, progressCallback);
 }
 
 void ApplyUpdate() {
-    std::wstring appDir = GetAppDirectory();
-    std::wstring zipPath = GetUpdateZipPath();
-    std::wstring batchPath = appDir + L"\\update.bat";
-    std::wstring extractDir = appDir + L"\\update_temp";
+    if (g_updateWithInstaller) {
+        // Run installer in silent mode
+        std::wstring installerPath = GetUpdateInstallerPath();
 
-    // Get exe name
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(NULL, exePath, MAX_PATH);
-    std::wstring exeName(exePath);
-    size_t lastSlash = exeName.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) {
-        exeName = exeName.substr(lastSlash + 1);
+        // Run installer with /SILENT flag (Inno Setup)
+        // /SILENT shows progress but no prompts
+        // /VERYSILENT hides everything
+        ShellExecuteW(NULL, L"open", installerPath.c_str(), L"/SILENT", NULL, SW_SHOWNORMAL);
+        PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
+    } else {
+        // Portable mode: extract zip with batch script
+        std::wstring appDir = GetAppDirectory();
+        std::wstring zipPath = GetUpdateZipPath();
+        std::wstring batchPath = appDir + L"\\update.bat";
+        std::wstring extractDir = appDir + L"\\update_temp";
+
+        // Get exe name
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        std::wstring exeName(exePath);
+        size_t lastSlash = exeName.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            exeName = exeName.substr(lastSlash + 1);
+        }
+
+        // Create batch script
+        std::ofstream batch(batchPath);
+        batch << "@echo off\r\n";
+        batch << "echo Updating FastPlay...\r\n";
+        batch << "timeout /t 2 /nobreak > nul\r\n";
+        batch << "powershell -Command \"Expand-Archive -Path '" << std::string(zipPath.begin(), zipPath.end()) << "' -DestinationPath '" << std::string(extractDir.begin(), extractDir.end()) << "' -Force\"\r\n";
+        batch << "xcopy /s /y /q \"" << std::string(extractDir.begin(), extractDir.end()) << "\\*\" \"" << std::string(appDir.begin(), appDir.end()) << "\\\"\r\n";
+        batch << "rmdir /s /q \"" << std::string(extractDir.begin(), extractDir.end()) << "\"\r\n";
+        batch << "del \"" << std::string(zipPath.begin(), zipPath.end()) << "\"\r\n";
+        batch << "start \"\" \"" << std::string(appDir.begin(), appDir.end()) << "\\" << std::string(exeName.begin(), exeName.end()) << "\"\r\n";
+        batch << "del \"%~f0\"\r\n";
+        batch.close();
+
+        // Run batch script and exit
+        ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, appDir.c_str(), SW_HIDE);
+        PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
     }
-
-    // Create batch script
-    std::ofstream batch(batchPath);
-    batch << "@echo off\r\n";
-    batch << "echo Updating FastPlay...\r\n";
-    batch << "timeout /t 2 /nobreak > nul\r\n";
-    batch << "powershell -Command \"Expand-Archive -Path '" << std::string(zipPath.begin(), zipPath.end()) << "' -DestinationPath '" << std::string(extractDir.begin(), extractDir.end()) << "' -Force\"\r\n";
-    batch << "xcopy /s /y /q \"" << std::string(extractDir.begin(), extractDir.end()) << "\\*\" \"" << std::string(appDir.begin(), appDir.end()) << "\\\"\r\n";
-    batch << "rmdir /s /q \"" << std::string(extractDir.begin(), extractDir.end()) << "\"\r\n";
-    batch << "del \"" << std::string(zipPath.begin(), zipPath.end()) << "\"\r\n";
-    batch << "start \"\" \"" << std::string(appDir.begin(), appDir.end()) << "\\" << std::string(exeName.begin(), exeName.end()) << "\"\r\n";
-    batch << "del \"%~f0\"\r\n";
-    batch.close();
-
-    // Run batch script and exit
-    ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, appDir.c_str(), SW_HIDE);
-    PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
 }
 
 // Progress dialog data
@@ -574,8 +625,17 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
             ShowWindow(hwndProgress, SW_SHOW);
         }
 
-        // Download in background
-        std::string downloadUrl = info->downloadUrl;
+        // Choose download URL: use installer if installed, otherwise use zip
+        std::string downloadUrl;
+        if (IsInstalledMode() && !info->installerUrl.empty()) {
+            downloadUrl = info->installerUrl;
+        } else if (!info->downloadUrl.empty()) {
+            downloadUrl = info->downloadUrl;
+        } else if (!info->installerUrl.empty()) {
+            // Fallback to installer if no zip available
+            downloadUrl = info->installerUrl;
+        }
+
         std::thread([hwnd, hwndProgress, downloadUrl]() {
             bool success = DownloadUpdate(downloadUrl, [hwndProgress](size_t downloaded, size_t total) {
                 if (g_progressData) {
