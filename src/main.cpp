@@ -21,7 +21,9 @@
 #include "database.h"
 #include "youtube.h"
 #include "download_manager.h"
+#include "updater.h"
 #include "resource.h"
+#include <utility>  // for std::pair
 
 #pragma comment(lib, "bass.lib")
 #pragma comment(lib, "user32.lib")
@@ -98,6 +100,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
 
             UpdateStatusBar();
+
+            // Check for updates on startup (runs in background thread)
+            CheckForUpdatesOnStartup();
+
             return 0;
         }
 
@@ -152,6 +158,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_META_CHANGED:
             AnnounceStreamMetadata();
             UpdateWindowTitle();
+            return 0;
+
+        case WM_USER + 200: {
+            // Update check result
+            auto* data = reinterpret_cast<std::pair<UpdateInfo, bool>*>(lParam);
+            if (data) {
+                HandleUpdateCheckResult(hwnd, &data->first, data->second);
+                delete data;
+            }
+            return 0;
+        }
+
+        case WM_USER + 201:
+            // Apply downloaded update
+            ApplyUpdate();
             return 0;
 
         case WM_HOTKEY: {
@@ -248,6 +269,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     break;
                 case IDM_HELP_PLUGINS:
                     MessageBoxW(hwnd, GetLoadedPluginsInfo().c_str(), L"Loaded Plugins", MB_OK | MB_ICONINFORMATION);
+                    break;
+                case IDM_HELP_UPDATES:
+                    ShowCheckForUpdatesDialog(hwnd, false);
                     break;
                 case IDM_BOOKMARK_ADD:
                     if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {

@@ -51,6 +51,8 @@ BEGIN
     END
     POPUP "&Help"
     BEGIN
+        MENUITEM "Check for &Updates...", IDM_HELP_UPDATES
+        MENUITEM SEPARATOR
         MENUITEM "&Loaded Plugins...", IDM_HELP_PLUGINS
     END
 END
@@ -75,6 +77,7 @@ BEGIN
     AUTOCHECKBOX    "Show &track name in window title", IDC_SHOW_TITLE, 17, 131, 150, 10
     AUTOCHECKBOX    "Auto-ad&vance to next playlist item", IDC_AUTO_ADVANCE, 17, 144, 150, 10
     AUTOCHECKBOX    "&Follow playback in playlist dialog", IDC_PLAYLIST_FOLLOW, 17, 157, 150, 10
+    AUTOCHECKBOX    "Check for &updates on startup", IDC_CHECK_UPDATES, 17, 170, 150, 10
     LTEXT           "Re&wind on pause (ms):", IDC_REWIND_LABEL, 170, 145, 80, 10
     EDITTEXT        IDC_REWIND_ON_PAUSE, 250, 143, 30, 14, ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
@@ -534,4 +537,15 @@ BEGIN
     "8",            IDM_VIEW_TAG_BITRATE,   VIRTKEY, SHIFT
     "9",            IDM_VIEW_TAG_DURATION,  VIRTKEY, SHIFT
     "0",            IDM_VIEW_TAG_FILENAME,  VIRTKEY, SHIFT
+END
+
+// Progress dialog (for downloads/updates)
+IDD_PROGRESS DIALOGEX 0, 0, 250, 70
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Downloading Update"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    CONTROL         "", IDC_PROGRESS_BAR, "msctls_progress32", WS_BORDER, 14, 20, 222, 14
+    LTEXT           "Preparing download...", IDC_PROGRESS_TEXT, 14, 40, 222, 10
+    PUSHBUTTON      "Cancel", IDCANCEL, 100, 52, 50, 14
 END

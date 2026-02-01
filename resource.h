@@ -250,6 +250,13 @@
 // Radio dialog
 #define IDM_FILE_RADIO      107
 #define IDM_HELP_PLUGINS    109
+#define IDM_HELP_UPDATES    112
+
+// Progress dialog (for updates)
+#define IDD_PROGRESS        995
+#define IDC_PROGRESS_BAR    996
+#define IDC_PROGRESS_TEXT   997
+#define IDC_CHECK_UPDATES   998
 #define IDD_RADIO           850
 #define IDC_RADIO_TAB       851
 #define IDC_RADIO_LIST      852

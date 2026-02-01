@@ -55,14 +55,23 @@ shift
 goto :parse_args
 :done_args
 
-echo Building FastPlay...
+REM Get git commit hash for version tracking
+set "BUILD_COMMIT="
+for /f "tokens=*" %%i in ('git rev-parse --short HEAD 2^>nul') do set "BUILD_COMMIT=%%i"
+if defined BUILD_COMMIT (
+    set "COMMIT_FLAG=/DBUILD_COMMIT=\"%BUILD_COMMIT%\""
+    echo Building commit %BUILD_COMMIT%...
+) else (
+    set "COMMIT_FLAG="
+    echo Building FastPlay...
+)
 
 REM Source files
 set "SOURCES=src\main.cpp src\globals.cpp src\utils.cpp src\player.cpp"
 set "SOURCES=%SOURCES% src\settings.cpp src\hotkeys.cpp src\tray.cpp"
 set "SOURCES=%SOURCES% src\accessibility.cpp src\ui.cpp src\effects.cpp"
 set "SOURCES=%SOURCES% src\database.cpp src\sqlite3.c"
-set "SOURCES=%SOURCES% src\tempo_processor.cpp src\youtube.cpp src\center_cancel.cpp src\convolution.cpp src\download_manager.cpp"
+set "SOURCES=%SOURCES% src\tempo_processor.cpp src\youtube.cpp src\center_cancel.cpp src\convolution.cpp src\download_manager.cpp src\updater.cpp"
 
 REM Add Rubber Band source if enabled
 if defined RUBBERBAND_SRC set "SOURCES=%SOURCES% %RUBBERBAND_SRC%"
@@ -75,7 +84,7 @@ rc /nologo FastPlay.rc
 if errorlevel 1 goto :error
 
 REM Compile and link
-cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE %SPEECH_FLAG% %RUBBERBAND_FLAG% %SPEEDY_FLAG% ^
+cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE %COMMIT_FLAG% %SPEECH_FLAG% %RUBBERBAND_FLAG% %SPEEDY_FLAG% ^
    /I"." /I"include" /I"include\fastplay" %RUBBERBAND_INC% %SPEEDY_INC% ^
    %SOURCES% FastPlay.res ^
    /Fe:FastPlay.exe ^
