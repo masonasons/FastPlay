@@ -749,7 +749,7 @@ static INT_PTR CALLBACK PlaylistDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 if (GetSaveFileNameW(&ofn)) {
                     FILE* f = _wfopen(filePath, L"w, ccs=UTF-8");
                     if (f) {
-                        fprintf(f, "#EXTM3U\n");
+                        fwprintf(f, L"#EXTM3U\n");
                         for (const auto& path : g_playlist) {
                             fwprintf(f, L"%s\n", path.c_str());
                         }
