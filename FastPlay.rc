@@ -78,6 +78,7 @@ BEGIN
     AUTOCHECKBOX    "Auto-ad&vance to next playlist item", IDC_AUTO_ADVANCE, 17, 144, 150, 10
     AUTOCHECKBOX    "&Follow playback in playlist dialog", IDC_PLAYLIST_FOLLOW, 17, 157, 150, 10
     AUTOCHECKBOX    "Check for &updates on startup", IDC_CHECK_UPDATES, 17, 170, 150, 10
+    AUTOCHECKBOX    "Allow &multiple instances", IDC_MULTI_INSTANCE, 17, 183, 150, 10
     LTEXT           "Re&wind on pause (ms):", IDC_REWIND_LABEL, 170, 145, 80, 10
     EDITTEXT        IDC_REWIND_ON_PAUSE, 250, 143, 30, 14, ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10

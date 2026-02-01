@@ -73,6 +73,7 @@ extern float g_volumeStep;                 // Volume change per keypress (defaul
 extern bool g_showTitleInWindow;           // Show track name in window title (default true)
 extern bool g_playlistFollowPlayback;      // Auto-select current track in playlist dialog
 extern bool g_checkForUpdates;             // Check for updates on startup
+extern bool g_allowMultipleInstances;      // Allow multiple instances (new windows)
 
 // System tray
 extern NOTIFYICONDATAW g_trayIcon;

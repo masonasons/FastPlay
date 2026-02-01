@@ -581,13 +581,42 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         SetDllDirectoryW(exePath);
     }
 
+    // Build config path early to read multi-instance setting
+    wchar_t configPath[MAX_PATH];
+    GetModuleFileNameW(nullptr, configPath, MAX_PATH);
+    wchar_t* configSlash = wcsrchr(configPath, L'\\');
+    if (configSlash) {
+        *(configSlash + 1) = L'\0';
+        wcscat_s(configPath, MAX_PATH, L"FastPlay.ini");
+    }
+
+    // Check if multiple instances are allowed
+    bool allowMultiple = GetPrivateProfileIntW(L"Playback", L"AllowMultipleInstances", 0, configPath) != 0;
+
+    // Check if we have file arguments
+    bool hasFileArgs = false;
+    int argc;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argv) {
+        for (int i = 1; i < argc; i++) {
+            if (GetFileAttributesW(argv[i]) != INVALID_FILE_ATTRIBUTES) {
+                hasFileArgs = true;
+                break;
+            }
+        }
+    }
+
+    // Single instance logic:
+    // - If multiple instances NOT allowed: always use single instance
+    // - If multiple instances allowed AND has file args: send to existing instance
+    // - If multiple instances allowed AND no file args: start new instance
+    bool useSingleInstance = !allowMultiple || hasFileArgs;
+
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, MUTEX_NAME);
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    if (GetLastError() == ERROR_ALREADY_EXISTS && useSingleInstance) {
         HWND existingWnd = FindWindowW(WINDOW_CLASS, nullptr);
         if (existingWnd) {
-            int argc;
-            LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-            if (argv) {
+            if (argv && hasFileArgs) {
                 bool firstFile = true;
                 for (int i = 1; i < argc; i++) {
                     if (GetFileAttributesW(argv[i]) != INVALID_FILE_ATTRIBUTES) {
@@ -599,12 +628,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                         firstFile = false;
                     }
                 }
-                LocalFree(argv);
             }
+            if (argv) LocalFree(argv);
+            CloseHandle(hMutex);
+            return 0;
         }
-        CloseHandle(hMutex);
-        return 0;
     }
+    if (argv) LocalFree(argv);
 
     LoadSettings();
     LoadHotkeys();

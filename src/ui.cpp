@@ -813,7 +813,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     //              7=Effects, 8=Advanced, 9=YouTube, 10=SoundTouch, 11=Rubber Band, 12=Speedy, 13=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_MULTI_INSTANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Downloads tab controls (tab 2)
@@ -1003,6 +1003,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_PLAYLIST_FOLLOW, g_playlistFollowPlayback ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_UPDATES, g_checkForUpdates ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_MULTI_INSTANCE, g_allowMultipleInstances ? BST_CHECKED : BST_UNCHECKED);
 
             SetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, g_rewindOnPauseMs, FALSE);
 
@@ -1345,6 +1346,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
                     g_playlistFollowPlayback = (IsDlgButtonChecked(hwnd, IDC_PLAYLIST_FOLLOW) == BST_CHECKED);
                     g_checkForUpdates = (IsDlgButtonChecked(hwnd, IDC_CHECK_UPDATES) == BST_CHECKED);
+                    g_allowMultipleInstances = (IsDlgButtonChecked(hwnd, IDC_MULTI_INSTANCE) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
 
                     g_rewindOnPauseMs = GetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, nullptr, FALSE);

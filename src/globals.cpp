@@ -50,6 +50,7 @@ float g_volumeStep = 0.02f;  // Volume change per keypress (default 2%)
 bool g_showTitleInWindow = true;  // Show track name in window title (default true)
 bool g_playlistFollowPlayback = true;  // Auto-select current track in playlist dialog (default true)
 bool g_checkForUpdates = true;  // Check for updates on startup (default true)
+bool g_allowMultipleInstances = false;  // Allow multiple instances (default false)
 
 // System tray
 NOTIFYICONDATAW g_trayIcon = {0};
