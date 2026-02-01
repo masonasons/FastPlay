@@ -71,6 +71,7 @@ extern bool g_minimizeToTray;
 extern bool g_loadFolder;
 extern float g_volumeStep;                 // Volume change per keypress (default 0.02 = 2%)
 extern bool g_showTitleInWindow;           // Show track name in window title (default true)
+extern bool g_playlistFollowPlayback;      // Auto-select current track in playlist dialog
 
 // System tray
 extern NOTIFYICONDATAW g_trayIcon;

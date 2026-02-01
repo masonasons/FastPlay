@@ -14,6 +14,7 @@
 // Playlist manager dialog
 #define IDD_PLAYLIST        930
 #define IDC_PLAYLIST_LIST   931
+#define IDC_PLAYLIST_SAVE   932
 
 // URL dialog
 #define IDD_URL             650
@@ -52,6 +53,7 @@
 #define WM_SPEAK            (WM_USER + 1)
 #define WM_ADDFILE          (WM_USER + 2)
 #define WM_META_CHANGED     (WM_USER + 3)
+#define WM_PLAYLIST_TRACK_CHANGED (WM_USER + 4)
 
 // File association checkboxes
 #define IDC_ASSOC_MP3       520
@@ -298,6 +300,7 @@
 #define IDC_AUTO_ADVANCE    901
 #define IDC_REWIND_ON_PAUSE 902
 #define IDC_REWIND_LABEL    903
+#define IDC_PLAYLIST_FOLLOW 904
 
 // Tag view dialog
 #define IDD_TAG_VIEW        910

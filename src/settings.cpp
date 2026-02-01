@@ -183,6 +183,7 @@ void LoadSettings() {
     // Load shuffle and auto-advance settings
     g_shuffle = GetPrivateProfileIntW(L"Playback", L"Shuffle", 0, g_configPath.c_str()) != 0;
     g_autoAdvance = GetPrivateProfileIntW(L"Playback", L"AutoAdvance", 1, g_configPath.c_str()) != 0;
+    g_playlistFollowPlayback = GetPrivateProfileIntW(L"Playback", L"PlaylistFollow", 1, g_configPath.c_str()) != 0;
 
     // Load seek settings
     g_seekEnabled[0] = GetPrivateProfileIntW(L"Movement", L"Seek1s", 0, g_configPath.c_str()) != 0;
@@ -466,6 +467,7 @@ void SaveSettings() {
     // Save shuffle and auto-advance settings
     WritePrivateProfileStringW(L"Playback", L"Shuffle", g_shuffle ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"AutoAdvance", g_autoAdvance ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Playback", L"PlaylistFollow", g_playlistFollowPlayback ? L"1" : L"0", g_configPath.c_str());
 
     // Save seek settings
     WritePrivateProfileStringW(L"Movement", L"Seek1s", g_seekEnabled[0] ? L"1" : L"0", g_configPath.c_str());

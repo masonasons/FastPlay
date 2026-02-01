@@ -1312,6 +1312,11 @@ void PlayTrack(int index, bool autoPlay) {
         BASS_ChannelPause(g_fxStream);
     }
 
+    // Notify playlist dialog about track change
+    if (loadedSuccessfully) {
+        NotifyPlaylistTrackChanged();
+    }
+
     // Announce track change if setting is enabled
     if (loadedSuccessfully && g_speechTrackChange) {
         // For streams, announce the stream title; for files, announce title or filename

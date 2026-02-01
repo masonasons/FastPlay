@@ -33,5 +33,6 @@ void HandleScheduledDurationEnd();
 INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void ShowTabControls(HWND hwnd, int tab);
 void ShowTagDialog(const wchar_t* title, const std::wstring& text);
+void NotifyPlaylistTrackChanged();
 
 #endif // FASTPLAY_UI_H

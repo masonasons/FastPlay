@@ -729,6 +729,38 @@ static INT_PTR CALLBACK PlaylistDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 EndDialog(hwnd, IDCANCEL);
                 return TRUE;
             }
+            // Handle Save button
+            if (LOWORD(wParam) == IDC_PLAYLIST_SAVE) {
+                if (g_playlist.empty()) {
+                    MessageBoxW(hwnd, L"Playlist is empty.", L"Save Playlist", MB_OK | MB_ICONINFORMATION);
+                    return TRUE;
+                }
+
+                wchar_t filePath[MAX_PATH] = L"playlist.m3u";
+                OPENFILENAMEW ofn = {0};
+                ofn.lStructSize = sizeof(ofn);
+                ofn.hwndOwner = hwnd;
+                ofn.lpstrFilter = L"M3U Playlist (*.m3u)\0*.m3u\0M3U8 Playlist (*.m3u8)\0*.m3u8\0All Files (*.*)\0*.*\0";
+                ofn.lpstrFile = filePath;
+                ofn.nMaxFile = MAX_PATH;
+                ofn.lpstrDefExt = L"m3u";
+                ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+
+                if (GetSaveFileNameW(&ofn)) {
+                    FILE* f = _wfopen(filePath, L"w, ccs=UTF-8");
+                    if (f) {
+                        fprintf(f, "#EXTM3U\n");
+                        for (const auto& path : g_playlist) {
+                            fwprintf(f, L"%s\n", path.c_str());
+                        }
+                        fclose(f);
+                        Speak("Playlist saved");
+                    } else {
+                        MessageBoxW(hwnd, L"Failed to save playlist.", L"Error", MB_OK | MB_ICONERROR);
+                    }
+                }
+                return TRUE;
+            }
             // Handle double-click on listbox
             if (LOWORD(wParam) == IDC_PLAYLIST_LIST && HIWORD(wParam) == LBN_DBLCLK) {
                 int sel = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
@@ -739,6 +771,13 @@ static INT_PTR CALLBACK PlaylistDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 return TRUE;
             }
             break;
+
+        case WM_PLAYLIST_TRACK_CHANGED:
+            // Update selection to follow current track
+            if (g_playlistFollowPlayback && hList && g_currentTrack >= 0) {
+                SendMessageW(hList, LB_SETCURSEL, g_currentTrack, 0);
+            }
+            return TRUE;
 
         case WM_DESTROY:
             // Restore original listbox procedure
@@ -761,13 +800,20 @@ void ShowPlaylistDialog() {
     DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_PLAYLIST), g_hwnd, PlaylistDlgProc);
 }
 
+// Notify playlist dialog about track change
+void NotifyPlaylistTrackChanged() {
+    if (g_playlistDlg) {
+        PostMessageW(g_playlistDlg, WM_PLAYLIST_TRACK_CHANGED, 0, 0);
+    }
+}
+
 // Helper to show/hide tab controls
 void ShowTabControls(HWND hwnd, int tab) {
     // Tab indices: 0=Playback, 1=Recording, 2=Downloads, 3=Speech, 4=Movement, 5=File Types, 6=Global Hotkeys,
     //              7=Effects, 8=Advanced, 9=YouTube, 10=SoundTouch, 11=Rubber Band, 12=Speedy, 13=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Downloads tab controls (tab 2)
@@ -955,6 +1001,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_MINIMIZE_TO_TRAY, g_minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_SHOW_TITLE, g_showTitleInWindow ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_AUTO_ADVANCE, g_autoAdvance ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_PLAYLIST_FOLLOW, g_playlistFollowPlayback ? BST_CHECKED : BST_UNCHECKED);
 
             SetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, g_rewindOnPauseMs, FALSE);
 
@@ -1295,6 +1342,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     g_minimizeToTray = (IsDlgButtonChecked(hwnd, IDC_MINIMIZE_TO_TRAY) == BST_CHECKED);
                     g_showTitleInWindow = (IsDlgButtonChecked(hwnd, IDC_SHOW_TITLE) == BST_CHECKED);
                     g_autoAdvance = (IsDlgButtonChecked(hwnd, IDC_AUTO_ADVANCE) == BST_CHECKED);
+                    g_playlistFollowPlayback = (IsDlgButtonChecked(hwnd, IDC_PLAYLIST_FOLLOW) == BST_CHECKED);
                     UpdateWindowTitle();  // Apply immediately
 
                     g_rewindOnPauseMs = GetDlgItemInt(hwnd, IDC_REWIND_ON_PAUSE, nullptr, FALSE);
