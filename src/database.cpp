@@ -1,7 +1,9 @@
 #include "database.h"
 #include "sqlite3.h"
 #include "utils.h"
+#include "updater.h"
 #include <windows.h>
+#include <shlobj.h>
 #include <ctime>
 #include <vector>
 
@@ -12,15 +14,29 @@ static std::wstring g_dbPath;
 bool InitDatabase() {
     if (g_db) return true;  // Already initialized
 
-    // Get database path (same directory as exe)
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    g_dbPath = exePath;
-    size_t pos = g_dbPath.find_last_of(L"\\/");
-    if (pos != std::wstring::npos) {
-        g_dbPath = g_dbPath.substr(0, pos + 1);
+    // Get database path
+    if (IsInstalledMode()) {
+        // Installed mode: use AppData\Roaming\FastPlay
+        wchar_t appDataPath[MAX_PATH];
+        if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+            g_dbPath = appDataPath;
+            g_dbPath += L"\\FastPlay";
+            CreateDirectoryW(g_dbPath.c_str(), NULL);
+            g_dbPath += L"\\FastPlay.db";
+        }
     }
-    g_dbPath += L"FastPlay.db";
+
+    // Portable mode or fallback: use exe directory
+    if (g_dbPath.empty()) {
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        g_dbPath = exePath;
+        size_t pos = g_dbPath.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            g_dbPath = g_dbPath.substr(0, pos + 1);
+        }
+        g_dbPath += L"FastPlay.db";
+    }
 
     // Open database (UTF-8 path)
     std::string dbPathUtf8 = WideToUtf8(g_dbPath);
