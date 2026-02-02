@@ -542,11 +542,11 @@ static INT_PTR CALLBACK ProgressDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             return TRUE;
 
         case WM_USER + 101: // Download complete
-            EndDialog(hwnd, IDOK);
+            DestroyWindow(hwnd);
             return TRUE;
 
         case WM_USER + 102: // Download failed
-            EndDialog(hwnd, IDCANCEL);
+            DestroyWindow(hwnd);
             return TRUE;
     }
     return FALSE;
@@ -637,26 +637,36 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
         }
 
         std::thread([hwnd, hwndProgress, downloadUrl]() {
-            bool success = DownloadUpdate(downloadUrl, [hwndProgress](size_t downloaded, size_t total) {
+            bool wasCancelled = false;
+            bool success = DownloadUpdate(downloadUrl, [hwndProgress, &wasCancelled](size_t downloaded, size_t total) {
                 if (g_progressData) {
                     g_progressData->downloadedBytes = downloaded;
                     g_progressData->totalBytes = total;
                     if (hwndProgress) {
                         PostMessageW(hwndProgress, WM_USER + 100, 0, 0);
                     }
-                    return !g_progressData->cancelled;
+                    wasCancelled = g_progressData->cancelled;
+                    return !wasCancelled;
                 }
                 return true;
             });
+
+            // Capture cancelled state before destroying dialog (which nulls g_progressData)
+            if (g_progressData) {
+                wasCancelled = g_progressData->cancelled;
+            }
 
             if (hwndProgress) {
                 PostMessageW(hwndProgress, success ? WM_USER + 101 : WM_USER + 102, 0, 0);
             }
 
-            if (success && !g_progressData->cancelled) {
+            // Small delay to let dialog close before showing results
+            Sleep(100);
+
+            if (success && !wasCancelled) {
                 // Apply update
                 PostMessageW(hwnd, WM_USER + 201, 0, 0);
-            } else if (!g_progressData->cancelled) {
+            } else if (!success && !wasCancelled) {
                 MessageBoxA(hwnd, "Failed to download update.", "Error", MB_OK | MB_ICONERROR);
             }
         }).detach();
