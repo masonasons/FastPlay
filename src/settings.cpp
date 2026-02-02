@@ -6,19 +6,46 @@
 #include "database.h"
 #include "accessibility.h"
 #include "tempo_processor.h"
+#include "updater.h"
 #include "resource.h"
 #include <cstdio>
+#include <shlobj.h>
 
 // Initialize config file path
 void InitConfigPath() {
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    g_configPath = exePath;
-    size_t pos = g_configPath.find_last_of(L"\\/");
-    if (pos != std::wstring::npos) {
-        g_configPath = g_configPath.substr(0, pos + 1);
+    if (IsInstalledMode()) {
+        // Installed mode: use AppData\Roaming\FastPlay
+        wchar_t appDataPath[MAX_PATH];
+        if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+            g_configPath = appDataPath;
+            g_configPath += L"\\FastPlay";
+
+            // Create directory if it doesn't exist
+            CreateDirectoryW(g_configPath.c_str(), NULL);
+
+            g_configPath += L"\\FastPlay.ini";
+        } else {
+            // Fallback to exe directory if AppData fails
+            wchar_t exePath[MAX_PATH];
+            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+            g_configPath = exePath;
+            size_t pos = g_configPath.find_last_of(L"\\/");
+            if (pos != std::wstring::npos) {
+                g_configPath = g_configPath.substr(0, pos + 1);
+            }
+            g_configPath += L"FastPlay.ini";
+        }
+    } else {
+        // Portable mode: use exe directory
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        g_configPath = exePath;
+        size_t pos = g_configPath.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            g_configPath = g_configPath.substr(0, pos + 1);
+        }
+        g_configPath += L"FastPlay.ini";
     }
-    g_configPath += L"FastPlay.ini";
 }
 
 // Load settings from INI file
