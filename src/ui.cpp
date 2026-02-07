@@ -189,7 +189,7 @@ void CreateStatusBar(HWND hwnd, HINSTANCE hInstance) {
 // Check if a file extension is a supported audio format
 bool IsSupportedAudioExt(const std::wstring& ext) {
     static const wchar_t* exts[] = {
-        L".mp3", L".wav", L".ogg", L".flac", L".m4a", L".wma", L".aac",
+        L".mp3", L".wav", L".ogg", L".flac", L".m4a", L".m4b", L".wma", L".aac",
         L".opus", L".aiff", L".ape", L".wv", L".mid", L".midi", L".dff", L".dsf"
     };
     std::wstring lowerExt = ext;
@@ -325,8 +325,8 @@ void ShowOpenDialog() {
     ofn.hwndOwner = g_hwnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
-    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac;*.m3u;*.m3u8;*.pls\0"
-                      L"Audio Files\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac\0"
+    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac;*.m3u;*.m3u8;*.pls\0"
+                      L"Audio Files\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac\0"
                       L"Playlists\0*.m3u;*.m3u8;*.pls\0"
                       L"All Files (*.*)\0*.*\0";
     ofn.nFilterIndex = 1;
@@ -5501,7 +5501,7 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
                     OPENFILENAMEW ofn = {sizeof(ofn)};
                     ofn.hwndOwner = hwnd;
-                    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi\0"
+                    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi\0"
                                       L"All Files (*.*)\0*.*\0";
                     ofn.lpstrFile = filePath;
                     ofn.nMaxFile = MAX_PATH;

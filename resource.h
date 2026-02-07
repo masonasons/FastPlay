@@ -73,6 +73,7 @@
 #define IDC_ASSOC_M3U       534
 #define IDC_ASSOC_M3U8      535
 #define IDC_ASSOC_PLS       536
+#define IDC_ASSOC_M4B       533
 #define IDC_ASSOC_MID       537
 #define IDC_ASSOC_MIDI      538
 

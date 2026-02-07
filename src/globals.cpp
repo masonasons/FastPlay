@@ -70,6 +70,7 @@ const FileAssoc g_fileAssocs[] = {
     {L".ogg", L"OGG Audio", IDC_ASSOC_OGG},
     {L".flac", L"FLAC Audio", IDC_ASSOC_FLAC},
     {L".m4a", L"M4A Audio", IDC_ASSOC_M4A},
+    {L".m4b", L"M4B Audiobook", IDC_ASSOC_M4B},
     {L".wma", L"WMA Audio", IDC_ASSOC_WMA},
     {L".aac", L"AAC Audio", IDC_ASSOC_AAC},
     {L".opus", L"Opus Audio", IDC_ASSOC_OPUS},

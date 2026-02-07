@@ -145,6 +145,7 @@ BEGIN
     AUTOCHECKBOX    "P&LS", IDC_ASSOC_PLS, 183, 60, 50, 10
     AUTOCHECKBOX    "MI&D", IDC_ASSOC_MID, 183, 75, 50, 10
     AUTOCHECKBOX    "M&IDI", IDC_ASSOC_MIDI, 183, 90, 50, 10
+    AUTOCHECKBOX    "M4&B", IDC_ASSOC_M4B, 183, 105, 50, 10
 
     // Global Hotkeys tab controls (shown when tab 3 selected)
     AUTOCHECKBOX    "&Enable global hotkeys", IDC_HOTKEY_ENABLED, 17, 30, 100, 10
