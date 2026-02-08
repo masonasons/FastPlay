@@ -16,6 +16,8 @@ include/prism.h
 
 # SQLite database
 *.db
+*.db-shm
+*.db-wal
 
 # Config files (user-specific)
 *.ini
