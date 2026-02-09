@@ -177,6 +177,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         case WM_HOTKEY: {
             int hotkeyId = static_cast<int>(wParam);
+
+            // Handle media keys (registered with special IDs)
+            switch (hotkeyId) {
+                case 0x7F00: // HOTKEY_ID_MEDIA_PLAYPAUSE
+                    PostMessage(hwnd, WM_COMMAND, IDM_PLAY_PLAYPAUSE, 0);
+                    return 0;
+                case 0x7F01: // HOTKEY_ID_MEDIA_STOP
+                    PostMessage(hwnd, WM_COMMAND, IDM_PLAY_STOP, 0);
+                    return 0;
+                case 0x7F02: // HOTKEY_ID_MEDIA_PREV
+                    PostMessage(hwnd, WM_COMMAND, IDM_PLAY_PREV, 0);
+                    return 0;
+                case 0x7F03: // HOTKEY_ID_MEDIA_NEXT
+                    PostMessage(hwnd, WM_COMMAND, IDM_PLAY_NEXT, 0);
+                    return 0;
+            }
+
+            // Handle user-defined hotkeys
             for (const auto& hk : g_hotkeys) {
                 if (hk.id == hotkeyId) {
                     PostMessage(hwnd, WM_COMMAND, g_hotkeyActions[hk.actionIdx].commandId, 0);
