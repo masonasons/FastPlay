@@ -457,10 +457,22 @@ void ApplyUpdate() {
         // Run installer in silent mode
         std::wstring installerPath = GetUpdateInstallerPath();
 
+        // Verify installer exists
+        if (GetFileAttributesW(installerPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            MessageBoxW(g_hwnd, L"Update file not found. The download may have failed.",
+                L"Update Error", MB_OK | MB_ICONERROR);
+            return;
+        }
+
         // Run installer with /SILENT flag (Inno Setup)
         // /SILENT shows progress but no prompts
         // /VERYSILENT hides everything
-        ShellExecuteW(NULL, L"open", installerPath.c_str(), L"/SILENT", NULL, SW_SHOWNORMAL);
+        HINSTANCE result = ShellExecuteW(NULL, L"open", installerPath.c_str(), L"/SILENT", NULL, SW_SHOWNORMAL);
+        if (reinterpret_cast<intptr_t>(result) <= 32) {
+            MessageBoxW(g_hwnd, L"Failed to launch installer.",
+                L"Update Error", MB_OK | MB_ICONERROR);
+            return;
+        }
         PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
     } else {
         // Portable mode: extract zip with batch script
@@ -468,6 +480,13 @@ void ApplyUpdate() {
         std::wstring zipPath = GetUpdateZipPath();
         std::wstring batchPath = appDir + L"\\update.bat";
         std::wstring extractDir = appDir + L"\\update_temp";
+
+        // Verify zip exists
+        if (GetFileAttributesW(zipPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            MessageBoxW(g_hwnd, L"Update file not found. The download may have failed.",
+                L"Update Error", MB_OK | MB_ICONERROR);
+            return;
+        }
 
         // Get exe name
         wchar_t exePath[MAX_PATH];
@@ -492,7 +511,12 @@ void ApplyUpdate() {
         batch.close();
 
         // Run batch script and exit
-        ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, appDir.c_str(), SW_HIDE);
+        HINSTANCE result = ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, appDir.c_str(), SW_HIDE);
+        if (reinterpret_cast<intptr_t>(result) <= 32) {
+            MessageBoxW(g_hwnd, L"Failed to launch update script.",
+                L"Update Error", MB_OK | MB_ICONERROR);
+            return;
+        }
         PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
     }
 }
