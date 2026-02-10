@@ -457,14 +457,6 @@ bool DownloadUpdate(const std::string& url, DownloadProgressCallback progressCal
 }
 
 void ApplyUpdate() {
-    // Debug: show what we're about to do
-    std::wstring debugMsg = L"ApplyUpdate called.\n";
-    debugMsg += L"Mode: ";
-    debugMsg += g_updateWithInstaller ? L"Installer" : L"Portable (zip)";
-    debugMsg += L"\nPath: ";
-    debugMsg += g_updateWithInstaller ? GetUpdateInstallerPath() : GetUpdateZipPath();
-    MessageBoxW(g_hwnd, debugMsg.c_str(), L"Update Debug", MB_OK);
-
     if (g_updateWithInstaller) {
         // Run installer in silent mode
         std::wstring installerPath = GetUpdateInstallerPath();
