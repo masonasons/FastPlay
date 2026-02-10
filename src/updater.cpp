@@ -644,7 +644,12 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
     Speak("Update available. " + info->latestVersion);
 
     if (MessageBoxA(hwnd, message.c_str(), "Update Available", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-        // Create progress dialog dynamically
+        // Initialize progress data BEFORE creating dialog (dialog proc accesses it in WM_INITDIALOG)
+        ProgressDialogData progressData = {0};
+        progressData.cancelled = false;
+        g_progressData = &progressData;
+
+        // Create progress dialog
         HWND hwndProgress = CreateDialogW(GetModuleHandle(NULL),
             MAKEINTRESOURCEW(IDD_PROGRESS), hwnd, ProgressDlgProc);
 
@@ -652,10 +657,6 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
             // Fallback: create simple dialog
             MessageBoxA(hwnd, "Starting download...", "Update", MB_OK);
         }
-
-        ProgressDialogData progressData = {0};
-        progressData.cancelled = false;
-        g_progressData = &progressData;
 
         if (hwndProgress) {
             ShowWindow(hwndProgress, SW_SHOW);
