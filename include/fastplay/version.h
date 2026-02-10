@@ -2,10 +2,10 @@
 #ifndef FASTPLAY_VERSION_H
 #define FASTPLAY_VERSION_H
 
-#define APP_VERSION "1.0.0"
+#define APP_VERSION "1.0.1"
 #define APP_VERSION_MAJOR 1
 #define APP_VERSION_MINOR 0
-#define APP_VERSION_PATCH 0
+#define APP_VERSION_PATCH 1
 
 // This will be set during build from git commit
 #ifndef BUILD_COMMIT
