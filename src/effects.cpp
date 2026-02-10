@@ -22,8 +22,8 @@ static const ParamDef g_paramDefs[] = {
     // Stream effects (DSPEffectType cast to -1 means not a DSP effect)
     {ParamId::Volume,      "Volume",       "%",          0.0f,   4.0f,   0.02f, 1.0f,  (DSPEffectType)-1},
     {ParamId::Pitch,       "Pitch",        " semitones", -12.0f, 12.0f,  1.0f,  0.0f,  (DSPEffectType)-1},
-    {ParamId::Tempo,       "Tempo",        "%",          -50.0f, 100.0f, 5.0f,  0.0f,  (DSPEffectType)-1},
-    {ParamId::Rate,        "Rate",         "x",          0.5f,   2.0f,   0.01f, 1.0f,  (DSPEffectType)-1},
+    {ParamId::Tempo,       "Tempo",        "%",          -75.0f, 200.0f, 5.0f,  0.0f,  (DSPEffectType)-1},
+    {ParamId::Rate,        "Rate",         "x",          0.25f,  4.0f,   0.01f, 1.0f,  (DSPEffectType)-1},
     // Freeverb parameters (algorithm 1)
     {ParamId::ReverbMix,   "Reverb Mix",   "%",          0.0f,   100.0f, 5.0f,  30.0f, DSPEffectType::Reverb},
     {ParamId::ReverbRoom,  "Reverb Room",  "%",          0.0f,   100.0f, 5.0f,  50.0f, DSPEffectType::Reverb},

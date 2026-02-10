@@ -87,13 +87,13 @@ void LoadSettings() {
 
     GetPrivateProfileStringW(L"Playback", L"Tempo", L"0", buf, 32, g_configPath.c_str());
     g_tempo = static_cast<float>(_wtof(buf));
-    if (g_tempo < -50.0f) g_tempo = -50.0f;
-    if (g_tempo > 100.0f) g_tempo = 100.0f;
+    if (g_tempo < -75.0f) g_tempo = -75.0f;
+    if (g_tempo > 200.0f) g_tempo = 200.0f;
 
     GetPrivateProfileStringW(L"Playback", L"Rate", L"1.0", buf, 32, g_configPath.c_str());
     g_rate = static_cast<float>(_wtof(buf));
-    if (g_rate < 0.5f) g_rate = 0.5f;
-    if (g_rate > 2.0f) g_rate = 2.0f;
+    if (g_rate < 0.25f) g_rate = 0.25f;
+    if (g_rate > 4.0f) g_rate = 4.0f;
 
     // Load advanced settings (buffer)
     g_bufferSize = GetPrivateProfileIntW(L"Advanced", L"BufferSize", 500, g_configPath.c_str());

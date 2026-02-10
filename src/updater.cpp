@@ -162,6 +162,10 @@ static std::string HttpGet(const std::wstring& host, const std::wstring& path, b
 
     if (!hSession) return "";
 
+    // Enable TLS 1.2 (required for GitHub API)
+    DWORD secureProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+    WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secureProtocols, sizeof(secureProtocols));
+
     HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(),
         https ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT, 0);
 
