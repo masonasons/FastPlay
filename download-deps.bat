@@ -162,7 +162,9 @@ git clone --depth 1 https://github.com/google/speedy.git "deps\speedy"
 echo.
 echo Cloning Signalsmith Stretch...
 if exist "deps\signalsmith-stretch" rmdir /s /q "deps\signalsmith-stretch"
-git clone --depth 1 --recurse-submodules https://github.com/Signalsmith-Audio/signalsmith-stretch.git "deps\signalsmith-stretch"
+git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git "deps\signalsmith-stretch"
+REM Also clone signalsmith-linear which is a separate dependency
+git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git "deps\signalsmith-stretch\signalsmith-linear"
 
 echo.
 echo Cloning Sonic...
