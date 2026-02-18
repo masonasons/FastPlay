@@ -3275,6 +3275,49 @@ static LRESULT CALLBACK RadioSearchListSubclassProc(HWND hwnd, UINT msg, WPARAM 
         } else if (wParam == VK_ESCAPE) {
             SendMessageW(GetParent(hwnd), WM_COMMAND, IDCANCEL, 0);
             return 0;
+        } else if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            // Copy stream URL to clipboard
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            if (sel >= 0 && sel < static_cast<int>(g_radioSearchResults.size())) {
+                const auto& r = g_radioSearchResults[sel];
+                std::wstring streamUrl;
+
+                // Resolve the stream URL
+                if (r.source == 1 || r.source == 2) {
+                    // TuneIn or iHeartRadio - may have multiple streams
+                    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                    auto urls = ResolveRadioStreamUrls(r);
+                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                    if (urls.size() > 1) {
+                        streamUrl = ShowStreamSelectionMenu(GetParent(hwnd), urls);
+                    } else if (!urls.empty()) {
+                        streamUrl = urls[0].url;
+                    }
+                } else {
+                    // RadioBrowser - single URL
+                    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+                    streamUrl = ResolveRadioStreamUrl(r);
+                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                }
+
+                if (!streamUrl.empty()) {
+                    if (OpenClipboard(hwnd)) {
+                        EmptyClipboard();
+                        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (streamUrl.size() + 1) * sizeof(wchar_t));
+                        if (hMem) {
+                            wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
+                            wcscpy(pMem, streamUrl.c_str());
+                            GlobalUnlock(hMem);
+                            SetClipboardData(CF_UNICODETEXT, hMem);
+                            Speak("URL copied");
+                        }
+                        CloseClipboard();
+                    }
+                } else {
+                    Speak("Could not get stream URL");
+                }
+            }
+            return 0;
         }
     } else if (msg == WM_GETDLGCODE) {
         MSG* pmsg = reinterpret_cast<MSG*>(lParam);
@@ -3383,6 +3426,25 @@ static LRESULT CALLBACK RadioListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam
         } else if (wParam == VK_ESCAPE) {
             // Close dialog
             SendMessageW(GetParent(hwnd), WM_COMMAND, IDCANCEL, 0);
+            return 0;
+        } else if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            // Copy stream URL to clipboard
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            if (sel >= 0 && sel < static_cast<int>(g_radioStations.size())) {
+                const std::wstring& url = g_radioStations[sel].url;
+                if (OpenClipboard(hwnd)) {
+                    EmptyClipboard();
+                    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (url.size() + 1) * sizeof(wchar_t));
+                    if (hMem) {
+                        wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
+                        wcscpy(pMem, url.c_str());
+                        GlobalUnlock(hMem);
+                        SetClipboardData(CF_UNICODETEXT, hMem);
+                        Speak("URL copied");
+                    }
+                    CloseClipboard();
+                }
+            }
             return 0;
         }
     } else if (msg == WM_GETDLGCODE) {
