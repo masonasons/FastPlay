@@ -243,7 +243,16 @@ BEGIN
     LTEXT           "It compresses vowels more than consonants for clarity.", -1, 17, 57, 250, 10
     AUTOCHECKBOX    "&Enable nonlinear speedup (recommended for speech)", IDC_SPEEDY_NONLINEAR, 17, 78, 230, 10
 
-    // MIDI tab controls (shown when tab 10 selected)
+    // Signalsmith tab controls (shown when tab 10 selected)
+    LTEXT           "Signalsmith Stretch settings (changes apply on next file load):", -1, 17, 30, 250, 10
+    LTEXT           "&Quality preset:", -1, 17, 50, 55, 10
+    COMBOBOX        IDC_SS_PRESET, 75, 48, 120, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Tonality limit (Hz, 0 = auto):", -1, 17, 72, 100, 10
+    EDITTEXT        IDC_SS_TONALITY, 120, 70, 50, 14, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Higher tonality limits preserve more harmonics during pitch shift.", -1, 17, 90, 260, 10
+    LTEXT           "Use 0 for automatic, or 4000-8000 for speech, 8000-16000 for music.", -1, 17, 102, 260, 10
+
+    // MIDI tab controls (shown when tab 11 selected)
     LTEXT           "MIDI playback settings (BASSMIDI):", -1, 17, 30, 150, 10
     LTEXT           "&SoundFont (.sf2/.sf3):", -1, 17, 48, 80, 10
     EDITTEXT        IDC_MIDI_SOUNDFONT, 17, 60, 200, 14, ES_AUTOHSCROLL

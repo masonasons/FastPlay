@@ -847,7 +847,9 @@ void ShowTabControls(HWND hwnd, int tab) {
                              IDC_RB_DETECTOR, IDC_RB_CHANNELS, IDC_RB_PHASE, IDC_RB_SMOOTHING};
     // Speedy tab controls (tab 12)
     int speedyCtrls[] = {IDC_SPEEDY_NONLINEAR};
-    // MIDI tab controls (tab 13)
+    // Signalsmith tab controls (tab 13)
+    int signalsmithCtrls[] = {IDC_SS_PRESET, IDC_SS_TONALITY};
+    // MIDI tab controls (tab 14)
     int midiCtrls[] = {IDC_MIDI_SOUNDFONT, IDC_MIDI_SF_BROWSE, IDC_MIDI_VOICES, IDC_MIDI_SINC};
 
     // Show/hide playback controls
@@ -915,9 +917,14 @@ void ShowTabControls(HWND hwnd, int tab) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
     }
 
+    // Show/hide Signalsmith controls
+    for (int id : signalsmithCtrls) {
+        ShowWindow(GetDlgItem(hwnd, id), tab == 13 ? SW_SHOW : SW_HIDE);
+    }
+
     // Show/hide MIDI controls
     for (int id : midiCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 13 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 14 ? SW_SHOW : SW_HIDE);
     }
 }
 
@@ -955,8 +962,10 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             TabCtrl_InsertItem(hTab, 11, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Speedy");
             TabCtrl_InsertItem(hTab, 12, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            tie.pszText = const_cast<LPWSTR>(L"Signalsmith");
             TabCtrl_InsertItem(hTab, 13, &tie);
+            tie.pszText = const_cast<LPWSTR>(L"MIDI");
+            TabCtrl_InsertItem(hTab, 14, &tie);
 
             // Populate hotkey list and set enabled checkbox
             CheckDlgButton(hwnd, IDC_HOTKEY_ENABLED, g_hotkeysEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -1147,6 +1156,11 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 #else
                 SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Speedy (coming soon)"));
 #endif
+#ifdef USE_SIGNALSMITH
+                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Signalsmith Stretch - High quality time/pitch"));
+#else
+                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Signalsmith (coming soon)"));
+#endif
                 SendMessageW(hAlgoCombo, CB_SETCURSEL, g_tempoAlgorithm, 0);
             }
 
@@ -1296,6 +1310,18 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             // Initialize Speedy tab
             {
                 CheckDlgButton(hwnd, IDC_SPEEDY_NONLINEAR, g_speedyNonlinear ? BST_CHECKED : BST_UNCHECKED);
+            }
+
+            // Initialize Signalsmith tab
+            {
+                HWND hPreset = GetDlgItem(hwnd, IDC_SS_PRESET);
+                SendMessageW(hPreset, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Default (higher quality)"));
+                SendMessageW(hPreset, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Cheaper (lower CPU)"));
+                SendMessageW(hPreset, CB_SETCURSEL, g_ssPreset, 0);
+
+                wchar_t buf[32];
+                swprintf(buf, 32, L"%d", g_ssTonalityLimit);
+                SetDlgItemTextW(hwnd, IDC_SS_TONALITY, buf);
             }
 
             // Initialize MIDI tab controls
@@ -1484,7 +1510,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
                         HWND hAlgoCombo = GetDlgItem(hwnd, IDC_TEMPO_ALGORITHM);
                         int algoSel = static_cast<int>(SendMessageW(hAlgoCombo, CB_GETCURSEL, 0, 0));
-                        if (algoSel >= 0 && algoSel <= 3) {
+                        if (algoSel >= 0 && algoSel < static_cast<int>(TempoAlgorithm::COUNT)) {
                             g_tempoAlgorithm = algoSel;
                         }
 
@@ -1614,6 +1640,18 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     // Get Speedy settings
                     {
                         g_speedyNonlinear = (IsDlgButtonChecked(hwnd, IDC_SPEEDY_NONLINEAR) == BST_CHECKED);
+                    }
+
+                    // Get Signalsmith settings
+                    {
+                        HWND hPresetCombo = GetDlgItem(hwnd, IDC_SS_PRESET);
+                        int presetSel = static_cast<int>(SendMessageW(hPresetCombo, CB_GETCURSEL, 0, 0));
+                        if (presetSel >= 0 && presetSel <= 1) g_ssPreset = presetSel;
+
+                        wchar_t buf[32];
+                        GetDlgItemTextW(hwnd, IDC_SS_TONALITY, buf, 32);
+                        int tonality = _wtoi(buf);
+                        if (tonality >= 0 && tonality <= 20000) g_ssTonalityLimit = tonality;
                     }
 
                     // Get MIDI settings

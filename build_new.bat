@@ -37,6 +37,8 @@ set "RUBBERBAND_SRC=deps\rubberband-4.0.0\single\RubberBandSingle.cpp"
 set "SPEEDY_FLAG=/DUSE_SPEEDY /DKISS_FFT /DSONIC_INTERNAL"
 set "SPEEDY_INC=/I"deps\speedy" /I"deps\sonic" /I"deps\kissfft""
 set "SPEEDY_SRC=deps\speedy\speedy.c deps\speedy\soniclib.c deps\sonic\sonic.c deps\kissfft\kiss_fft.c"
+set "SIGNALSMITH_FLAG=/DUSE_SIGNALSMITH"
+set "SIGNALSMITH_INC=/I"deps\signalsmith-stretch""
 
 REM Parse arguments
 :parse_args
@@ -84,8 +86,8 @@ rc /nologo FastPlay.rc
 if errorlevel 1 goto :error
 
 REM Compile and link
-cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE %COMMIT_FLAG% %SPEECH_FLAG% %RUBBERBAND_FLAG% %SPEEDY_FLAG% ^
-   /I"." /I"include" /I"include\fastplay" %RUBBERBAND_INC% %SPEEDY_INC% ^
+cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE %COMMIT_FLAG% %SPEECH_FLAG% %RUBBERBAND_FLAG% %SPEEDY_FLAG% %SIGNALSMITH_FLAG% ^
+   /I"." /I"include" /I"include\fastplay" %RUBBERBAND_INC% %SPEEDY_INC% %SIGNALSMITH_INC% ^
    %SOURCES% FastPlay.res ^
    /Fe:FastPlay.exe ^
    /link /LIBPATH:"lib" /DELAYLOAD:bass.dll /DELAYLOAD:bass_fx.dll /DELAYLOAD:bass_aac.dll /DELAYLOAD:bassmidi.dll /DELAYLOAD:bassenc.dll /DELAYLOAD:bassenc_mp3.dll /DELAYLOAD:bassenc_ogg.dll /DELAYLOAD:bassenc_flac.dll ^

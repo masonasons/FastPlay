@@ -204,7 +204,11 @@
 // Speedy settings (tab 9)
 #define IDC_SPEEDY_NONLINEAR    610
 
-// MIDI settings (tab 10)
+// Signalsmith settings (tab 10)
+#define IDC_SS_PRESET           615
+#define IDC_SS_TONALITY         616
+
+// MIDI settings (tab 11)
 #define IDC_MIDI_SOUNDFONT      620
 #define IDC_MIDI_SF_BROWSE      621
 #define IDC_MIDI_VOICES         622

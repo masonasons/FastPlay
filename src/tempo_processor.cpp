@@ -23,6 +23,11 @@ extern "C" {
 using namespace RubberBand;
 #endif
 
+// Include Signalsmith Stretch
+#ifdef USE_SIGNALSMITH
+#include "signalsmith-stretch.h"
+#endif
+
 // Global algorithm preference
 static TempoAlgorithm g_algorithm = TempoAlgorithm::SoundTouch;
 static std::unique_ptr<TempoProcessor> g_tempoProcessor;
@@ -34,6 +39,7 @@ const char* GetAlgorithmName(TempoAlgorithm algo) {
         case TempoAlgorithm::RubberBandR2: return "Rubber Band R2 (Faster)";
         case TempoAlgorithm::RubberBandR3: return "Rubber Band R3 (Finer)";
         case TempoAlgorithm::Speedy: return "Speedy (Google)";
+        case TempoAlgorithm::Signalsmith: return "Signalsmith Stretch";
         default: return "Unknown";
     }
 }
@@ -48,6 +54,8 @@ const char* GetAlgorithmDescription(TempoAlgorithm algo) {
             return "Highest quality, best for music (uses more CPU)";
         case TempoAlgorithm::Speedy:
             return "Nonlinear speech speedup, preserves consonants";
+        case TempoAlgorithm::Signalsmith:
+            return "High quality pitch/time, low latency";
         default:
             return "";
     }
@@ -847,6 +855,309 @@ private:
 #endif // USE_SPEEDY
 
 // ============================================================================
+// Signalsmith Stretch Implementation
+// ============================================================================
+#ifdef USE_SIGNALSMITH
+
+class SignalsmithProcessor : public TempoProcessor {
+private:
+    HSTREAM m_sourceStream = 0;
+    HSTREAM m_outputStream = 0;
+    signalsmith::stretch::SignalsmithStretch<float> m_stretcher;
+    float m_sampleRate = 44100.0f;
+    int m_channels = 2;
+    float m_tempo = 0.0f;   // percentage
+    float m_pitch = 0.0f;   // semitones
+    float m_rate = 1.0f;    // multiplier
+    bool m_sourceEnded = false;
+
+    mutable std::mutex m_mutex;
+
+    // Buffers
+    std::vector<float> m_decodeBuffer;
+    std::vector<float*> m_inputChannels;
+    std::vector<float*> m_outputChannels;
+    std::vector<std::vector<float>> m_channelIn;
+    std::vector<std::vector<float>> m_channelOut;
+    std::deque<float> m_outputQueue;
+
+    static constexpr size_t DECODE_BLOCK_SIZE = 1024;
+    static constexpr size_t MAX_OUTPUT_QUEUE = 65536;
+
+    double GetSpeedMultiplier() const {
+        return (100.0 + m_tempo) / 100.0 * m_rate;
+    }
+
+    bool ProcessMoreAudio() {
+        if (m_sourceEnded || m_channels == 0) return false;
+
+        DWORD bytesNeeded = DECODE_BLOCK_SIZE * m_channels * sizeof(float);
+        m_decodeBuffer.resize(DECODE_BLOCK_SIZE * m_channels);
+
+        DWORD bytesRead = BASS_ChannelGetData(m_sourceStream, m_decodeBuffer.data(),
+            bytesNeeded | BASS_DATA_FLOAT);
+
+        if (bytesRead == (DWORD)-1 || bytesRead == 0) {
+            m_sourceEnded = true;
+            return false;
+        }
+
+        size_t samplesDecoded = bytesRead / sizeof(float) / m_channels;
+
+        // Deinterleave input
+        for (int ch = 0; ch < m_channels; ch++) {
+            m_channelIn[ch].resize(samplesDecoded);
+            for (size_t i = 0; i < samplesDecoded; i++) {
+                m_channelIn[ch][i] = m_decodeBuffer[i * m_channels + ch];
+            }
+            m_inputChannels[ch] = m_channelIn[ch].data();
+        }
+
+        // Calculate output size based on speed
+        double speed = GetSpeedMultiplier();
+        if (speed < 0.1) speed = 0.1;
+        if (speed > 10.0) speed = 10.0;
+        size_t outputSamples = static_cast<size_t>(samplesDecoded / speed + 0.5);
+        if (outputSamples < 1) outputSamples = 1;
+
+        // Resize output buffers
+        for (int ch = 0; ch < m_channels; ch++) {
+            m_channelOut[ch].resize(outputSamples);
+            m_outputChannels[ch] = m_channelOut[ch].data();
+        }
+
+        // Process through Signalsmith
+        m_stretcher.process(m_inputChannels.data(), (int)samplesDecoded,
+                           m_outputChannels.data(), (int)outputSamples);
+
+        // Interleave output to queue
+        for (size_t i = 0; i < outputSamples; i++) {
+            for (int ch = 0; ch < m_channels; ch++) {
+                m_outputQueue.push_back(m_channelOut[ch][i]);
+            }
+        }
+
+        return true;
+    }
+
+    static DWORD CALLBACK StreamProc(HSTREAM handle, void* buffer, DWORD length, void* user) {
+        SignalsmithProcessor* proc = static_cast<SignalsmithProcessor*>(user);
+        if (!proc) return BASS_STREAMPROC_END;
+
+        std::lock_guard<std::mutex> lock(proc->m_mutex);
+
+        float* outBuf = static_cast<float*>(buffer);
+        DWORD samplesNeeded = length / sizeof(float);
+        DWORD samplesWritten = 0;
+
+        while (samplesWritten < samplesNeeded) {
+            if (!proc->m_outputQueue.empty()) {
+                size_t canCopy = std::min((size_t)(samplesNeeded - samplesWritten),
+                                         proc->m_outputQueue.size());
+                for (size_t i = 0; i < canCopy; i++) {
+                    outBuf[samplesWritten++] = proc->m_outputQueue.front();
+                    proc->m_outputQueue.pop_front();
+                }
+            } else if (!proc->m_sourceEnded) {
+                if (!proc->ProcessMoreAudio()) {
+                    if (proc->m_outputQueue.empty()) {
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        if (samplesWritten == 0 && proc->m_sourceEnded) {
+            return BASS_STREAMPROC_END;
+        }
+
+        // Zero remaining buffer if we couldn't fill it
+        while (samplesWritten < samplesNeeded) {
+            outBuf[samplesWritten++] = 0.0f;
+        }
+
+        return samplesWritten * sizeof(float);
+    }
+
+public:
+    ~SignalsmithProcessor() override {
+        Shutdown();
+    }
+
+    HSTREAM Initialize(HSTREAM sourceStream, float sampleRate) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        m_sourceStream = sourceStream;
+        m_sampleRate = sampleRate;
+        m_sourceEnded = false;
+        m_outputQueue.clear();
+
+        // Get channel info
+        BASS_CHANNELINFO info;
+        if (!BASS_ChannelGetInfo(sourceStream, &info)) {
+            return 0;
+        }
+        m_channels = info.chans;
+
+        // Configure Signalsmith based on global settings
+        if (g_ssPreset == 1) {
+            m_stretcher.presetCheaper(m_channels, (int)sampleRate);
+        } else {
+            m_stretcher.presetDefault(m_channels, (int)sampleRate);
+        }
+
+        // Set tonality limit if specified (0 = auto)
+        float tonalityLimit = g_ssTonalityLimit > 0 ? static_cast<float>(g_ssTonalityLimit) / sampleRate : 0.0f;
+        m_stretcher.setTransposeSemitones(m_pitch, tonalityLimit);
+        m_stretcher.reset();
+
+        // Allocate buffers
+        m_channelIn.resize(m_channels);
+        m_channelOut.resize(m_channels);
+        m_inputChannels.resize(m_channels);
+        m_outputChannels.resize(m_channels);
+
+        // Pre-fill the stretcher to handle latency
+        // Process some initial audio to prime the internal buffers
+        int latencySamples = m_stretcher.inputLatency() + m_stretcher.outputLatency();
+        if (latencySamples > 0) {
+            std::vector<float> primeBuffer(latencySamples * m_channels, 0.0f);
+            DWORD bytesRead = BASS_ChannelGetData(sourceStream, primeBuffer.data(),
+                latencySamples * m_channels * sizeof(float) | BASS_DATA_FLOAT);
+
+            if (bytesRead > 0 && bytesRead != (DWORD)-1) {
+                size_t primeSamples = bytesRead / sizeof(float) / m_channels;
+
+                // Deinterleave and process
+                for (int ch = 0; ch < m_channels; ch++) {
+                    m_channelIn[ch].resize(primeSamples);
+                    for (size_t i = 0; i < primeSamples; i++) {
+                        m_channelIn[ch][i] = primeBuffer[i * m_channels + ch];
+                    }
+                    m_inputChannels[ch] = m_channelIn[ch].data();
+                    m_channelOut[ch].resize(primeSamples);
+                    m_outputChannels[ch] = m_channelOut[ch].data();
+                }
+
+                // Process to prime the stretcher (discard output)
+                m_stretcher.process(m_inputChannels.data(), (int)primeSamples,
+                                   m_outputChannels.data(), (int)primeSamples);
+            }
+        }
+
+        // Create output stream (no DECODE flag - this is the playback stream)
+        m_outputStream = BASS_StreamCreate(
+            (DWORD)sampleRate,
+            m_channels,
+            BASS_SAMPLE_FLOAT,
+            StreamProc,
+            this
+        );
+
+        if (!m_outputStream) {
+            return 0;
+        }
+
+        return m_outputStream;
+    }
+
+    void Shutdown() override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        if (m_outputStream) {
+            BASS_StreamFree(m_outputStream);
+            m_outputStream = 0;
+        }
+        m_sourceStream = 0;
+        m_outputQueue.clear();
+        m_channelIn.clear();
+        m_channelOut.clear();
+        m_inputChannels.clear();
+        m_outputChannels.clear();
+    }
+
+    void SetTempo(float tempoPercent) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tempo = tempoPercent;
+        // Signalsmith handles tempo via input/output sample ratio in process()
+    }
+
+    void SetPitch(float semitones) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_pitch = semitones;
+        float tonalityLimit = g_ssTonalityLimit > 0 ? static_cast<float>(g_ssTonalityLimit) / m_sampleRate : 0.0f;
+        m_stretcher.setTransposeSemitones(semitones, tonalityLimit);
+    }
+
+    void SetRate(float rate) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_rate = rate;
+        // Rate is handled via input/output sample ratio in process()
+    }
+
+    float GetTempo() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_tempo;
+    }
+
+    float GetPitch() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_pitch;
+    }
+
+    float GetRate() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_rate;
+    }
+
+    bool IsActive() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_outputStream != 0;
+    }
+
+    TempoAlgorithm GetAlgorithm() const override {
+        return TempoAlgorithm::Signalsmith;
+    }
+
+    double GetLength() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_sourceStream) return 0.0;
+        QWORD len = BASS_ChannelGetLength(m_sourceStream, BASS_POS_BYTE);
+        return BASS_ChannelBytes2Seconds(m_sourceStream, len);
+    }
+
+    double GetPosition() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_sourceStream) return 0.0;
+        QWORD pos = BASS_ChannelGetPosition(m_sourceStream, BASS_POS_BYTE);
+        return BASS_ChannelBytes2Seconds(m_sourceStream, pos);
+    }
+
+    void SetPosition(double seconds) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_sourceStream) return;
+
+        QWORD pos = BASS_ChannelSeconds2Bytes(m_sourceStream, seconds);
+        BASS_ChannelSetPosition(m_sourceStream, pos, BASS_POS_BYTE);
+
+        // Reset stretcher and clear output
+        m_stretcher.reset();
+        m_stretcher.setTransposeSemitones(m_pitch);
+        m_outputQueue.clear();
+        m_sourceEnded = false;
+    }
+
+    HSTREAM GetSourceStream() const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_sourceStream;
+    }
+};
+
+#endif // USE_SIGNALSMITH
+
+// ============================================================================
 // Factory and Global Management
 // ============================================================================
 TempoProcessor* CreateTempoProcessor(TempoAlgorithm algorithm) {
@@ -862,6 +1173,10 @@ TempoProcessor* CreateTempoProcessor(TempoAlgorithm algorithm) {
         case TempoAlgorithm::Speedy:
             return new SpeedyProcessor();
 #endif
+#ifdef USE_SIGNALSMITH
+        case TempoAlgorithm::Signalsmith:
+            return new SignalsmithProcessor();
+#endif
         default:
             // Fall back to SoundTouch if algorithm not available
             return new SoundTouchProcessor();
@@ -873,12 +1188,35 @@ TempoAlgorithm GetCurrentAlgorithm() {
 }
 
 void SetCurrentAlgorithm(TempoAlgorithm algorithm) {
-#ifndef USE_RUBBERBAND
-    // If Rubber Band not available, force SoundTouch
-    if (algorithm != TempoAlgorithm::SoundTouch) {
+    // Check if the selected algorithm is available
+    bool available = false;
+    switch (algorithm) {
+        case TempoAlgorithm::SoundTouch:
+            available = true;
+            break;
+#ifdef USE_RUBBERBAND
+        case TempoAlgorithm::RubberBandR2:
+        case TempoAlgorithm::RubberBandR3:
+            available = true;
+            break;
+#endif
+#ifdef USE_SPEEDY
+        case TempoAlgorithm::Speedy:
+            available = true;
+            break;
+#endif
+#ifdef USE_SIGNALSMITH
+        case TempoAlgorithm::Signalsmith:
+            available = true;
+            break;
+#endif
+        default:
+            break;
+    }
+
+    if (!available) {
         algorithm = TempoAlgorithm::SoundTouch;
     }
-#endif
     g_algorithm = algorithm;
 }
 

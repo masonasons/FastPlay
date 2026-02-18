@@ -106,7 +106,7 @@ void LoadSettings() {
 
     g_tempoAlgorithm = GetPrivateProfileIntW(L"Advanced", L"TempoAlgorithm", 0, g_configPath.c_str());
     if (g_tempoAlgorithm < 0) g_tempoAlgorithm = 0;
-    if (g_tempoAlgorithm > 3) g_tempoAlgorithm = 3;
+    if (g_tempoAlgorithm >= static_cast<int>(TempoAlgorithm::COUNT)) g_tempoAlgorithm = 0;
 
     g_legacyVolume = GetPrivateProfileIntW(L"Advanced", L"LegacyVolume", 0, g_configPath.c_str()) != 0;
 
@@ -154,6 +154,14 @@ void LoadSettings() {
 
     // Load Speedy settings
     g_speedyNonlinear = GetPrivateProfileIntW(L"Speedy", L"NonlinearSpeedup", 1, g_configPath.c_str()) != 0;
+
+    // Load Signalsmith Stretch settings
+    g_ssPreset = GetPrivateProfileIntW(L"Signalsmith", L"Preset", 0, g_configPath.c_str());
+    if (g_ssPreset < 0) g_ssPreset = 0;
+    if (g_ssPreset > 1) g_ssPreset = 1;
+    g_ssTonalityLimit = GetPrivateProfileIntW(L"Signalsmith", L"TonalityLimit", 0, g_configPath.c_str());
+    if (g_ssTonalityLimit < 0) g_ssTonalityLimit = 0;
+    if (g_ssTonalityLimit > 20000) g_ssTonalityLimit = 20000;
 
     // Load reverb algorithm (0=Off, 1=Freeverb, 2=DX8, 3=I3DL2)
     g_reverbAlgorithm = GetPrivateProfileIntW(L"Effects", L"ReverbAlgorithm", 0, g_configPath.c_str());
@@ -454,6 +462,12 @@ void SaveSettings() {
 
     // Save Speedy settings
     WritePrivateProfileStringW(L"Speedy", L"NonlinearSpeedup", g_speedyNonlinear ? L"1" : L"0", g_configPath.c_str());
+
+    // Save Signalsmith Stretch settings
+    swprintf(buf, 32, L"%d", g_ssPreset);
+    WritePrivateProfileStringW(L"Signalsmith", L"Preset", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%d", g_ssTonalityLimit);
+    WritePrivateProfileStringW(L"Signalsmith", L"TonalityLimit", buf, g_configPath.c_str());
 
     // Save reverb algorithm
     swprintf(buf, 32, L"%d", g_reverbAlgorithm);

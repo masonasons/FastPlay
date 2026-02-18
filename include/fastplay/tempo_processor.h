@@ -11,6 +11,7 @@ enum class TempoAlgorithm {
     RubberBandR2,   // Rubber Band R2 (Faster) engine - balanced
     RubberBandR3,   // Rubber Band R3 (Finer) engine - highest quality
     Speedy,         // Google Speedy - nonlinear speech speedup
+    Signalsmith,    // Signalsmith Stretch - high quality pitch/time
     COUNT
 };
 

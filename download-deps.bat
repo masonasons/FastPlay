@@ -160,6 +160,11 @@ if exist "deps\speedy" rmdir /s /q "deps\speedy"
 git clone --depth 1 https://github.com/google/speedy.git "deps\speedy"
 
 echo.
+echo Cloning Signalsmith Stretch...
+if exist "deps\signalsmith-stretch" rmdir /s /q "deps\signalsmith-stretch"
+git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git "deps\signalsmith-stretch"
+
+echo.
 echo Cloning Sonic...
 if exist "deps\sonic" rmdir /s /q "deps\sonic"
 git clone --depth 1 https://github.com/waywardgeek/sonic.git "deps\sonic"

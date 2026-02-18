@@ -156,6 +156,10 @@ extern bool g_rbSmoothing;         // Time-domain smoothing (default false, R2 o
 // Speedy settings
 extern bool g_speedyNonlinear;     // Enable nonlinear speedup (default true, recommended for speech)
 
+// Signalsmith Stretch settings
+extern int g_ssPreset;             // 0=Default, 1=Cheaper
+extern int g_ssTonalityLimit;      // Tonality limit in Hz (0=auto)
+
 // Reverb algorithm (0=Off, 1=Freeverb, 2=DX8, 3=I3DL2)
 extern int g_reverbAlgorithm;
 
