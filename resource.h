@@ -76,6 +76,7 @@
 #define IDC_ASSOC_M4B       533
 #define IDC_ASSOC_MID       537
 #define IDC_ASSOC_MIDI      538
+#define IDC_ASSOC_OGA       547
 
 // Global hotkeys tab
 #define IDC_HOTKEY_LIST     540

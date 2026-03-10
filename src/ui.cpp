@@ -189,7 +189,7 @@ void CreateStatusBar(HWND hwnd, HINSTANCE hInstance) {
 // Check if a file extension is a supported audio format
 bool IsSupportedAudioExt(const std::wstring& ext) {
     static const wchar_t* exts[] = {
-        L".mp3", L".wav", L".ogg", L".flac", L".m4a", L".m4b", L".wma", L".aac",
+        L".mp3", L".wav", L".ogg", L".oga", L".flac", L".m4a", L".m4b", L".wma", L".aac",
         L".opus", L".aiff", L".ape", L".wv", L".mid", L".midi", L".dff", L".dsf"
     };
     std::wstring lowerExt = ext;
@@ -325,8 +325,8 @@ void ShowOpenDialog() {
     ofn.hwndOwner = g_hwnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
-    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac;*.m3u;*.m3u8;*.pls\0"
-                      L"Audio Files\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac\0"
+    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac;*.m3u;*.m3u8;*.pls\0"
+                      L"Audio Files\0*.mp3;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac\0"
                       L"Playlists\0*.m3u;*.m3u8;*.pls\0"
                       L"All Files (*.*)\0*.*\0";
     ofn.nFilterIndex = 1;
@@ -824,7 +824,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     int movementCtrls[] = {IDC_SEEK_1S, IDC_SEEK_5S, IDC_SEEK_10S, IDC_SEEK_30S, IDC_SEEK_1M, IDC_SEEK_5M, IDC_SEEK_10M,
                            IDC_SEEK_30M, IDC_SEEK_1H, IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
     // File Types tab controls (tab 5)
-    int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_M4B,
+    int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_OGA, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_M4B,
                            IDC_ASSOC_WMA, IDC_ASSOC_AAC, IDC_ASSOC_OPUS, IDC_ASSOC_AIFF, IDC_ASSOC_APE, IDC_ASSOC_WV,
                            IDC_ASSOC_M3U, IDC_ASSOC_M3U8, IDC_ASSOC_PLS, IDC_ASSOC_MID, IDC_ASSOC_MIDI};
     // Global Hotkeys tab controls (tab 6)
@@ -5601,7 +5601,7 @@ static INT_PTR CALLBACK SchedAddDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
                     OPENFILENAMEW ofn = {sizeof(ofn)};
                     ofn.hwndOwner = hwnd;
-                    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi\0"
+                    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi\0"
                                       L"All Files (*.*)\0*.*\0";
                     ofn.lpstrFile = filePath;
                     ofn.nMaxFile = MAX_PATH;
