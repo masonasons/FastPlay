@@ -1,5 +1,7 @@
 # FastPlay
 
+This repository marks the last open source push of FastPlay to Github.
+
 A fast, accessible audio player for Windows with support for tempo/pitch shifting, effects, and screen reader accessibility.
 
 ## Features
