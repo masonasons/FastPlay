@@ -3672,12 +3672,9 @@ static LRESULT CALLBACK RadioListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam
                 // Speak position feedback
                 const std::wstring& name = g_radioStations[newSel].name;
                 if (newSel == 0)
-                    SpeakW(name + L" moved above " + g_radioStations[1].name);
-                else if (newSel == count - 1)
-                    SpeakW(name + L" moved below " + g_radioStations[count - 2].name);
+                    SpeakW(name + L" moved to top");
                 else
-                    SpeakW(name + L" moved between " + g_radioStations[newSel - 1].name +
-                           L" and " + g_radioStations[newSel + 1].name);
+                    SpeakW(name + L" moved below " + g_radioStations[newSel - 1].name);
             }
             return 0;
         } else if (wParam == VK_ESCAPE) {
@@ -5127,12 +5124,9 @@ static LRESULT CALLBACK PodcastSubsListSubclassProc(HWND hwnd, UINT msg, WPARAM 
                 // Speak position feedback
                 const std::wstring& name = g_podcastSubs[newSel].name;
                 if (newSel == 0)
-                    SpeakW(name + L" moved above " + g_podcastSubs[1].name);
-                else if (newSel == count - 1)
-                    SpeakW(name + L" moved below " + g_podcastSubs[count - 2].name);
+                    SpeakW(name + L" moved to top");
                 else
-                    SpeakW(name + L" moved between " + g_podcastSubs[newSel - 1].name +
-                           L" and " + g_podcastSubs[newSel + 1].name);
+                    SpeakW(name + L" moved below " + g_podcastSubs[newSel - 1].name);
             }
             return 0;
         }

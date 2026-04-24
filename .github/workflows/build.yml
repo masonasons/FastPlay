@@ -12,6 +12,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    outputs:
+      app_version: ${{ steps.version.outputs.APP_VERSION }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,42 +35,21 @@ jobs:
       - name: Download dependencies
         run: .\download-deps.bat
 
-      - name: Build executable
+      # build_new.bat compiles FastPlay.exe, runs dist.bat to produce FastPlay.zip,
+      # and invokes Inno Setup (pre-installed on windows-latest) to produce
+      # FastPlayInstaller.exe — all with the correct APP_VERSION from version.h
+      # and BUILD_COMMIT from git rev-parse. No need to rebuild the zip/installer here.
+      - name: Build FastPlay (exe + portable zip + installer)
         run: .\build_new.bat
 
-      - name: Create distribution folder
+      - name: Read APP_VERSION from version.h
+        id: version
+        shell: pwsh
         run: |
-          # Create dist folder with all files for both zip and installer
-          if (Test-Path "dist_temp") { Remove-Item -Recurse -Force "dist_temp" }
-          New-Item -ItemType Directory -Path "dist_temp"
-
-          # Copy exe
-          Copy-Item "FastPlay.exe" "dist_temp\"
-
-          # Copy docs
-          New-Item -ItemType Directory -Path "dist_temp\docs"
-          Copy-Item -Recurse "docs\*" "dist_temp\docs\"
-
-          # Copy lib folder with DLLs
-          New-Item -ItemType Directory -Path "dist_temp\lib"
-          Copy-Item "lib\*.dll" "dist_temp\lib\" -ErrorAction SilentlyContinue
-        shell: pwsh
-
-      - name: Create portable zip
-        run: |
-          if (Test-Path "FastPlay.zip") { Remove-Item "FastPlay.zip" }
-          Compress-Archive -Path "dist_temp\*" -DestinationPath "FastPlay.zip" -Force
-        shell: pwsh
-
-      - name: Build installer
-        run: |
-          # Inno Setup is pre-installed on windows-latest
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.0 /DSourceDir="dist_temp" /DOutputDir="." installer.iss
-        shell: pwsh
-
-      - name: Clean up dist folder
-        run: Remove-Item -Recurse -Force "dist_temp"
-        shell: pwsh
+          $match = Select-String -Path "include\fastplay\version.h" -Pattern '#define APP_VERSION "([^"]+)"'
+          $v = $match.Matches.Groups[1].Value
+          Write-Host "APP_VERSION: $v"
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
@@ -109,6 +91,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Body includes both "commit <sha>" and "**Version:** X.Y.Z" so the in-app
+      # updater can parse either via its regexes (commit takes precedence when the
+      # local BUILD_COMMIT is set, falling back to version string comparison).
       - name: Create latest release
         uses: softprops/action-gh-release@v2
         with:
@@ -117,6 +102,7 @@ jobs:
           body: |
             Automated build from commit ${{ github.sha }}
 
+            **Version:** ${{ needs.build-windows.outputs.app_version }}
             **Built:** ${{ github.event.head_commit.timestamp }}
             **Commit:** ${{ github.event.head_commit.message }}
 
