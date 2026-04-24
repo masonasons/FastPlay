@@ -1,4 +1,5 @@
 0.6.6
+Add Help > Readme to open the bundled docs\readme.txt in the default text editor.
 Add Ctrl+D / File > Add Stream to Favorites to save the currently playing stream URL to radio favorites. Refuses silently if nothing's playing, if the current item isn't a URL, or if the stream is already in favorites.
 Add a Country filter to the RadioBrowser search tab. Select a country (or leave "(Any)") to restrict search results. The country list is fetched once per session in the background, ordered by station count; the combo is editable so you can type a country name directly. The filter is hidden when the search source is not RadioBrowser. With a country selected, you can leave the search box empty and hit Search to browse all stations from that country, sorted by popularity.
 When a podcast feed fails to load, show a diagnostic dialog with the feed URL, HTTP status, any Win32 / WinInet error, bytes received, number of <item> tags found in the XML, number of episodes extracted, and a preview of the response body. Applies to loading episodes for a subscribed podcast and to adding a new podcast by URL.

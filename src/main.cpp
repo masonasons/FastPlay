@@ -294,6 +294,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_HELP_UPDATES:
                     ShowCheckForUpdatesDialog(hwnd, false);
                     break;
+                case IDM_HELP_README: {
+                    wchar_t readmePath[MAX_PATH];
+                    GetModuleFileNameW(nullptr, readmePath, MAX_PATH);
+                    wchar_t* slash = wcsrchr(readmePath, L'\\');
+                    if (slash) {
+                        *(slash + 1) = L'\0';
+                        wcscat_s(readmePath, MAX_PATH, L"docs\\readme.txt");
+                        HINSTANCE r = ShellExecuteW(hwnd, L"open", readmePath, nullptr, nullptr, SW_SHOWNORMAL);
+                        if ((INT_PTR)r <= 32) {
+                            MessageBoxW(hwnd, L"Could not open readme.txt. Make sure the docs folder is present alongside FastPlay.exe.", L"Readme", MB_OK | MB_ICONWARNING);
+                        }
+                    }
+                    break;
+                }
                 case IDM_BOOKMARK_ADD:
                     if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
                         double pos = GetCurrentPosition();

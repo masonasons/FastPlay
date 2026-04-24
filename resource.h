@@ -243,6 +243,7 @@
 #define IDM_FILE_ADD_TO_FAVORITES 113
 #define IDM_HELP_PLUGINS    109
 #define IDM_HELP_UPDATES    112
+#define IDM_HELP_README     114
 
 // Progress dialog (for updates)
 #define IDD_PROGRESS        995

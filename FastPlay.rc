@@ -54,6 +54,7 @@ BEGIN
     END
     POPUP "&Help"
     BEGIN
+        MENUITEM "&Readme", IDM_HELP_README
         MENUITEM "Check for &Updates...", IDM_HELP_UPDATES
         MENUITEM SEPARATOR
         MENUITEM "&Loaded Plugins...", IDM_HELP_PLUGINS
