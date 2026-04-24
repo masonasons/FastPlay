@@ -16,15 +16,23 @@ void CreateStatusBar(HWND hwnd, HINSTANCE hInstance);
 void UpdateStatusBar();
 void UpdateWindowTitle();
 
+// File associations
+void RegisterAllFileTypes();
+void UnregisterAllFileTypes();
+
 // Dialogs
 void ShowOpenDialog();
 void ShowAddFolderDialog();
 void ShowPlaylistDialog();
 void ShowOpenURLDialog();
 void ShowJumpToTimeDialog();
+void ShowEffectPresetsMenu(HWND hwnd);
+void ShowSaveEffectPresetDialog();
 void ShowOptionsDialog();
 void ShowBookmarksDialog();
+void ShowSongHistoryDialog();
 void ShowRadioDialog();
+void AddCurrentStreamToFavorites();
 void ShowSchedulerDialog();
 void ShowPodcastDialog();
 void CheckScheduledEvents();

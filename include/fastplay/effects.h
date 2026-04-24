@@ -4,6 +4,8 @@
 
 #include "types.h"
 #include "bass.h"
+#include <string>
+#include <vector>
 
 // Effect initialization
 bool InitEffects();
@@ -43,6 +45,12 @@ int GetAvailableParamCount();
 
 // Reset all effects to default
 void ResetEffects();
+
+// Effect presets (save/load/delete named sets of all enabled effects + params)
+bool SaveEffectPreset(const std::wstring& name);
+bool LoadEffectPreset(const std::wstring& name);
+bool DeleteEffectPreset(const std::wstring& name);
+std::vector<std::wstring> GetEffectPresetNames();
 
 // Legacy compatibility
 float GetEffectValue(EffectType type);

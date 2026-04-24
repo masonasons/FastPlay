@@ -20,6 +20,7 @@ struct RadioStation {
     std::wstring name;
     std::wstring url;
     int64_t timestamp;
+    int sortOrder;
 };
 
 // Podcast subscription structure
@@ -29,6 +30,14 @@ struct PodcastSubscription {
     std::wstring feedUrl;
     std::wstring imageUrl;
     int64_t lastUpdated;
+    int sortOrder;
+};
+
+// Song history entry (captured from stream metadata)
+struct SongHistoryEntry {
+    int id;
+    std::wstring title;
+    int64_t timestamp;  // Unix timestamp when captured
 };
 
 // Podcast episode structure (not stored in DB - fetched from RSS)
@@ -109,6 +118,8 @@ bool RemoveRadioStation(int id);
 bool RenameRadioStation(int id, const std::wstring& newName);
 bool UpdateRadioStation(int id, const std::wstring& newName, const std::wstring& newUrl);
 std::vector<RadioStation> GetRadioFavorites();
+bool UpdateRadioSortOrders(const std::vector<RadioStation>& stations);
+bool ResetRadioSortOrder();
 
 // Podcast subscription operations
 int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
@@ -117,6 +128,8 @@ bool RemovePodcastSubscription(int id);
 bool UpdatePodcastSubscription(int id, const std::wstring& name, const std::wstring& feedUrl);
 bool UpdatePodcastLastUpdated(int id);
 std::vector<PodcastSubscription> GetPodcastSubscriptions();
+bool UpdatePodcastSortOrders(const std::vector<PodcastSubscription>& subs);
+bool ResetPodcastSortOrder();
 
 // Schedule operations
 int AddScheduledEvent(const std::wstring& name, ScheduleAction action,
@@ -135,5 +148,10 @@ bool UpdateScheduledEvent(int id, const std::wstring& name, ScheduleAction actio
                           int duration, ScheduleStopAction stopAction);
 std::vector<ScheduledEvent> GetAllScheduledEvents();
 std::vector<ScheduledEvent> GetPendingScheduledEvents();
+
+// Song history operations (captured from stream metadata)
+void AddSongHistoryEntry(const std::wstring& title);
+std::vector<SongHistoryEntry> GetSongHistory();
+void ClearSongHistory();
 
 #endif // FASTPLAY_DATABASE_H

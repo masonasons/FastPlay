@@ -46,6 +46,7 @@ extern const SeekAmount g_seekAmounts[];
 extern const int g_seekAmountCount;
 extern const FileAssoc g_fileAssocs[];
 extern const int g_fileAssocCount;
+extern bool g_registerFileTypes;
 extern const HotkeyAction g_hotkeyActions[];
 extern const int g_hotkeyActionCount;
 extern std::vector<GlobalHotkey> g_hotkeys;
@@ -115,7 +116,7 @@ void UpdateStatusBar() {
     std::wstring stateText;
 
     if (g_fxStream) {
-        // Use tempo processor to get position and length (supports both SoundTouch and Rubber Band)
+        // Use tempo processor to get position and length
         TempoProcessor* processor = GetTempoProcessor();
         if (processor && processor->IsActive()) {
             double pos = processor->GetPosition();
@@ -315,6 +316,24 @@ void SetFileAssociation(const wchar_t* ext, bool associate) {
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
+// Register all supported file types
+void RegisterAllFileTypes() {
+    for (int i = 0; i < g_fileAssocCount; i++) {
+        if (!IsExtensionAssociated(g_fileAssocs[i].ext)) {
+            SetFileAssociation(g_fileAssocs[i].ext, true);
+        }
+    }
+}
+
+// Unregister all supported file types
+void UnregisterAllFileTypes() {
+    for (int i = 0; i < g_fileAssocCount; i++) {
+        if (IsExtensionAssociated(g_fileAssocs[i].ext)) {
+            SetFileAssociation(g_fileAssocs[i].ext, false);
+        }
+    }
+}
+
 // Show file open dialog
 void ShowOpenDialog() {
     // Buffer for multiple file selection
@@ -325,8 +344,9 @@ void ShowOpenDialog() {
     ofn.hwndOwner = g_hwnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
-    ofn.lpstrFilter = L"All Supported\0*.mp3;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac;*.m3u;*.m3u8;*.pls\0"
-                      L"Audio Files\0*.mp3;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.wma;*.aac;*.opus;*.aiff;*.ape;*.wv;*.mid;*.midi;*.dff;*.dsf;*.alac\0"
+    ofn.lpstrFilter = L"All Supported\0*.mp3;*.mp2;*.mp1;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.m4r;*.mp4;*.wma;*.wmv;*.aac;*.opus;*.aiff;*.aif;*.ape;*.wv;*.alac;*.mid;*.midi;*.rmi;*.kar;*.dff;*.dsf;*.cda;*.mod;*.s3m;*.xm;*.it;*.mtm;*.umx;*.m3u;*.m3u8;*.pls\0"
+                      L"Audio Files\0*.mp3;*.mp2;*.mp1;*.wav;*.ogg;*.oga;*.flac;*.m4a;*.m4b;*.m4r;*.mp4;*.wma;*.aac;*.opus;*.aiff;*.aif;*.ape;*.wv;*.alac;*.mid;*.midi;*.rmi;*.kar;*.dff;*.dsf;*.cda;*.mod;*.s3m;*.xm;*.it;*.mtm;*.umx\0"
+                      L"Video Files\0*.wmv;*.mp4\0"
                       L"Playlists\0*.m3u;*.m3u8;*.pls\0"
                       L"All Files (*.*)\0*.*\0";
     ofn.nFilterIndex = 1;
@@ -809,11 +829,11 @@ void NotifyPlaylistTrackChanged() {
 
 // Helper to show/hide tab controls
 void ShowTabControls(HWND hwnd, int tab) {
-    // Tab indices: 0=Playback, 1=Recording, 2=Downloads, 3=Speech, 4=Movement, 5=File Types, 6=Global Hotkeys,
-    //              7=Effects, 8=Advanced, 9=YouTube, 10=SoundTouch, 11=Rubber Band, 12=Speedy, 13=MIDI
+    // Tab indices: 0=Playback, 1=Recording, 2=Downloads, 3=Speech, 4=Movement, 5=Global Hotkeys,
+    //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Speedy, 11=Signalsmith, 12=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_MULTI_INSTANCE, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_MULTI_INSTANCE, IDC_REGISTER_FILE_TYPES, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Downloads tab controls (tab 2)
@@ -823,34 +843,29 @@ void ShowTabControls(HWND hwnd, int tab) {
     // Movement tab controls (tab 4)
     int movementCtrls[] = {IDC_SEEK_1S, IDC_SEEK_5S, IDC_SEEK_10S, IDC_SEEK_30S, IDC_SEEK_1M, IDC_SEEK_5M, IDC_SEEK_10M,
                            IDC_SEEK_30M, IDC_SEEK_1H, IDC_SEEK_1T, IDC_SEEK_5T, IDC_SEEK_10T, IDC_CHAPTER_SEEK};
-    // File Types tab controls (tab 5)
-    int fileTypeCtrls[] = {IDC_ASSOC_MP3, IDC_ASSOC_WAV, IDC_ASSOC_OGG, IDC_ASSOC_OGA, IDC_ASSOC_FLAC, IDC_ASSOC_M4A, IDC_ASSOC_M4B,
-                           IDC_ASSOC_WMA, IDC_ASSOC_AAC, IDC_ASSOC_OPUS, IDC_ASSOC_AIFF, IDC_ASSOC_APE, IDC_ASSOC_WV,
-                           IDC_ASSOC_M3U, IDC_ASSOC_M3U8, IDC_ASSOC_PLS, IDC_ASSOC_MID, IDC_ASSOC_MIDI};
-    // Global Hotkeys tab controls (tab 6)
+    // Global Hotkeys tab controls (tab 5)
     int hotkeyCtrls[] = {IDC_HOTKEY_ENABLED, IDC_HOTKEY_LIST, IDC_HOTKEY_ADD, IDC_HOTKEY_EDIT, IDC_HOTKEY_REMOVE};
     // Effects tab controls (tab 7)
     int effectCtrls[] = {IDC_EFFECT_VOLUME, IDC_EFFECT_PITCH, IDC_EFFECT_TEMPO, IDC_EFFECT_RATE, IDC_RATE_STEP_MODE,
                          IDC_DSP_REVERB, IDC_DSP_ECHO, IDC_DSP_EQ, IDC_DSP_COMPRESSOR, IDC_DSP_STEREOWIDTH,
-                         IDC_DSP_CENTERCANCEL, IDC_DSP_CONVOLUTION, IDC_CONV_IR, IDC_CONV_BROWSE};
+                         IDC_DSP_CENTERCANCEL, IDC_DSP_SPATIAL, IDC_DSP_CONVOLUTION, IDC_CONV_IR, IDC_CONV_BROWSE};
     // Advanced tab controls (tab 8)
     int advancedCtrls[] = {IDC_BUFFER_SIZE, IDC_UPDATE_PERIOD, IDC_TEMPO_ALGORITHM,
                            IDC_EQ_BASS_FREQ, IDC_EQ_MID_FREQ, IDC_EQ_TREBLE_FREQ,
-                           IDC_LEGACY_VOLUME};
+                           IDC_LEGACY_VOLUME, IDC_DISABLE_BATCH, IDC_RESET_LIST_ORDER};
     // YouTube tab controls (tab 9)
     int youtubeCtrls[] = {IDC_YTDLP_PATH, IDC_YTDLP_BROWSE, IDC_YT_APIKEY};
     // SoundTouch tab controls (tab 10)
     int soundtouchCtrls[] = {IDC_ST_AA_FILTER, IDC_ST_AA_LENGTH, IDC_ST_QUICK_ALGO, IDC_ST_SEQUENCE,
                              IDC_ST_SEEKWINDOW, IDC_ST_OVERLAP, IDC_ST_PREVENT_CLICK, IDC_ST_ALGORITHM};
-    // Rubber Band tab controls (tab 11)
-    int rubberbandCtrls[] = {IDC_RB_FORMANT, IDC_RB_PITCH_MODE, IDC_RB_WINDOW, IDC_RB_TRANSIENTS,
-                             IDC_RB_DETECTOR, IDC_RB_CHANNELS, IDC_RB_PHASE, IDC_RB_SMOOTHING};
-    // Speedy tab controls (tab 12)
+    // Speedy tab controls (tab 11)
     int speedyCtrls[] = {IDC_SPEEDY_NONLINEAR};
     // Signalsmith tab controls (tab 13)
     int signalsmithCtrls[] = {IDC_SS_PRESET, IDC_SS_TONALITY};
-    // MIDI tab controls (tab 14)
+    // MIDI tab controls (tab 12)
     int midiCtrls[] = {IDC_MIDI_SOUNDFONT, IDC_MIDI_SF_BROWSE, IDC_MIDI_VOICES, IDC_MIDI_SINC};
+
+
 
     // Show/hide playback controls
     for (int id : playbackCtrls) {
@@ -877,55 +892,48 @@ void ShowTabControls(HWND hwnd, int tab) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 4 ? SW_SHOW : SW_HIDE);
     }
 
-    // Show/hide file type controls
-    for (int id : fileTypeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
-    }
-
     // Show/hide hotkey controls
     for (int id : hotkeyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 5 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide effect controls
     for (int id : effectCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 6 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide advanced controls
     for (int id : advancedCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 7 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide YouTube controls
     for (int id : youtubeCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 8 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide SoundTouch controls
     for (int id : soundtouchCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
-    }
-
-    // Show/hide Rubber Band controls
-    for (int id : rubberbandCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 9 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Speedy controls
     for (int id : speedyCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 10 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide Signalsmith controls
     for (int id : signalsmithCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 13 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 11 ? SW_SHOW : SW_HIDE);
     }
 
     // Show/hide MIDI controls
     for (int id : midiCtrls) {
-        ShowWindow(GetDlgItem(hwnd, id), tab == 14 ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(hwnd, id), tab == 12 ? SW_SHOW : SW_HIDE);
     }
+
+
+
 }
 
 // Options dialog procedure
@@ -946,26 +954,24 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             TabCtrl_InsertItem(hTab, 3, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Movement");
             TabCtrl_InsertItem(hTab, 4, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"File Types");
-            TabCtrl_InsertItem(hTab, 5, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Global Hotkeys");
-            TabCtrl_InsertItem(hTab, 6, &tie);
+            TabCtrl_InsertItem(hTab, 5, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Effects");
-            TabCtrl_InsertItem(hTab, 7, &tie);
+            TabCtrl_InsertItem(hTab, 6, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Advanced");
-            TabCtrl_InsertItem(hTab, 8, &tie);
+            TabCtrl_InsertItem(hTab, 7, &tie);
             tie.pszText = const_cast<LPWSTR>(L"YouTube");
-            TabCtrl_InsertItem(hTab, 9, &tie);
+            TabCtrl_InsertItem(hTab, 8, &tie);
             tie.pszText = const_cast<LPWSTR>(L"SoundTouch");
-            TabCtrl_InsertItem(hTab, 10, &tie);
-            tie.pszText = const_cast<LPWSTR>(L"Rubber Band");
-            TabCtrl_InsertItem(hTab, 11, &tie);
+            TabCtrl_InsertItem(hTab, 9, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Speedy");
-            TabCtrl_InsertItem(hTab, 12, &tie);
+            TabCtrl_InsertItem(hTab, 10, &tie);
             tie.pszText = const_cast<LPWSTR>(L"Signalsmith");
-            TabCtrl_InsertItem(hTab, 13, &tie);
+            TabCtrl_InsertItem(hTab, 11, &tie);
             tie.pszText = const_cast<LPWSTR>(L"MIDI");
-            TabCtrl_InsertItem(hTab, 14, &tie);
+            TabCtrl_InsertItem(hTab, 12, &tie);
+
+
 
             // Populate hotkey list and set enabled checkbox
             CheckDlgButton(hwnd, IDC_HOTKEY_ENABLED, g_hotkeysEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -1062,11 +1068,8 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_SEEK_10T, g_seekEnabled[11] ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHAPTER_SEEK, g_chapterSeekEnabled ? BST_CHECKED : BST_UNCHECKED);
 
-            // Set file association checkboxes based on current registry state
-            for (int i = 0; i < g_fileAssocCount; i++) {
-                CheckDlgButton(hwnd, g_fileAssocs[i].ctrlId,
-                    IsExtensionAssociated(g_fileAssocs[i].ext) ? BST_CHECKED : BST_UNCHECKED);
-            }
+            // Set file types registration checkbox
+            CheckDlgButton(hwnd, IDC_REGISTER_FILE_TYPES, g_registerFileTypes ? BST_CHECKED : BST_UNCHECKED);
 
             // Set effect checkboxes
             CheckDlgButton(hwnd, IDC_EFFECT_VOLUME, g_effectEnabled[0] ? BST_CHECKED : BST_UNCHECKED);
@@ -1099,6 +1102,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CheckDlgButton(hwnd, IDC_DSP_STEREOWIDTH, IsDSPEffectEnabled(DSPEffectType::StereoWidth) ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_DSP_CENTERCANCEL, IsDSPEffectEnabled(DSPEffectType::CenterCancel) ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_DSP_CONVOLUTION, IsDSPEffectEnabled(DSPEffectType::Convolution) ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_DSP_SPATIAL, IsDSPEffectEnabled(DSPEffectType::SpatialAudio) ? BST_CHECKED : BST_UNCHECKED);
 
             // Display current IR file path (just filename)
             if (!g_convolutionIRPath.empty()) {
@@ -1144,13 +1148,6 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             {
                 HWND hAlgoCombo = GetDlgItem(hwnd, IDC_TEMPO_ALGORITHM);
                 SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"SoundTouch (BASS_FX) - Fast, good for speech"));
-#ifdef USE_RUBBERBAND
-                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Rubber Band R2 (Faster) - Balanced quality"));
-                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Rubber Band R3 (Finer) - Highest quality"));
-#else
-                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Rubber Band R2 (coming soon)"));
-                SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Rubber Band R3 (coming soon)"));
-#endif
 #ifdef USE_SPEEDY
                 SendMessageW(hAlgoCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Speedy (Google) - Nonlinear speech speedup"));
 #else
@@ -1177,6 +1174,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
             // Initialize legacy volume checkbox
             CheckDlgButton(hwnd, IDC_LEGACY_VOLUME, g_legacyVolume ? BST_CHECKED : BST_UNCHECKED);
+
+            // Initialize disable batch delay checkbox
+            CheckDlgButton(hwnd, IDC_DISABLE_BATCH, g_disableBatchDelay ? BST_CHECKED : BST_UNCHECKED);
 
             // Initialize YouTube tab
             SetDlgItemTextW(hwnd, IDC_YTDLP_PATH, g_ytdlpPath.c_str());
@@ -1259,52 +1259,6 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 SetDlgItemTextW(hwnd, IDC_ST_SEEKWINDOW, buf);
                 swprintf(buf, 16, L"%d", g_stOverlapMs);
                 SetDlgItemTextW(hwnd, IDC_ST_OVERLAP, buf);
-            }
-
-            // Initialize Rubber Band tab
-            {
-                CheckDlgButton(hwnd, IDC_RB_FORMANT, g_rbFormantPreserved ? BST_CHECKED : BST_UNCHECKED);
-                CheckDlgButton(hwnd, IDC_RB_SMOOTHING, g_rbSmoothing ? BST_CHECKED : BST_UNCHECKED);
-
-                // Pitch mode combo
-                HWND hPitch = GetDlgItem(hwnd, IDC_RB_PITCH_MODE);
-                SendMessageW(hPitch, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"High Speed"));
-                SendMessageW(hPitch, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"High Quality"));
-                SendMessageW(hPitch, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"High Consistency"));
-                SendMessageW(hPitch, CB_SETCURSEL, g_rbPitchMode, 0);
-
-                // Window size combo
-                HWND hWindow = GetDlgItem(hwnd, IDC_RB_WINDOW);
-                SendMessageW(hWindow, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Standard"));
-                SendMessageW(hWindow, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Short"));
-                SendMessageW(hWindow, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Long"));
-                SendMessageW(hWindow, CB_SETCURSEL, g_rbWindowSize, 0);
-
-                // Transients combo (R2 only)
-                HWND hTrans = GetDlgItem(hwnd, IDC_RB_TRANSIENTS);
-                SendMessageW(hTrans, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Crisp"));
-                SendMessageW(hTrans, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Mixed"));
-                SendMessageW(hTrans, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Smooth"));
-                SendMessageW(hTrans, CB_SETCURSEL, g_rbTransients, 0);
-
-                // Detector combo (R2 only)
-                HWND hDetect = GetDlgItem(hwnd, IDC_RB_DETECTOR);
-                SendMessageW(hDetect, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Compound"));
-                SendMessageW(hDetect, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Percussive"));
-                SendMessageW(hDetect, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Soft"));
-                SendMessageW(hDetect, CB_SETCURSEL, g_rbDetector, 0);
-
-                // Channels combo
-                HWND hChan = GetDlgItem(hwnd, IDC_RB_CHANNELS);
-                SendMessageW(hChan, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Apart"));
-                SendMessageW(hChan, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Together"));
-                SendMessageW(hChan, CB_SETCURSEL, g_rbChannels, 0);
-
-                // Phase combo (R2 only)
-                HWND hPhase = GetDlgItem(hwnd, IDC_RB_PHASE);
-                SendMessageW(hPhase, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Laminar"));
-                SendMessageW(hPhase, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Independent"));
-                SendMessageW(hPhase, CB_SETCURSEL, g_rbPhase, 0);
             }
 
             // Initialize Speedy tab
@@ -1441,13 +1395,17 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         }
                     }
 
-                    // Update file associations
-                    for (int i = 0; i < g_fileAssocCount; i++) {
-                        bool checked = (IsDlgButtonChecked(hwnd, g_fileAssocs[i].ctrlId) == BST_CHECKED);
-                        bool current = IsExtensionAssociated(g_fileAssocs[i].ext);
-                        if (checked != current) {
-                            SetFileAssociation(g_fileAssocs[i].ext, checked);
+                    // Update file types registration setting
+                    {
+                        bool newRegister = (IsDlgButtonChecked(hwnd, IDC_REGISTER_FILE_TYPES) == BST_CHECKED);
+                        if (newRegister && !g_registerFileTypes) {
+                            // Just enabled - register all file types now
+                            RegisterAllFileTypes();
+                        } else if (!newRegister && g_registerFileTypes) {
+                            // Just disabled - unregister all file types now
+                            UnregisterAllFileTypes();
                         }
+                        g_registerFileTypes = newRegister;
                     }
 
                     // Get effect checkboxes
@@ -1491,6 +1449,7 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     EnableDSPEffect(DSPEffectType::StereoWidth, IsDlgButtonChecked(hwnd, IDC_DSP_STEREOWIDTH) == BST_CHECKED);
                     EnableDSPEffect(DSPEffectType::CenterCancel, IsDlgButtonChecked(hwnd, IDC_DSP_CENTERCANCEL) == BST_CHECKED);
                     EnableDSPEffect(DSPEffectType::Convolution, IsDlgButtonChecked(hwnd, IDC_DSP_CONVOLUTION) == BST_CHECKED);
+                    EnableDSPEffect(DSPEffectType::SpatialAudio, IsDlgButtonChecked(hwnd, IDC_DSP_SPATIAL) == BST_CHECKED);
 
                     // Get buffer settings
                     {
@@ -1531,6 +1490,9 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         // Get legacy volume setting
                         bool wasLegacy = g_legacyVolume;
                         g_legacyVolume = (IsDlgButtonChecked(hwnd, IDC_LEGACY_VOLUME) == BST_CHECKED);
+
+                        // Get disable batch delay setting
+                        g_disableBatchDelay = (IsDlgButtonChecked(hwnd, IDC_DISABLE_BATCH) == BST_CHECKED);
 
                         // Handle mode switch
                         if (wasLegacy != g_legacyVolume && g_fxStream) {
@@ -1605,36 +1567,6 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         HWND hAlgoCombo = GetDlgItem(hwnd, IDC_ST_ALGORITHM);
                         int algoSel = static_cast<int>(SendMessageW(hAlgoCombo, CB_GETCURSEL, 0, 0));
                         if (algoSel >= 0 && algoSel <= 2) g_stAlgorithm = algoSel;
-                    }
-
-                    // Get Rubber Band settings
-                    {
-                        g_rbFormantPreserved = (IsDlgButtonChecked(hwnd, IDC_RB_FORMANT) == BST_CHECKED);
-                        g_rbSmoothing = (IsDlgButtonChecked(hwnd, IDC_RB_SMOOTHING) == BST_CHECKED);
-
-                        HWND hPitchCombo = GetDlgItem(hwnd, IDC_RB_PITCH_MODE);
-                        int pitchSel = static_cast<int>(SendMessageW(hPitchCombo, CB_GETCURSEL, 0, 0));
-                        if (pitchSel >= 0 && pitchSel <= 2) g_rbPitchMode = pitchSel;
-
-                        HWND hWindowCombo = GetDlgItem(hwnd, IDC_RB_WINDOW);
-                        int windowSel = static_cast<int>(SendMessageW(hWindowCombo, CB_GETCURSEL, 0, 0));
-                        if (windowSel >= 0 && windowSel <= 2) g_rbWindowSize = windowSel;
-
-                        HWND hTransCombo = GetDlgItem(hwnd, IDC_RB_TRANSIENTS);
-                        int transSel = static_cast<int>(SendMessageW(hTransCombo, CB_GETCURSEL, 0, 0));
-                        if (transSel >= 0 && transSel <= 2) g_rbTransients = transSel;
-
-                        HWND hDetectorCombo = GetDlgItem(hwnd, IDC_RB_DETECTOR);
-                        int detectorSel = static_cast<int>(SendMessageW(hDetectorCombo, CB_GETCURSEL, 0, 0));
-                        if (detectorSel >= 0 && detectorSel <= 2) g_rbDetector = detectorSel;
-
-                        HWND hChannelsCombo = GetDlgItem(hwnd, IDC_RB_CHANNELS);
-                        int channelsSel = static_cast<int>(SendMessageW(hChannelsCombo, CB_GETCURSEL, 0, 0));
-                        if (channelsSel >= 0 && channelsSel <= 1) g_rbChannels = channelsSel;
-
-                        HWND hPhaseCombo = GetDlgItem(hwnd, IDC_RB_PHASE);
-                        int phaseSel = static_cast<int>(SendMessageW(hPhaseCombo, CB_GETCURSEL, 0, 0));
-                        if (phaseSel >= 0 && phaseSel <= 1) g_rbPhase = phaseSel;
                     }
 
                     // Get Speedy settings
@@ -1779,6 +1711,13 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                             conv->LoadIR(filePath);
                         }
                     }
+                    return TRUE;
+                }
+
+                case IDC_RESET_LIST_ORDER: {
+                    ResetRadioSortOrder();
+                    ResetPodcastSortOrder();
+                    Speak("Order reset to alphabetical");
                     return TRUE;
                 }
 
@@ -2172,6 +2111,85 @@ void ShowJumpToTimeDialog() {
     }
 }
 
+// Effect presets dialogs
+
+static std::wstring g_presetNameResult;
+
+static INT_PTR CALLBACK PresetNameDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_INITDIALOG:
+            SetFocus(GetDlgItem(hwnd, IDC_PRESET_NAME));
+            return FALSE;
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    wchar_t buf[128] = {0};
+                    GetDlgItemTextW(hwnd, IDC_PRESET_NAME, buf, 128);
+                    // Trim whitespace and reject characters that would break INI section names
+                    std::wstring name = buf;
+                    while (!name.empty() && (name.front() == L' ' || name.front() == L'\t')) name.erase(name.begin());
+                    while (!name.empty() && (name.back() == L' ' || name.back() == L'\t')) name.pop_back();
+                    for (auto& c : name) {
+                        if (c == L'[' || c == L']' || c == L'=' || c == L'\r' || c == L'\n') c = L'_';
+                    }
+                    g_presetNameResult = name;
+                    EndDialog(hwnd, IDOK);
+                    return TRUE;
+                }
+                case IDCANCEL:
+                    EndDialog(hwnd, IDCANCEL);
+                    return TRUE;
+            }
+            break;
+    }
+    return FALSE;
+}
+
+void ShowSaveEffectPresetDialog() {
+    g_presetNameResult.clear();
+    if (DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_PRESET_NAME), g_hwnd, PresetNameDlgProc) == IDOK) {
+        if (!g_presetNameResult.empty()) {
+            if (SaveEffectPreset(g_presetNameResult)) {
+                std::wstring msg = L"Saved preset " + g_presetNameResult;
+                SpeakW(msg);
+            }
+        }
+    }
+}
+
+void ShowEffectPresetsMenu(HWND hwnd) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+
+    auto names = GetEffectPresetNames();
+    if (names.empty()) {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"(No presets saved)");
+    } else {
+        for (size_t i = 0; i < names.size() && i < 100; i++) {
+            AppendMenuW(menu, MF_STRING, IDM_PRESET_BASE + i, names[i].c_str());
+        }
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        HMENU deleteMenu = CreatePopupMenu();
+        for (size_t i = 0; i < names.size() && i < 100; i++) {
+            AppendMenuW(deleteMenu, MF_STRING, IDM_PRESET_DELETE_BASE + i, names[i].c_str());
+        }
+        AppendMenuW(menu, MF_POPUP, (UINT_PTR)deleteMenu, L"&Delete preset");
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, IDM_PRESET_SAVE_NEW, L"&Save current as new preset...");
+
+    POINT pt;
+    GetCursorPos(&pt);
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+    if (pt.x < rc.left || pt.x > rc.right || pt.y < rc.top || pt.y > rc.bottom) {
+        pt.x = rc.left + 20;
+        pt.y = rc.top + 40;
+    }
+    TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    DestroyMenu(menu);
+}
+
 // Bookmarks dialog
 
 static std::vector<Bookmark> g_allBookmarks;       // All bookmarks from database
@@ -2375,6 +2393,134 @@ void ShowBookmarksDialog() {
 }
 
 // ============================================================================
+// Song History Dialog
+// ============================================================================
+
+static std::vector<SongHistoryEntry> g_dialogSongHistory;
+static WNDPROC g_origHistoryListProc = nullptr;
+
+static std::wstring FormatHistoryTimestamp(int64_t ts) {
+    time_t t = static_cast<time_t>(ts);
+    struct tm local;
+    localtime_s(&local, &t);
+    wchar_t buf[64];
+    wcsftime(buf, 64, L"%Y-%m-%d %H:%M:%S", &local);
+    return buf;
+}
+
+static void CopyHistoryEntryToClipboard(HWND hwnd, const std::wstring& title) {
+    if (title.empty()) return;
+    if (!OpenClipboard(hwnd)) return;
+    EmptyClipboard();
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (title.size() + 1) * sizeof(wchar_t));
+    if (hMem) {
+        wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
+        wcscpy(pMem, title.c_str());
+        GlobalUnlock(hMem);
+        SetClipboardData(CF_UNICODETEXT, hMem);
+        Speak("Song copied");
+    }
+    CloseClipboard();
+}
+
+static void RefreshHistoryList(HWND hwnd) {
+    HWND hList = GetDlgItem(hwnd, IDC_HISTORY_LIST);
+    SendMessageW(hList, LB_RESETCONTENT, 0, 0);
+
+    g_dialogSongHistory = GetSongHistory();
+
+    for (const auto& entry : g_dialogSongHistory) {
+        std::wstring line = entry.title + L"\t" + FormatHistoryTimestamp(entry.timestamp);
+        SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+
+    if (!g_dialogSongHistory.empty()) {
+        SendMessageW(hList, LB_SETCURSEL, 0, 0);
+    }
+}
+
+static LRESULT CALLBACK HistoryListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_ESCAPE) {
+            EndDialog(GetParent(hwnd), IDCANCEL);
+            return 0;
+        }
+        // Ctrl+C to copy selected entry's title
+        if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            if (sel >= 0 && sel < static_cast<int>(g_dialogSongHistory.size())) {
+                CopyHistoryEntryToClipboard(GetParent(hwnd), g_dialogSongHistory[sel].title);
+            }
+            return 0;
+        }
+    } else if (msg == WM_GETDLGCODE) {
+        MSG* pmsg = reinterpret_cast<MSG*>(lParam);
+        if (pmsg && pmsg->wParam == VK_ESCAPE) {
+            return DLGC_WANTMESSAGE;
+        }
+        return CallWindowProcW(g_origHistoryListProc, hwnd, msg, wParam, lParam);
+    }
+    return CallWindowProcW(g_origHistoryListProc, hwnd, msg, wParam, lParam);
+}
+
+static INT_PTR CALLBACK SongHistoryDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_INITDIALOG: {
+            // Set tab stops on the listbox so title and timestamp line up
+            HWND hList = GetDlgItem(hwnd, IDC_HISTORY_LIST);
+            int tabStops[1] = {260};
+            SendMessageW(hList, LB_SETTABSTOPS, 1, reinterpret_cast<LPARAM>(tabStops));
+
+            g_origHistoryListProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hList, GWLP_WNDPROC,
+                reinterpret_cast<LONG_PTR>(HistoryListSubclassProc)));
+
+            RefreshHistoryList(hwnd);
+            SetFocus(hList);
+            return FALSE;
+        }
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDC_HISTORY_COPY: {
+                    HWND hList = GetDlgItem(hwnd, IDC_HISTORY_LIST);
+                    int sel = static_cast<int>(SendMessageW(hList, LB_GETCURSEL, 0, 0));
+                    if (sel >= 0 && sel < static_cast<int>(g_dialogSongHistory.size())) {
+                        CopyHistoryEntryToClipboard(hwnd, g_dialogSongHistory[sel].title);
+                    }
+                    return TRUE;
+                }
+                case IDC_HISTORY_CLEAR: {
+                    if (MessageBoxW(hwnd, L"Clear all song history?", L"Song History",
+                                    MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                        ClearSongHistory();
+                        RefreshHistoryList(hwnd);
+                        SetFocus(GetDlgItem(hwnd, IDC_HISTORY_LIST));
+                    }
+                    return TRUE;
+                }
+                case IDCANCEL:
+                    EndDialog(hwnd, IDCANCEL);
+                    return TRUE;
+            }
+            break;
+
+        case WM_DESTROY: {
+            HWND hList = GetDlgItem(hwnd, IDC_HISTORY_LIST);
+            if (g_origHistoryListProc) {
+                SetWindowLongPtrW(hList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origHistoryListProc));
+                g_origHistoryListProc = nullptr;
+            }
+            break;
+        }
+    }
+    return FALSE;
+}
+
+void ShowSongHistoryDialog() {
+    DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_SONG_HISTORY), g_hwnd, SongHistoryDlgProc);
+}
+
+// ============================================================================
 // Radio Dialog
 // ============================================================================
 
@@ -2456,6 +2602,12 @@ struct RadioSearchResult {
 };
 static std::vector<RadioSearchResult> g_radioSearchResults;
 static int g_radioSearchSource = 0;  // Track which source was last used
+
+// Cached list of RadioBrowser country names (lazily fetched once per session)
+static std::vector<std::wstring> g_radioCountries;
+static volatile bool g_radioCountriesFetched = false;
+static volatile bool g_radioCountriesFetching = false;
+static const UINT WM_RADIO_COUNTRIES_READY = WM_APP + 11;
 
 // HTTP GET request (reused from youtube.cpp pattern)
 static std::wstring RadioHttpGet(const std::wstring& url, const wchar_t* extraHeaders = nullptr) {
@@ -2574,12 +2726,90 @@ static std::wstring ExtractJsonValue(const std::wstring& obj, const std::wstring
     return obj.substr(start, end - start);
 }
 
+// Fill the country combo from g_radioCountries, preserving the user's typed text
+static void PopulateCountryCombo(HWND hwnd) {
+    HWND hCombo = GetDlgItem(hwnd, IDC_RADIO_SEARCH_COUNTRY);
+    if (!hCombo) return;
+    wchar_t current[256] = {0};
+    GetWindowTextW(hCombo, current, 256);
+
+    SendMessageW(hCombo, CB_RESETCONTENT, 0, 0);
+    SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"(Any)"));
+    for (const auto& c : g_radioCountries) {
+        SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.c_str()));
+    }
+
+    if (current[0]) {
+        SetWindowTextW(hCombo, current);
+    } else {
+        SendMessageW(hCombo, CB_SETCURSEL, 0, 0);
+    }
+}
+
+// Background thread: fetch RadioBrowser countries and notify dialog
+static DWORD WINAPI FetchRadioCountriesThreadProc(LPVOID param) {
+    HWND hwnd = reinterpret_cast<HWND>(param);
+    std::wstring url = L"https://de1.api.radio-browser.info/json/countries?hidebroken=true&order=stationcount&reverse=true";
+    std::wstring json = RadioHttpGet(url);
+
+    if (!json.empty()) {
+        size_t pos = 0;
+        while ((pos = json.find(L'{', pos)) != std::wstring::npos) {
+            int depth = 1;
+            size_t endPos = pos + 1;
+            bool inString = false;
+            while (endPos < json.length() && depth > 0) {
+                wchar_t c = json[endPos];
+                if (c == L'"' && (endPos == 0 || json[endPos-1] != L'\\')) {
+                    inString = !inString;
+                } else if (!inString) {
+                    if (c == L'{') depth++;
+                    else if (c == L'}') depth--;
+                }
+                endPos++;
+            }
+            if (depth != 0) break;
+            std::wstring obj = json.substr(pos, endPos - pos);
+            std::wstring name = ExtractJsonString(obj, L"name");
+            if (!name.empty()) {
+                g_radioCountries.push_back(name);
+            }
+            pos = endPos;
+        }
+    }
+
+    g_radioCountriesFetched = true;
+    g_radioCountriesFetching = false;
+    if (IsWindow(hwnd)) {
+        PostMessageW(hwnd, WM_RADIO_COUNTRIES_READY, 0, 0);
+    }
+    return 0;
+}
+
+static void EnsureRadioCountriesFetched(HWND hwnd) {
+    if (g_radioCountriesFetched || g_radioCountriesFetching) return;
+    g_radioCountriesFetching = true;
+    HANDLE th = CreateThread(nullptr, 0, FetchRadioCountriesThreadProc, hwnd, 0, nullptr);
+    if (th) CloseHandle(th);
+    else g_radioCountriesFetching = false;
+}
+
 // Search RadioBrowser API
-static bool SearchRadioBrowser(const std::wstring& query, std::vector<RadioSearchResult>& results) {
+static bool SearchRadioBrowser(const std::wstring& query, const std::wstring& country, std::vector<RadioSearchResult>& results) {
     results.clear();
 
-    // RadioBrowser API endpoint - use search endpoint with name parameter
-    std::wstring url = L"https://de1.api.radio-browser.info/json/stations/search?name=" + RadioUrlEncode(query) + L"&limit=50&hidebroken=true";
+    // Use search endpoint; name and country are both optional filters
+    std::wstring url = L"https://de1.api.radio-browser.info/json/stations/search?limit=100&hidebroken=true";
+    if (!query.empty()) {
+        url += L"&name=" + RadioUrlEncode(query);
+    }
+    if (!country.empty()) {
+        url += L"&country=" + RadioUrlEncode(country);
+        // When browsing a whole country, sort by popularity so the good stations surface first
+        if (query.empty()) {
+            url += L"&order=clickcount&reverse=true";
+        }
+    }
     std::wstring json = RadioHttpGet(url);
     if (json.empty()) return false;
 
@@ -3199,7 +3429,7 @@ static void UpdateRadioTabVisibility(HWND hwnd, int tab) {
     int favCtrls[] = {IDC_RADIO_LIST, IDC_RADIO_ADD, IDC_RADIO_IMPORT, IDC_RADIO_EXPORT};
     // Search tab controls (tab 1)
     int searchCtrls[] = {IDC_RADIO_SEARCH_SOURCE, IDC_RADIO_SEARCH_EDIT, IDC_RADIO_SEARCH_BTN,
-                         IDC_RADIO_SEARCH_LIST, IDC_RADIO_SEARCH_ADD};
+                         IDC_RADIO_SEARCH_LIST_LABEL, IDC_RADIO_SEARCH_LIST, IDC_RADIO_SEARCH_ADD};
 
     for (int id : favCtrls) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 0 ? SW_SHOW : SW_HIDE);
@@ -3207,6 +3437,12 @@ static void UpdateRadioTabVisibility(HWND hwnd, int tab) {
     for (int id : searchCtrls) {
         ShowWindow(GetDlgItem(hwnd, id), tab == 1 ? SW_SHOW : SW_HIDE);
     }
+
+    // Country controls: only visible on search tab with RadioBrowser selected
+    int src = static_cast<int>(SendDlgItemMessageW(hwnd, IDC_RADIO_SEARCH_SOURCE, CB_GETCURSEL, 0, 0));
+    bool showCountry = (tab == 1 && src == 0);
+    ShowWindow(GetDlgItem(hwnd, IDC_RADIO_SEARCH_COUNTRY), showCountry ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(hwnd, IDC_RADIO_SEARCH_COUNTRY_LABEL), showCountry ? SW_SHOW : SW_HIDE);
 
     // Also hide/show static text labels (they have -1 IDs, so we position them)
 }
@@ -3423,6 +3659,27 @@ static LRESULT CALLBACK RadioListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam
                 }
             }
             return 0;
+        } else if ((wParam == VK_UP || wParam == VK_DOWN) && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            // Reorder station with Ctrl+Up/Down
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            int count = static_cast<int>(g_radioStations.size());
+            int newSel = (wParam == VK_UP) ? sel - 1 : sel + 1;
+            if (sel >= 0 && sel < count && newSel >= 0 && newSel < count) {
+                std::swap(g_radioStations[sel], g_radioStations[newSel]);
+                UpdateRadioSortOrders(g_radioStations);
+                RefreshRadioList(GetParent(hwnd));
+                SendMessageW(hwnd, LB_SETCURSEL, newSel, 0);
+                // Speak position feedback
+                const std::wstring& name = g_radioStations[newSel].name;
+                if (newSel == 0)
+                    SpeakW(name + L" moved above " + g_radioStations[1].name);
+                else if (newSel == count - 1)
+                    SpeakW(name + L" moved below " + g_radioStations[count - 2].name);
+                else
+                    SpeakW(name + L" moved between " + g_radioStations[newSel - 1].name +
+                           L" and " + g_radioStations[newSel + 1].name);
+            }
+            return 0;
         } else if (wParam == VK_ESCAPE) {
             // Close dialog
             SendMessageW(GetParent(hwnd), WM_COMMAND, IDCANCEL, 0);
@@ -3448,10 +3705,14 @@ static LRESULT CALLBACK RadioListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam
             return 0;
         }
     } else if (msg == WM_GETDLGCODE) {
-        // Capture Enter/Escape/Delete/F2, let Tab pass through
+        // Capture Enter/Escape/Delete/F2/Ctrl+Arrows, let Tab pass through
         MSG* pmsg = reinterpret_cast<MSG*>(lParam);
         if (pmsg && (pmsg->wParam == VK_RETURN || pmsg->wParam == VK_ESCAPE ||
                      pmsg->wParam == VK_DELETE || pmsg->wParam == VK_F2)) {
+            return DLGC_WANTMESSAGE;
+        }
+        if (pmsg && (pmsg->wParam == VK_UP || pmsg->wParam == VK_DOWN) &&
+            (GetKeyState(VK_CONTROL) & 0x8000)) {
             return DLGC_WANTMESSAGE;
         }
         return CallWindowProcW(g_origRadioListProc, hwnd, msg, wParam, lParam);
@@ -3494,6 +3755,16 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             SendMessageW(hSource, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"iHeartRadio"));
             SendMessageW(hSource, CB_SETCURSEL, 0, 0);
 
+            // Initialize country combo with (Any); populate from cache or start async fetch
+            HWND hCountry = GetDlgItem(hwnd, IDC_RADIO_SEARCH_COUNTRY);
+            SendMessageW(hCountry, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"(Any)"));
+            SendMessageW(hCountry, CB_SETCURSEL, 0, 0);
+            if (g_radioCountriesFetched) {
+                PopulateCountryCombo(hwnd);
+            } else {
+                EnsureRadioCountriesFetched(hwnd);
+            }
+
             // Load favorites
             RefreshRadioList(hwnd);
 
@@ -3510,6 +3781,15 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
+                case IDC_RADIO_SEARCH_SOURCE:
+                    if (HIWORD(wParam) == CBN_SELCHANGE || HIWORD(wParam) == CBN_CLOSEUP) {
+                        HWND hTab = GetDlgItem(hwnd, IDC_RADIO_TAB);
+                        int curTab = static_cast<int>(SendMessageW(hTab, TCM_GETCURSEL, 0, 0));
+                        UpdateRadioTabVisibility(hwnd, curTab);
+                        return TRUE;
+                    }
+                    break;
+
                 case IDC_RADIO_ADD: {
                     // Check if currently playing a URL stream
                     const wchar_t* currentUrl = nullptr;
@@ -3715,10 +3995,29 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     return TRUE;
 
                 case IDC_RADIO_SEARCH_BTN: {
+                    // Ensure country controls match the current source before we proceed
+                    {
+                        HWND hTab = GetDlgItem(hwnd, IDC_RADIO_TAB);
+                        int curTab = static_cast<int>(SendMessageW(hTab, TCM_GETCURSEL, 0, 0));
+                        UpdateRadioTabVisibility(hwnd, curTab);
+                    }
+
                     // Get search query
                     wchar_t query[256] = {0};
                     GetDlgItemTextW(hwnd, IDC_RADIO_SEARCH_EDIT, query, 256);
-                    if (wcslen(query) == 0) {
+
+                    // Read country filter (only applies to RadioBrowser)
+                    int source = static_cast<int>(SendDlgItemMessageW(hwnd, IDC_RADIO_SEARCH_SOURCE, CB_GETCURSEL, 0, 0));
+                    std::wstring countryFilter;
+                    if (source == 0) {
+                        wchar_t countryBuf[256] = {0};
+                        GetDlgItemTextW(hwnd, IDC_RADIO_SEARCH_COUNTRY, countryBuf, 256);
+                        countryFilter = countryBuf;
+                        if (countryFilter == L"(Any)") countryFilter.clear();
+                    }
+
+                    // Allow empty query only for RadioBrowser if a country is selected
+                    if (wcslen(query) == 0 && countryFilter.empty()) {
                         Speak("Enter a search term");
                         return TRUE;
                     }
@@ -3732,12 +4031,10 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     Speak("Searching");
                     SetCursor(LoadCursor(nullptr, IDC_WAIT));
 
-                    // Search based on selected source
-                    int source = static_cast<int>(SendDlgItemMessageW(hwnd, IDC_RADIO_SEARCH_SOURCE, CB_GETCURSEL, 0, 0));
                     bool found = false;
 
                     if (source == 0) {  // RadioBrowser
-                        found = SearchRadioBrowser(query, g_radioSearchResults);
+                        found = SearchRadioBrowser(query, countryFilter, g_radioSearchResults);
                     } else if (source == 1) {  // TuneIn
                         found = SearchTuneIn(query, g_radioSearchResults);
                     } else if (source == 2) {  // iHeartRadio
@@ -3879,6 +4176,13 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             break;
         }
 
+        default:
+            if (msg == WM_RADIO_COUNTRIES_READY) {
+                PopulateCountryCombo(hwnd);
+                return TRUE;
+            }
+            break;
+
         case WM_SIZE: {
             // Resize list and reposition buttons
             RECT rc;
@@ -3898,7 +4202,7 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             // Search tab controls
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_EDIT), nullptr, 142, 28, w - 210, 14, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_BTN), nullptr, w - 64, 27, 50, 14, SWP_NOZORDER);
-            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_LIST), nullptr, 14, 48, w - 28, h - 112, SWP_NOZORDER);
+            SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_LIST), nullptr, 14, 74, w - 28, h - 138, SWP_NOZORDER);
             SetWindowPos(GetDlgItem(hwnd, IDC_RADIO_SEARCH_ADD), nullptr, w - 84, h - 54, 70, 14, SWP_NOZORDER);
 
             // Close button (common)
@@ -3921,6 +4225,32 @@ void ShowRadioDialog() {
     DialogBoxW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_RADIO), g_hwnd, RadioDlgProc);
 }
 
+// Add the currently playing stream URL to radio favorites
+void AddCurrentStreamToFavorites() {
+    if (g_currentTrack < 0 || g_currentTrack >= static_cast<int>(g_playlist.size())) {
+        Speak("No stream playing");
+        return;
+    }
+    const std::wstring& path = g_playlist[g_currentTrack];
+    if (!IsURL(path.c_str())) {
+        Speak("Not a stream");
+        return;
+    }
+
+    std::vector<RadioStation> existing = GetRadioFavorites();
+    for (const auto& s : existing) {
+        if (_wcsicmp(s.url.c_str(), path.c_str()) == 0) {
+            Speak("Stream already in favorites");
+            return;
+        }
+    }
+
+    if (DialogBoxParamW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(IDD_RADIO_ADD),
+                        g_hwnd, RadioAddDlgProc, reinterpret_cast<LPARAM>(path.c_str())) == IDOK) {
+        Speak("Station added");
+    }
+}
+
 // ========== Podcast Dialog ==========
 
 // Podcast search result (from iTunes API)
@@ -3937,8 +4267,37 @@ static std::vector<PodcastEpisode> g_podcastEpisodes;
 static std::vector<PodcastSearchResult> g_podcastSearchResults;
 static int g_currentPodcastId = -1;
 
+// Diagnostic info captured during feed fetch/parse, shown to the user on failure
+struct PodcastFetchDiag {
+    DWORD statusCode = 0;        // HTTP status (0 if request never completed)
+    DWORD lastError = 0;         // Win32 error code if the request failed
+    std::wstring errorText;      // Human-readable network error
+    size_t bytesReceived = 0;
+    int itemTagsFound = 0;       // Raw <item tags in the XML
+    int episodesExtracted = 0;   // Items with both audioUrl and title
+    std::wstring bodyPreview;    // First ~400 chars of the response
+};
+
+// Format a WinInet / Win32 error code into a human-readable message
+static std::wstring FormatWinInetError(DWORD code) {
+    if (code == 0) return L"";
+    wchar_t* buf = nullptr;
+    HMODULE hWinInet = GetModuleHandleW(L"wininet.dll");
+    DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS |
+                  FORMAT_MESSAGE_FROM_SYSTEM;
+    if (hWinInet) flags |= FORMAT_MESSAGE_FROM_HMODULE;
+    FormatMessageW(flags, hWinInet, code, 0, reinterpret_cast<wchar_t*>(&buf), 0, nullptr);
+    std::wstring result = buf ? buf : L"";
+    if (buf) LocalFree(buf);
+    while (!result.empty() && (result.back() == L'\r' || result.back() == L'\n' ||
+                               result.back() == L' ' || result.back() == L'.')) {
+        result.pop_back();
+    }
+    return result;
+}
+
 // HTTP GET for podcast operations
-static std::wstring PodcastHttpGet(const std::wstring& url) {
+static std::wstring PodcastHttpGet(const std::wstring& url, PodcastFetchDiag* diag = nullptr) {
     std::wstring result;
 
     // Parse URL to get host and path
@@ -3967,11 +4326,20 @@ static std::wstring PodcastHttpGet(const std::wstring& url) {
             path = url.substr(pathStart);
         }
     } else {
+        if (diag) {
+            diag->errorText = L"Unsupported URL scheme (expected http:// or https://)";
+        }
         return result;
     }
 
     HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (!hInternet) return result;
+    if (!hInternet) {
+        if (diag) {
+            diag->lastError = GetLastError();
+            diag->errorText = FormatWinInetError(diag->lastError);
+        }
+        return result;
+    }
 
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
     if (secure) flags |= INTERNET_FLAG_SECURE;
@@ -3983,17 +4351,36 @@ static std::wstring PodcastHttpGet(const std::wstring& url) {
         HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr, flags, 0);
         if (hRequest) {
             if (HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0)) {
+                if (diag) {
+                    DWORD status = 0, sz = sizeof(status);
+                    HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                                   &status, &sz, nullptr);
+                    diag->statusCode = status;
+                }
                 char buffer[4096];
                 DWORD bytesRead;
                 std::string response;
                 while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
                     response.append(buffer, bytesRead);
                 }
+                if (diag) {
+                    diag->bytesReceived = response.size();
+                    diag->bodyPreview = Utf8ToWide(response.substr(0, 400));
+                }
                 result = Utf8ToWide(response);
+            } else if (diag) {
+                diag->lastError = GetLastError();
+                diag->errorText = FormatWinInetError(diag->lastError);
             }
             InternetCloseHandle(hRequest);
+        } else if (diag) {
+            diag->lastError = GetLastError();
+            diag->errorText = FormatWinInetError(diag->lastError);
         }
         InternetCloseHandle(hConnect);
+    } else if (diag) {
+        diag->lastError = GetLastError();
+        diag->errorText = FormatWinInetError(diag->lastError);
     }
     InternetCloseHandle(hInternet);
 
@@ -4001,10 +4388,10 @@ static std::wstring PodcastHttpGet(const std::wstring& url) {
 }
 
 // HTTP GET with Basic Authentication support
-static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstring& username, const std::wstring& password) {
+static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstring& username, const std::wstring& password, PodcastFetchDiag* diag = nullptr) {
     // If no credentials, use regular function
     if (username.empty() && password.empty()) {
-        return PodcastHttpGet(url);
+        return PodcastHttpGet(url, diag);
     }
 
     std::wstring result;
@@ -4035,11 +4422,20 @@ static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstri
             path = url.substr(pathStart);
         }
     } else {
+        if (diag) {
+            diag->errorText = L"Unsupported URL scheme (expected http:// or https://)";
+        }
         return result;
     }
 
     HINTERNET hInternet = InternetOpenW(L"FastPlay/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (!hInternet) return result;
+    if (!hInternet) {
+        if (diag) {
+            diag->lastError = GetLastError();
+            diag->errorText = FormatWinInetError(diag->lastError);
+        }
+        return result;
+    }
 
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
     if (secure) flags |= INTERNET_FLAG_SECURE;
@@ -4051,17 +4447,36 @@ static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstri
         HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr, flags, 0);
         if (hRequest) {
             if (HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0)) {
+                if (diag) {
+                    DWORD status = 0, sz = sizeof(status);
+                    HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                                   &status, &sz, nullptr);
+                    diag->statusCode = status;
+                }
                 char buffer[4096];
                 DWORD bytesRead;
                 std::string response;
                 while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
                     response.append(buffer, bytesRead);
                 }
+                if (diag) {
+                    diag->bytesReceived = response.size();
+                    diag->bodyPreview = Utf8ToWide(response.substr(0, 400));
+                }
                 result = Utf8ToWide(response);
+            } else if (diag) {
+                diag->lastError = GetLastError();
+                diag->errorText = FormatWinInetError(diag->lastError);
             }
             InternetCloseHandle(hRequest);
+        } else if (diag) {
+            diag->lastError = GetLastError();
+            diag->errorText = FormatWinInetError(diag->lastError);
         }
         InternetCloseHandle(hConnect);
+    } else if (diag) {
+        diag->lastError = GetLastError();
+        diag->errorText = FormatWinInetError(diag->lastError);
     }
     InternetCloseHandle(hInternet);
 
@@ -4318,10 +4733,11 @@ static std::vector<OpmlFeed> ParseOpmlFile(const std::wstring& filePath) {
 // Parse RSS feed and extract episodes (with optional authentication)
 static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle,
                              std::vector<PodcastEpisode>& episodes,
-                             const std::wstring& username = L"", const std::wstring& password = L"") {
+                             const std::wstring& username = L"", const std::wstring& password = L"",
+                             PodcastFetchDiag* diag = nullptr) {
     episodes.clear();
 
-    std::wstring xml = PodcastHttpGetAuth(feedUrl, username, password);
+    std::wstring xml = PodcastHttpGetAuth(feedUrl, username, password, diag);
     if (xml.empty()) return false;
 
     // Extract channel title
@@ -4340,8 +4756,10 @@ static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle
     }
 
     // Find all <item> elements
+    int itemCount = 0;
     size_t pos = 0;
     while ((pos = xml.find(L"<item", pos)) != std::wstring::npos) {
+        itemCount++;
         size_t itemEnd = xml.find(L"</item>", pos);
         if (itemEnd == std::wstring::npos) break;
 
@@ -4363,6 +4781,11 @@ static bool ParsePodcastFeed(const std::wstring& feedUrl, std::wstring& outTitle
         }
 
         pos = itemEnd;
+    }
+
+    if (diag) {
+        diag->itemTagsFound = itemCount;
+        diag->episodesExtracted = static_cast<int>(episodes.size());
     }
 
     return !episodes.empty();
@@ -4449,11 +4872,6 @@ static void RefreshPodcastSubsList(HWND hwnd) {
     SendMessageW(hList, LB_RESETCONTENT, 0, 0);
 
     g_podcastSubs = GetPodcastSubscriptions();
-    // Sort alphabetically by name (case-insensitive)
-    std::sort(g_podcastSubs.begin(), g_podcastSubs.end(),
-              [](const PodcastSubscription& a, const PodcastSubscription& b) {
-                  return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
-              });
     for (const auto& sub : g_podcastSubs) {
         SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(sub.name.c_str()));
     }
@@ -4470,6 +4888,58 @@ static LRESULT CALLBACK PodcastDescSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
     return result;
 }
 
+// Build a human-readable diagnostic report from a failed feed fetch/parse
+static std::wstring BuildPodcastDiagMessage(const std::wstring& feedUrl, const PodcastFetchDiag& diag) {
+    std::wstring msg;
+    msg += L"Feed URL:\r\n";
+    msg += feedUrl;
+    msg += L"\r\n\r\n";
+
+    wchar_t num[32];
+    msg += L"HTTP status: ";
+    if (diag.statusCode > 0) {
+        swprintf(num, 32, L"%lu", diag.statusCode);
+        msg += num;
+    } else {
+        msg += L"(not reached)";
+    }
+    msg += L"\r\n";
+
+    if (diag.lastError != 0) {
+        swprintf(num, 32, L"%lu", diag.lastError);
+        msg += L"Network error: ";
+        msg += num;
+        if (!diag.errorText.empty()) {
+            msg += L" - " + diag.errorText;
+        }
+        msg += L"\r\n";
+    } else if (!diag.errorText.empty()) {
+        msg += L"Error: " + diag.errorText + L"\r\n";
+    }
+
+    swprintf(num, 32, L"%zu", diag.bytesReceived);
+    msg += L"Bytes received: ";
+    msg += num;
+    msg += L"\r\n";
+
+    swprintf(num, 32, L"%d", diag.itemTagsFound);
+    msg += L"<item> tags in XML: ";
+    msg += num;
+    msg += L"\r\n";
+
+    swprintf(num, 32, L"%d", diag.episodesExtracted);
+    msg += L"Episodes extracted (had audio URL + title): ";
+    msg += num;
+    msg += L"\r\n";
+
+    if (!diag.bodyPreview.empty()) {
+        msg += L"\r\nResponse preview (first 400 chars):\r\n";
+        msg += diag.bodyPreview;
+    }
+
+    return msg;
+}
+
 // Load episodes for a subscription
 static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
     HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
@@ -4480,7 +4950,8 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
     Speak("Loading episodes");
 
     std::wstring title;
-    if (ParsePodcastFeed(feedUrl, title, g_podcastEpisodes)) {
+    PodcastFetchDiag diag;
+    if (ParsePodcastFeed(feedUrl, title, g_podcastEpisodes, L"", L"", &diag)) {
         for (const auto& ep : g_podcastEpisodes) {
             std::wstring display = ep.title;
             if (!ep.pubDate.empty()) {
@@ -4550,6 +5021,7 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
         Speak(buf);
     } else {
         Speak("Failed to load episodes");
+        ShowTagDialog(L"Podcast Load Failed", BuildPodcastDiagMessage(feedUrl, diag));
     }
 }
 
@@ -4642,10 +5114,35 @@ static LRESULT CALLBACK PodcastSubsListSubclassProc(HWND hwnd, UINT msg, WPARAM 
                 }
             }
             return 0;
+        } else if ((wParam == VK_UP || wParam == VK_DOWN) && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            // Reorder podcast with Ctrl+Up/Down
+            int sel = static_cast<int>(SendMessageW(hwnd, LB_GETCURSEL, 0, 0));
+            int count = static_cast<int>(g_podcastSubs.size());
+            int newSel = (wParam == VK_UP) ? sel - 1 : sel + 1;
+            if (sel >= 0 && sel < count && newSel >= 0 && newSel < count) {
+                std::swap(g_podcastSubs[sel], g_podcastSubs[newSel]);
+                UpdatePodcastSortOrders(g_podcastSubs);
+                RefreshPodcastSubsList(GetParent(hwnd));
+                SendMessageW(hwnd, LB_SETCURSEL, newSel, 0);
+                // Speak position feedback
+                const std::wstring& name = g_podcastSubs[newSel].name;
+                if (newSel == 0)
+                    SpeakW(name + L" moved above " + g_podcastSubs[1].name);
+                else if (newSel == count - 1)
+                    SpeakW(name + L" moved below " + g_podcastSubs[count - 2].name);
+                else
+                    SpeakW(name + L" moved between " + g_podcastSubs[newSel - 1].name +
+                           L" and " + g_podcastSubs[newSel + 1].name);
+            }
+            return 0;
         }
     } else if (msg == WM_GETDLGCODE) {
         MSG* pmsg = reinterpret_cast<MSG*>(lParam);
         if (pmsg && pmsg->wParam == VK_DELETE) {
+            return DLGC_WANTMESSAGE;
+        }
+        if (pmsg && (pmsg->wParam == VK_UP || pmsg->wParam == VK_DOWN) &&
+            (GetKeyState(VK_CONTROL) & 0x8000)) {
             return DLGC_WANTMESSAGE;
         }
         return CallWindowProcW(g_origPodcastSubsListProc, hwnd, msg, wParam, lParam);
@@ -5009,7 +5506,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         Speak("Fetching feed");
                         std::wstring title;
                         std::vector<PodcastEpisode> eps;
-                        if (ParsePodcastFeed(addData.url, title, eps, addData.username, addData.password)) {
+                        PodcastFetchDiag addDiag;
+                        if (ParsePodcastFeed(addData.url, title, eps, addData.username, addData.password, &addDiag)) {
                             if (title.empty()) title = L"Unknown Podcast";
                             if (AddPodcastSubscription(title, addData.url) > 0) {
                                 RefreshPodcastSubsList(hwnd);
@@ -5019,6 +5517,7 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                             }
                         } else {
                             Speak("Failed to fetch feed");
+                            ShowTagDialog(L"Podcast Fetch Failed", BuildPodcastDiagMessage(addData.url, addDiag));
                         }
                     }
                     return TRUE;

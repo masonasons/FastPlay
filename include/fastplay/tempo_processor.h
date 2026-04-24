@@ -8,8 +8,6 @@
 // Tempo/pitch algorithm types
 enum class TempoAlgorithm {
     SoundTouch,     // BASS_FX (SoundTouch-based) - fast, good for speech
-    RubberBandR2,   // Rubber Band R2 (Faster) engine - balanced
-    RubberBandR3,   // Rubber Band R3 (Finer) engine - highest quality
     Speedy,         // Google Speedy - nonlinear speech speedup
     Signalsmith,    // Signalsmith Stretch - high quality pitch/time
     COUNT
@@ -51,12 +49,12 @@ public:
     // Get the algorithm type
     virtual TempoAlgorithm GetAlgorithm() const = 0;
 
-    // Position and length (in seconds) - needed for Rubber Band
+    // Position and length (in seconds)
     virtual double GetLength() const = 0;
     virtual double GetPosition() const = 0;
     virtual void SetPosition(double seconds) = 0;
 
-    // Get the source stream (for seeking with Rubber Band)
+    // Get the source stream
     virtual HSTREAM GetSourceStream() const = 0;
 };
 

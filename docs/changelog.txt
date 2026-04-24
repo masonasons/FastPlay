@@ -1,3 +1,43 @@
+0.6.6
+Add Ctrl+D / File > Add Stream to Favorites to save the currently playing stream URL to radio favorites. Refuses silently if nothing's playing, if the current item isn't a URL, or if the stream is already in favorites.
+Add a Country filter to the RadioBrowser search tab. Select a country (or leave "(Any)") to restrict search results. The country list is fetched once per session in the background, ordered by station count; the combo is editable so you can type a country name directly. The filter is hidden when the search source is not RadioBrowser. With a country selected, you can leave the search box empty and hit Search to browse all stations from that country, sorted by popularity.
+When a podcast feed fails to load, show a diagnostic dialog with the feed URL, HTTP status, any Win32 / WinInet error, bytes received, number of <item> tags found in the XML, number of episodes extracted, and a preview of the response body. Applies to loading episodes for a subscribed podcast and to adding a new podcast by URL.
+Add Ctrl+1 through Ctrl+0 to quickly enable/disable effects: Ctrl+1 Volume, Ctrl+2 Pitch, Ctrl+3 Tempo, Ctrl+4 Rate, Ctrl+5 Reverb, Ctrl+6 Echo, Ctrl+7 EQ, Ctrl+8 Compressor, Ctrl+9 Stereo Width, Ctrl+0 Center Cancel, Ctrl+- Convolution Reverb, Ctrl+= 3D Audio. Convolution Reverb is also now assignable as a global hotkey.
+Fix focus being lost when an error message appears on top of an open dialog (e.g. Radio). Error messages now return focus to the dialog that was active, rather than the main window.
+Replace the file types options tab with a single "Register all supported file types" checkbox on the playback tab. When enabled, all formats are registered on startup.
+Expand supported file associations to include MP1, MP2, MP4, WMV, M4R, AIF, RMI, KAR, DFF, DSF, CDA, ALAC, and tracker formats (MOD, S3M, XM, IT, MTM, UMX).
+Add song history. Stream metadata (song titles from internet radio) is now captured into a persistent database across all stations. Open the list with Ctrl+Shift+H or File > Song History. The dialog shows the last 100 songs with date and time, and has Copy and Close buttons. Press Ctrl+C to copy the selected song to the clipboard.
+
+0.6.5
+Speech now properly handles Unicode/UTF-8 text, so song titles and tags with non-ASCII characters are spoken correctly.
+Add E key to cycle repeat modes: off, repeat track, repeat all.
+3D rotation, mode, and rear speaker now wrap around at the edges instead of clamping, so adjusting them cycles continuously.
+Increase the range of 3D listener X, Y and Z from -5/+5 to -50/+50.
+Add effects presets. Press P in the main window to open a menu of saved presets. You can apply a preset, delete a preset, or save the current effect state as a new preset. Presets capture enabled stream and DSP effects plus all of their parameters.
+
+0.6.4
+Hopefully finally got to the bottom of the crashes.
+
+0.6.3
+Add spoken feedback for moving favorites.
+Remove 3D audio preferences and add those previous preferences to the effect perametors.
+Add X Y and Z for spacial audio.
+Attempts fixes for spacial audio crashes.
+
+0.6.2
+Add the ability to reorder stations and podcasts in the favorites tabs, using control up and down arrows. There is a reset to alphabetical option in the advanced tab.
+Add error dialogs for why spacial audio is unable to work.
+
+0.6.1
+This version adds a new spacial audio tab, which adds a new spacial audio 5.1 surround upscale mode and a new setting for that mode to enable or disable a rear center speaker.
+
+0.6.0
+Add an option under advanced to disable the delay when opening files in explorer. This has the consequence of selecting multiple files in explorer not letting all files open into a single playlist but individually.
+Allow auto updater to work for the new system.
+Add experimental spacial audio effect.
+Remove Rubberband effect. Use signalsmith Stretch for higher quality pitch shifting/tempo shifting
+Remove the non working app running check from the installer.
+
 0.5.0
 Add proper unicode support to speech synthesis.
 Add Ctrl+Home and Ctrl+End to set current effect parameter to minimum or maximum value.

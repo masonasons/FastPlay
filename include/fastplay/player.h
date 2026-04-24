@@ -42,6 +42,7 @@ void ToggleMute();
 void NextTrack(bool autoPlay = true);
 void PrevTrack();
 void PlayTrack(int index, bool autoPlay = true);
+void ToggleRepeatMode();
 
 // Track end callback
 void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user);

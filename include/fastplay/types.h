@@ -10,7 +10,6 @@
 struct FileAssoc {
     const wchar_t* ext;
     const wchar_t* desc;
-    int ctrlId;
 };
 
 // Seek amount definition
@@ -52,6 +51,13 @@ enum class StreamEffect {
     COUNT
 };
 
+// Spatial audio mode
+enum class SpatialMode {
+    Binaural,     // Stereo HRTF for headphones (2 virtual speakers)
+    Surround51,   // 5.1 virtual surround (5 virtual speakers rendered binaurally)
+    COUNT
+};
+
 // DSP effect types (BASS_FX DSP effects + custom)
 enum class DSPEffectType {
     Reverb,
@@ -61,6 +67,7 @@ enum class DSPEffectType {
     StereoWidth,
     CenterCancel,  // Center channel canceler/extractor (vocal removal/isolation)
     Convolution,   // Convolution reverb using impulse response
+    SpatialAudio,  // 3D audio via HRTF/binaural rendering (Steam Audio)
     COUNT
 };
 
@@ -115,6 +122,15 @@ enum class ParamId {
     // Convolution reverb parameters
     ConvolutionMix,
     ConvolutionGain,
+    // 3D audio parameters
+    SpatialBlend,
+    SpatialWidth,
+    SpatialRotation,
+    SpatialMode,        // 0=Binaural, 1=5.1 Surround
+    SpatialRearCenter,  // 0=Off, 1=On (5.1 only)
+    SpatialX,           // Listener X position
+    SpatialY,           // Listener Y position
+    SpatialZ,           // Listener Z position
     COUNT
 };
 

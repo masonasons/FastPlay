@@ -219,7 +219,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (GetFileAttributesW(filePath) != INVALID_FILE_ATTRIBUTES) {
                     DWORD elapsed = GetTickCount() - g_startupTime;
                     std::wstring path = filePath;
-                    if (elapsed < BATCH_DELAY && !g_playlist.empty()) {
+                    if (!g_disableBatchDelay && elapsed < BATCH_DELAY && !g_playlist.empty()) {
                         if (IsPlaylistFile(path)) {
                             auto entries = ParsePlaylist(path);
                             g_playlist.insert(g_playlist.end(), entries.begin(), entries.end());
@@ -233,7 +233,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         } else {
                             g_pendingFiles.push_back(path);
                         }
-                        SetTimer(hwnd, IDT_BATCH_FILES, BATCH_DELAY, nullptr);
+                        SetTimer(hwnd, IDT_BATCH_FILES, g_disableBatchDelay ? 0 : BATCH_DELAY, nullptr);
                     }
                 }
             }
@@ -270,6 +270,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_FILE_RADIO:
                     ShowRadioDialog();
                     break;
+                case IDM_FILE_ADD_TO_FAVORITES:
+                    AddCurrentStreamToFavorites();
+                    break;
                 case IDM_FILE_SCHEDULE:
                     ShowSchedulerDialog();
                     break;
@@ -303,6 +306,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_BOOKMARK_LIST:
                     ShowBookmarksDialog();
                     break;
+                case IDM_VIEW_SONG_HISTORY:
+                    ShowSongHistoryDialog();
+                    break;
                 case IDM_PLAY_PLAYPAUSE:
                     PlayPause();
                     break;
@@ -327,6 +333,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     Speak(g_shuffle ? "Shuffle on" : "Shuffle off");
                     CheckMenuItem(GetMenu(hwnd), IDM_PLAY_SHUFFLE, g_shuffle ? MF_CHECKED : MF_UNCHECKED);
                     SaveSettings();
+                    break;
+                case IDM_PLAY_REPEAT_TOGGLE:
+                    ToggleRepeatMode();
+                    break;
+                case IDM_EFFECT_PRESETS:
+                    ShowEffectPresetsMenu(hwnd);
                     break;
                 case IDM_PLAY_BEGINNING:
                     SeekToPosition(0);
@@ -461,6 +473,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case IDM_TOGGLE_CENTERCANCEL:
                     ToggleDSPEffect(DSPEffectType::CenterCancel);
                     break;
+                case IDM_TOGGLE_CONVOLUTION:
+                    ToggleDSPEffect(DSPEffectType::Convolution);
+                    break;
+                case IDM_TOGGLE_SPATIAL:
+                    ToggleDSPEffect(DSPEffectType::SpatialAudio);
+                    break;
                 // Speak seek amount
                 case IDM_SPEAK_SEEK:
                     SpeakSeekAmount();
@@ -550,6 +568,31 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                                 g_currentTrack = -1;
                                 PlayTrack(0);
                             }
+                        }
+                        // Handle effect preset apply
+                        else if (cmdId >= IDM_PRESET_BASE && cmdId < IDM_PRESET_BASE + 100) {
+                            auto names = GetEffectPresetNames();
+                            size_t idx = cmdId - IDM_PRESET_BASE;
+                            if (idx < names.size() && LoadEffectPreset(names[idx])) {
+                                std::wstring msg = L"Loaded preset " + names[idx];
+                                SpeakW(msg);
+                            }
+                        }
+                        // Handle effect preset delete
+                        else if (cmdId >= IDM_PRESET_DELETE_BASE && cmdId < IDM_PRESET_DELETE_BASE + 100) {
+                            auto names = GetEffectPresetNames();
+                            size_t idx = cmdId - IDM_PRESET_DELETE_BASE;
+                            if (idx < names.size()) {
+                                std::wstring n = names[idx];
+                                if (DeleteEffectPreset(n)) {
+                                    std::wstring msg = L"Deleted preset " + n;
+                                    SpeakW(msg);
+                                }
+                            }
+                        }
+                        // Handle save new preset
+                        else if (cmdId == IDM_PRESET_SAVE_NEW) {
+                            ShowSaveEffectPresetDialog();
                         }
                     }
                     break;
@@ -655,6 +698,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     if (argv) LocalFree(argv);
 
     LoadSettings();
+    if (g_registerFileTypes) {
+        RegisterAllFileTypes();
+    }
     LoadHotkeys();
     YouTubeCleanup();  // Clean up any leftover temp files from previous sessions
     ParseCommandLine();

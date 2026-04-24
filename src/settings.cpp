@@ -67,6 +67,7 @@ void LoadSettings() {
     g_bringToFront = GetPrivateProfileIntW(L"Playback", L"BringToFront", 1, g_configPath.c_str()) != 0;
     g_minimizeToTray = GetPrivateProfileIntW(L"Playback", L"MinimizeToTray", 1, g_configPath.c_str()) != 0;
     g_loadFolder = GetPrivateProfileIntW(L"Playback", L"LoadFolder", 0, g_configPath.c_str()) != 0;
+    g_registerFileTypes = GetPrivateProfileIntW(L"Playback", L"RegisterFileTypes", 0, g_configPath.c_str()) != 0;
     g_volumeStep = GetPrivateProfileIntW(L"Playback", L"VolumeStep", 2, g_configPath.c_str()) / 100.0f;
     if (g_volumeStep < 0.01f) g_volumeStep = 0.01f;
     if (g_volumeStep > 0.25f) g_volumeStep = 0.25f;
@@ -109,6 +110,7 @@ void LoadSettings() {
     if (g_tempoAlgorithm >= static_cast<int>(TempoAlgorithm::COUNT)) g_tempoAlgorithm = 0;
 
     g_legacyVolume = GetPrivateProfileIntW(L"Advanced", L"LegacyVolume", 0, g_configPath.c_str()) != 0;
+    g_disableBatchDelay = GetPrivateProfileIntW(L"Advanced", L"DisableBatchDelay", 0, g_configPath.c_str()) != 0;
 
     // Load SoundTouch settings
     g_stAntiAliasFilter = GetPrivateProfileIntW(L"SoundTouch", L"AntiAliasFilter", 1, g_configPath.c_str()) != 0;
@@ -129,28 +131,6 @@ void LoadSettings() {
     g_stAlgorithm = GetPrivateProfileIntW(L"SoundTouch", L"Algorithm", 1, g_configPath.c_str());
     if (g_stAlgorithm < 0) g_stAlgorithm = 0;
     if (g_stAlgorithm > 2) g_stAlgorithm = 2;
-
-    // Load Rubber Band settings
-    g_rbFormantPreserved = GetPrivateProfileIntW(L"RubberBand", L"FormantPreserved", 0, g_configPath.c_str()) != 0;
-    g_rbPitchMode = GetPrivateProfileIntW(L"RubberBand", L"PitchMode", 2, g_configPath.c_str());
-    if (g_rbPitchMode < 0) g_rbPitchMode = 0;
-    if (g_rbPitchMode > 2) g_rbPitchMode = 2;
-    g_rbWindowSize = GetPrivateProfileIntW(L"RubberBand", L"WindowSize", 0, g_configPath.c_str());
-    if (g_rbWindowSize < 0) g_rbWindowSize = 0;
-    if (g_rbWindowSize > 2) g_rbWindowSize = 2;
-    g_rbTransients = GetPrivateProfileIntW(L"RubberBand", L"Transients", 0, g_configPath.c_str());
-    if (g_rbTransients < 0) g_rbTransients = 0;
-    if (g_rbTransients > 2) g_rbTransients = 2;
-    g_rbDetector = GetPrivateProfileIntW(L"RubberBand", L"Detector", 0, g_configPath.c_str());
-    if (g_rbDetector < 0) g_rbDetector = 0;
-    if (g_rbDetector > 2) g_rbDetector = 2;
-    g_rbChannels = GetPrivateProfileIntW(L"RubberBand", L"Channels", 0, g_configPath.c_str());
-    if (g_rbChannels < 0) g_rbChannels = 0;
-    if (g_rbChannels > 1) g_rbChannels = 1;
-    g_rbPhase = GetPrivateProfileIntW(L"RubberBand", L"Phase", 0, g_configPath.c_str());
-    if (g_rbPhase < 0) g_rbPhase = 0;
-    if (g_rbPhase > 1) g_rbPhase = 1;
-    g_rbSmoothing = GetPrivateProfileIntW(L"RubberBand", L"Smoothing", 0, g_configPath.c_str()) != 0;
 
     // Load Speedy settings
     g_speedyNonlinear = GetPrivateProfileIntW(L"Speedy", L"NonlinearSpeedup", 1, g_configPath.c_str()) != 0;
@@ -218,6 +198,8 @@ void LoadSettings() {
     // Load shuffle and auto-advance settings
     g_shuffle = GetPrivateProfileIntW(L"Playback", L"Shuffle", 0, g_configPath.c_str()) != 0;
     g_autoAdvance = GetPrivateProfileIntW(L"Playback", L"AutoAdvance", 1, g_configPath.c_str()) != 0;
+    g_repeatMode = GetPrivateProfileIntW(L"Playback", L"RepeatMode", 0, g_configPath.c_str());
+    if (g_repeatMode < 0 || g_repeatMode > 2) g_repeatMode = 0;
     g_playlistFollowPlayback = GetPrivateProfileIntW(L"Playback", L"PlaylistFollow", 1, g_configPath.c_str()) != 0;
     g_checkForUpdates = GetPrivateProfileIntW(L"Playback", L"CheckForUpdates", 1, g_configPath.c_str()) != 0;
     g_allowMultipleInstances = GetPrivateProfileIntW(L"Playback", L"AllowMultipleInstances", 0, g_configPath.c_str()) != 0;
@@ -292,6 +274,7 @@ void LoadDSPSettings() {
     EnableDSPEffect(DSPEffectType::StereoWidth, GetPrivateProfileIntW(L"DSPEffects", L"StereoWidth", 0, g_configPath.c_str()) != 0);
     EnableDSPEffect(DSPEffectType::CenterCancel, GetPrivateProfileIntW(L"DSPEffects", L"CenterCancel", 0, g_configPath.c_str()) != 0);
     EnableDSPEffect(DSPEffectType::Convolution, GetPrivateProfileIntW(L"DSPEffects", L"Convolution", 0, g_configPath.c_str()) != 0);
+    EnableDSPEffect(DSPEffectType::SpatialAudio, GetPrivateProfileIntW(L"DSPEffects", L"SpatialAudio", 0, g_configPath.c_str()) != 0);
 
     // Load convolution IR path
     {
@@ -372,6 +355,23 @@ void LoadDSPSettings() {
     def = GetParamDef(ParamId::ConvolutionGain);
     SetParamValue(ParamId::ConvolutionGain, GetPrivateProfileFloatW(L"DSPParams", L"ConvolutionGain", def->defaultValue, g_configPath.c_str()));
 
+    def = GetParamDef(ParamId::SpatialBlend);
+    SetParamValue(ParamId::SpatialBlend, GetPrivateProfileFloatW(L"DSPParams", L"SpatialBlend", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialWidth);
+    SetParamValue(ParamId::SpatialWidth, GetPrivateProfileFloatW(L"DSPParams", L"SpatialWidth", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialRotation);
+    SetParamValue(ParamId::SpatialRotation, GetPrivateProfileFloatW(L"DSPParams", L"SpatialRotation", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialMode);
+    SetParamValue(ParamId::SpatialMode, GetPrivateProfileFloatW(L"DSPParams", L"SpatialMode", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialRearCenter);
+    SetParamValue(ParamId::SpatialRearCenter, GetPrivateProfileFloatW(L"DSPParams", L"SpatialRearCenter", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialX);
+    SetParamValue(ParamId::SpatialX, GetPrivateProfileFloatW(L"DSPParams", L"SpatialX", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialY);
+    SetParamValue(ParamId::SpatialY, GetPrivateProfileFloatW(L"DSPParams", L"SpatialY", def->defaultValue, g_configPath.c_str()));
+    def = GetParamDef(ParamId::SpatialZ);
+    SetParamValue(ParamId::SpatialZ, GetPrivateProfileFloatW(L"DSPParams", L"SpatialZ", def->defaultValue, g_configPath.c_str()));
+
     // Load recent files
     g_recentFiles.clear();
     for (int i = 0; i < MAX_RECENT_FILES; i++) {
@@ -404,6 +404,7 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"Playback", L"BringToFront", g_bringToFront ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"MinimizeToTray", g_minimizeToTray ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"LoadFolder", g_loadFolder ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Playback", L"RegisterFileTypes", g_registerFileTypes ? L"1" : L"0", g_configPath.c_str());
 
     swprintf(buf, 32, L"%d", static_cast<int>(g_volumeStep * 100 + 0.5f));
     WritePrivateProfileStringW(L"Playback", L"VolumeStep", buf, g_configPath.c_str());
@@ -428,6 +429,7 @@ void SaveSettings() {
     swprintf(buf, 32, L"%d", g_tempoAlgorithm);
     WritePrivateProfileStringW(L"Advanced", L"TempoAlgorithm", buf, g_configPath.c_str());
     WritePrivateProfileStringW(L"Advanced", L"LegacyVolume", g_legacyVolume ? L"1" : L"0", g_configPath.c_str());
+    WritePrivateProfileStringW(L"Advanced", L"DisableBatchDelay", g_disableBatchDelay ? L"1" : L"0", g_configPath.c_str());
 
     // Save SoundTouch settings
     WritePrivateProfileStringW(L"SoundTouch", L"AntiAliasFilter", g_stAntiAliasFilter ? L"1" : L"0", g_configPath.c_str());
@@ -443,22 +445,6 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"SoundTouch", L"PreventClick", g_stPreventClick ? L"1" : L"0", g_configPath.c_str());
     swprintf(buf, 32, L"%d", g_stAlgorithm);
     WritePrivateProfileStringW(L"SoundTouch", L"Algorithm", buf, g_configPath.c_str());
-
-    // Save Rubber Band settings
-    WritePrivateProfileStringW(L"RubberBand", L"FormantPreserved", g_rbFormantPreserved ? L"1" : L"0", g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbPitchMode);
-    WritePrivateProfileStringW(L"RubberBand", L"PitchMode", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbWindowSize);
-    WritePrivateProfileStringW(L"RubberBand", L"WindowSize", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbTransients);
-    WritePrivateProfileStringW(L"RubberBand", L"Transients", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbDetector);
-    WritePrivateProfileStringW(L"RubberBand", L"Detector", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbChannels);
-    WritePrivateProfileStringW(L"RubberBand", L"Channels", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%d", g_rbPhase);
-    WritePrivateProfileStringW(L"RubberBand", L"Phase", buf, g_configPath.c_str());
-    WritePrivateProfileStringW(L"RubberBand", L"Smoothing", g_rbSmoothing ? L"1" : L"0", g_configPath.c_str());
 
     // Save Speedy settings
     WritePrivateProfileStringW(L"Speedy", L"NonlinearSpeedup", g_speedyNonlinear ? L"1" : L"0", g_configPath.c_str());
@@ -510,6 +496,8 @@ void SaveSettings() {
     // Save shuffle and auto-advance settings
     WritePrivateProfileStringW(L"Playback", L"Shuffle", g_shuffle ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"AutoAdvance", g_autoAdvance ? L"1" : L"0", g_configPath.c_str());
+    swprintf(buf, 32, L"%d", g_repeatMode);
+    WritePrivateProfileStringW(L"Playback", L"RepeatMode", buf, g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"PlaylistFollow", g_playlistFollowPlayback ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"CheckForUpdates", g_checkForUpdates ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"AllowMultipleInstances", g_allowMultipleInstances ? L"1" : L"0", g_configPath.c_str());
@@ -551,6 +539,7 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"DSPEffects", L"CenterCancel", IsDSPEffectEnabled(DSPEffectType::CenterCancel) ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"DSPEffects", L"Convolution", IsDSPEffectEnabled(DSPEffectType::Convolution) ? L"1" : L"0", g_configPath.c_str());
     WritePrivateProfileStringW(L"DSPEffects", L"ConvolutionIR", g_convolutionIRPath.c_str(), g_configPath.c_str());
+    WritePrivateProfileStringW(L"DSPEffects", L"SpatialAudio", IsDSPEffectEnabled(DSPEffectType::SpatialAudio) ? L"1" : L"0", g_configPath.c_str());
 
     // Save DSP effect parameter values
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::ReverbMix));
@@ -615,6 +604,23 @@ void SaveSettings() {
     WritePrivateProfileStringW(L"DSPParams", L"ConvolutionMix", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::ConvolutionGain));
     WritePrivateProfileStringW(L"DSPParams", L"ConvolutionGain", buf, g_configPath.c_str());
+
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialBlend));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialBlend", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialWidth));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialWidth", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialRotation));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialRotation", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialMode));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialMode", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialRearCenter));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialRearCenter", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialX));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialX", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialY));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialY", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialZ));
+    WritePrivateProfileStringW(L"DSPParams", L"SpatialZ", buf, g_configPath.c_str());
 
     // Save recent files
     // First clear the section
@@ -745,7 +751,7 @@ void LoadPlaybackState() {
 void SaveFilePosition(const std::wstring& filePath) {
     if (g_rememberPosMinutes == 0 || !g_fxStream) return;
 
-    // Use tempo processor to get length and position (supports both SoundTouch and Rubber Band)
+    // Use tempo processor to get length and position
     TempoProcessor* processor = GetTempoProcessor();
     if (!processor || !processor->IsActive()) return;
 
@@ -763,7 +769,7 @@ void SaveFilePosition(const std::wstring& filePath) {
 double LoadFilePosition(const std::wstring& filePath) {
     if (g_rememberPosMinutes == 0 || !g_fxStream) return 0.0;
 
-    // Use tempo processor to get length (supports both SoundTouch and Rubber Band)
+    // Use tempo processor to get length
     TempoProcessor* processor = GetTempoProcessor();
     if (!processor || !processor->IsActive()) return 0.0;
 

@@ -41,6 +41,8 @@
 #define IDM_PLAY_BEGINNING  216
 #define IDM_PLAY_JUMPTOTIME 217
 #define IDM_PLAY_MUTE       218
+#define IDM_PLAY_REPEAT_TOGGLE 219
+#define IDM_EFFECT_PRESETS  238
 
 // Accelerator table
 #define IDA_ACCEL           300
@@ -55,28 +57,11 @@
 #define WM_META_CHANGED     (WM_USER + 3)
 #define WM_PLAYLIST_TRACK_CHANGED (WM_USER + 4)
 
-// File association checkboxes
-#define IDC_ASSOC_MP3       520
-#define IDC_ASSOC_WAV       521
-#define IDC_ASSOC_OGG       522
-#define IDC_ASSOC_FLAC      523
-#define IDC_ASSOC_M4A       524
-#define IDC_ASSOC_WMA       525
-#define IDC_ASSOC_AAC       526
-#define IDC_ASSOC_OPUS      527
-#define IDC_ASSOC_AIFF      528
-#define IDC_ASSOC_APE       529
-#define IDC_ASSOC_WV        530
+// Playback tab controls
 #define IDC_BRING_TO_FRONT  531
 #define IDC_LOAD_FOLDER     532
 #define IDC_MINIMIZE_TO_TRAY 539
-#define IDC_ASSOC_M3U       534
-#define IDC_ASSOC_M3U8      535
-#define IDC_ASSOC_PLS       536
-#define IDC_ASSOC_M4B       533
-#define IDC_ASSOC_MID       537
-#define IDC_ASSOC_MIDI      538
-#define IDC_ASSOC_OGA       547
+#define IDC_REGISTER_FILE_TYPES 548
 
 // Global hotkeys tab
 #define IDC_HOTKEY_LIST     540
@@ -142,6 +127,8 @@
 #define IDM_TOGGLE_COMPRESSOR   247
 #define IDM_TOGGLE_STEREOWIDTH  248
 #define IDM_TOGGLE_CENTERCANCEL 249
+#define IDM_TOGGLE_SPATIAL      251
+#define IDM_TOGGLE_CONVOLUTION  252
 
 // Speak commands
 #define IDM_SPEAK_SEEK          250
@@ -172,6 +159,7 @@
 #define IDC_DSP_COMPRESSOR  563
 #define IDC_DSP_STEREOWIDTH 564
 #define IDC_DSP_CENTERCANCEL 565
+#define IDC_DSP_SPATIAL     566
 
 // Advanced tab controls
 #define IDC_BUFFER_SIZE     570
@@ -181,6 +169,8 @@
 #define IDC_EQ_MID_FREQ     574
 #define IDC_EQ_TREBLE_FREQ  575
 #define IDC_LEGACY_VOLUME   576
+#define IDC_DISABLE_BATCH   577
+#define IDC_RESET_LIST_ORDER 578
 
 // SoundTouch settings (tab 7)
 #define IDC_ST_AA_FILTER        580
@@ -192,15 +182,10 @@
 #define IDC_ST_PREVENT_CLICK    586
 #define IDC_ST_ALGORITHM        587
 
-// Rubber Band settings (tab 8)
-#define IDC_RB_FORMANT          590
-#define IDC_RB_PITCH_MODE       591
-#define IDC_RB_WINDOW           592
-#define IDC_RB_TRANSIENTS       593
-#define IDC_RB_DETECTOR         594
-#define IDC_RB_CHANNELS         595
-#define IDC_RB_PHASE            596
-#define IDC_RB_SMOOTHING        597
+
+// 3D Audio settings (tab 14)
+#define IDC_SPATIAL_MODE        605
+#define IDC_SPATIAL_REAR_CENTER 606
 
 // Speedy settings (tab 9)
 #define IDC_SPEEDY_NONLINEAR    610
@@ -255,6 +240,7 @@
 
 // Radio dialog
 #define IDM_FILE_RADIO      107
+#define IDM_FILE_ADD_TO_FAVORITES 113
 #define IDM_HELP_PLUGINS    109
 #define IDM_HELP_UPDATES    112
 
@@ -274,6 +260,9 @@
 #define IDC_RADIO_SEARCH_LIST   857
 #define IDC_RADIO_SEARCH_ADD    858
 #define IDC_RADIO_SEARCH_SOURCE 859
+#define IDC_RADIO_SEARCH_COUNTRY       864
+#define IDC_RADIO_SEARCH_COUNTRY_LABEL 865
+#define IDC_RADIO_SEARCH_LIST_LABEL    866
 
 // Add station dialog
 #define IDD_RADIO_ADD       860
@@ -319,6 +308,15 @@
 // Tag view dialog
 #define IDD_TAG_VIEW        910
 #define IDC_TAG_TEXT        911
+
+// Preset name input dialog
+#define IDD_PRESET_NAME     915
+#define IDC_PRESET_NAME     916
+
+// Preset menu base IDs (dynamic)
+#define IDM_PRESET_BASE     7000  // Apply preset: IDM_PRESET_BASE + index (up to 100)
+#define IDM_PRESET_DELETE_BASE 7100  // Delete preset: IDM_PRESET_DELETE_BASE + index (up to 100)
+#define IDM_PRESET_SAVE_NEW 7200
 
 // Convolution reverb controls
 #define IDC_DSP_CONVOLUTION     920
@@ -372,6 +370,14 @@
 #define IDC_DOWNLOAD_PATH       980
 #define IDC_DOWNLOAD_BROWSE     981
 #define IDC_DOWNLOAD_ORGANIZE   982
+
+// Song history dialog
+#define IDM_VIEW_SONG_HISTORY   990
+#define IDD_SONG_HISTORY        991
+#define IDC_HISTORY_LIST        992
+#define IDC_HISTORY_COPY        993
+#define IDC_HISTORY_CLEAR       994
+
 
 #define IDOK                1
 #define IDCANCEL            2

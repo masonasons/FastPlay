@@ -5,6 +5,7 @@
 #include "settings.h"
 #include "ui.h"
 #include "effects.h"
+#include "database.h"
 #include "resource.h"
 #include "bass_fx.h"
 #include "bass_aac.h"
@@ -350,7 +351,7 @@ bool LoadURL(const wchar_t* url) {
 
     // Create URL stream - try without BLOCK first (allows seeking for podcasts)
     // BLOCK mode is only needed for live streams where seeking isn't expected
-    DWORD flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS;
+    DWORD flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_SAMPLE_FLOAT;
 
     // Try BASS_AAC_StreamCreateURL first (handles raw AAC/M4A better)
     g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
@@ -362,7 +363,7 @@ bool LoadURL(const wchar_t* url) {
 
     // If non-BLOCK fails, try with BLOCK (for live streams)
     if (!g_stream) {
-        flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK;
+        flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK | BASS_SAMPLE_FLOAT;
         g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
     }
 
@@ -396,7 +397,7 @@ bool LoadURL(const wchar_t* url) {
         msg += L" (code ";
         msg += std::to_wstring(error);
         msg += L")";
-        MessageBoxW(g_hwnd, msg.c_str(), APP_NAME, MB_ICONERROR);
+        MessageBoxW(GetMessageBoxOwner(), msg.c_str(), APP_NAME, MB_ICONERROR);
         return false;
     }
 
@@ -417,7 +418,7 @@ bool LoadURL(const wchar_t* url) {
     // Set up metadata sync for stream title changes (internet radio)
     g_metaSync = BASS_ChannelSetSync(g_stream, BASS_SYNC_META, 0, OnMetaChange, nullptr);
 
-    // For internet streams, always use SoundTouch - RubberBand and Speedy
+    // For internet streams, always use SoundTouch - Speedy and Signalsmith
     // use push-based processing that doesn't work well with network buffering
     SetCurrentAlgorithm(TempoAlgorithm::SoundTouch);
 
@@ -433,7 +434,7 @@ bool LoadURL(const wchar_t* url) {
         BASS_StreamFree(g_stream);
         g_stream = 0;
         g_isLoading = false;
-        MessageBoxW(g_hwnd, L"Failed to create tempo processor.", APP_NAME, MB_ICONERROR);
+        MessageBoxW(GetMessageBoxOwner(), L"Failed to create tempo processor.", APP_NAME, MB_ICONERROR);
         return false;
     }
 
@@ -450,7 +451,7 @@ bool LoadURL(const wchar_t* url) {
         BASS_StreamFree(g_stream);
         g_stream = 0;
         g_isLoading = false;
-        MessageBoxW(g_hwnd, L"Failed to create tempo stream for URL.", APP_NAME, MB_ICONERROR);
+        MessageBoxW(GetMessageBoxOwner(), L"Failed to create tempo stream for URL.", APP_NAME, MB_ICONERROR);
         return false;
     }
 
@@ -760,7 +761,7 @@ bool LoadFile(const wchar_t* path) {
 
     // Create source stream (use MIDI-specific function for MIDI files if sinc interp enabled)
     if (IsMidiFile(path) && g_midiSincInterp) {
-        DWORD flags = BASS_UNICODE | BASS_STREAM_DECODE | BASS_MIDI_SINCINTER;
+        DWORD flags = BASS_UNICODE | BASS_STREAM_DECODE | BASS_SAMPLE_FLOAT | BASS_MIDI_SINCINTER;
         g_stream = BASS_MIDI_StreamCreateFile(FALSE, path, 0, 0, flags, 0);
         // Apply SoundFont to this specific stream if loaded
         if (g_stream && g_hSoundFont) {
@@ -771,7 +772,7 @@ bool LoadFile(const wchar_t* path) {
             BASS_MIDI_StreamSetFonts(g_stream, &font, 1);
         }
     } else {
-        g_stream = BASS_StreamCreateFile(FALSE, path, 0, 0, BASS_UNICODE | BASS_STREAM_DECODE);
+        g_stream = BASS_StreamCreateFile(FALSE, path, 0, 0, BASS_UNICODE | BASS_STREAM_DECODE | BASS_SAMPLE_FLOAT);
     }
     if (!g_stream) {
         g_isLoading = false;
@@ -792,7 +793,7 @@ bool LoadFile(const wchar_t* path) {
             msg += GetFileName(path);
             msg += L"\n\n";
             msg += errorMsg;
-            MessageBoxW(g_hwnd, msg.c_str(), APP_NAME, MB_ICONERROR);
+            MessageBoxW(GetMessageBoxOwner(), msg.c_str(), APP_NAME, MB_ICONERROR);
         }
         return false;
     }
@@ -826,7 +827,7 @@ bool LoadFile(const wchar_t* path) {
     // Initialize processor - this creates the output stream
     g_fxStream = processor->Initialize(g_stream, g_originalFreq);
     if (!g_fxStream) {
-        // Fall back to SoundTouch if Rubber Band fails
+        // Fall back to SoundTouch if selected algorithm fails
         if (algo != TempoAlgorithm::SoundTouch) {
             FreeTempoProcessor();
             SetCurrentAlgorithm(TempoAlgorithm::SoundTouch);
@@ -841,7 +842,7 @@ bool LoadFile(const wchar_t* path) {
             g_stream = 0;
             g_isLoading = false;
             if (g_playlist.size() <= 1) {
-                MessageBoxW(g_hwnd, L"Failed to create tempo stream.", APP_NAME, MB_ICONERROR);
+                MessageBoxW(GetMessageBoxOwner(), L"Failed to create tempo stream.", APP_NAME, MB_ICONERROR);
             }
             return false;
         }
@@ -874,7 +875,7 @@ bool LoadFile(const wchar_t* path) {
 
     // Parse chapters from file (if any)
     // For SoundTouch, use g_fxStream since it owns g_stream
-    // For Rubber Band, use g_stream (original source)
+    // For push-based processors, use g_stream (original source)
     HSTREAM chapterStream = g_stream ? g_stream : g_fxStream;
     ParseChapters(chapterStream);
 
@@ -888,7 +889,7 @@ bool LoadFile(const wchar_t* path) {
 void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user) {
     // Post message to main thread to advance track
     // Use a custom message if auto-advance is disabled to load but not play
-    if (g_autoAdvance) {
+    if (g_autoAdvance || g_repeatMode != 0) {
         PostMessage(g_hwnd, WM_COMMAND, IDM_PLAY_NEXT, 0);
     } else {
         // Load next track but don't auto-play - use lParam=1 to indicate no auto-play
@@ -904,13 +905,16 @@ void CALLBACK OnMetaChange(HSYNC handle, DWORD channel, DWORD data, void* user) 
 
 // Called from main thread when metadata changes - announces new stream track
 void AnnounceStreamMetadata() {
-    if (!g_speechTrackChange) return;
-
     HSTREAM stream = g_stream ? g_stream : g_fxStream;
     if (!stream) return;
 
     std::string streamTitle = GetStreamTitle(stream);
-    if (!streamTitle.empty()) {
+    if (streamTitle.empty()) return;
+
+    // Record to song history (independent of speech setting)
+    AddSongHistoryEntry(Utf8ToWide(streamTitle));
+
+    if (g_speechTrackChange) {
         Speak(streamTitle);
     }
 }
@@ -1053,7 +1057,7 @@ void Seek(double seconds) {
         return;
     }
 
-    // Use tempo processor for position handling (supports both SoundTouch and Rubber Band)
+    // Use tempo processor for position handling
     TempoProcessor* processor = GetTempoProcessor();
     if (!processor || !processor->IsActive()) return;
 
@@ -1363,6 +1367,12 @@ void PlayTrack(int index, bool autoPlay) {
 void NextTrack(bool autoPlay) {
     if (g_playlist.empty() || g_isBusy) return;
 
+    // Repeat one: restart current track
+    if (g_repeatMode == 1 && g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+        PlayTrack(g_currentTrack, autoPlay);
+        return;
+    }
+
     int next;
     if (g_shuffle && g_playlist.size() > 1) {
         // Random track (excluding current)
@@ -1372,12 +1382,25 @@ void NextTrack(bool autoPlay) {
     } else {
         next = g_currentTrack + 1;
         if (next >= static_cast<int>(g_playlist.size())) {
-            // End of playlist - stop
-            Stop();
-            return;
+            // Repeat all: wrap to start
+            if (g_repeatMode == 2) {
+                next = 0;
+            } else {
+                // End of playlist - stop
+                Stop();
+                return;
+            }
         }
     }
     PlayTrack(next, autoPlay);
+}
+
+// Cycle repeat mode: off -> repeat one -> repeat all -> off
+void ToggleRepeatMode() {
+    g_repeatMode = (g_repeatMode + 1) % 3;
+    const char* names[] = {"Repeat off", "Repeat track", "Repeat all"};
+    Speak(names[g_repeatMode]);
+    SaveSettings();
 }
 
 // Play previous track
@@ -2605,7 +2628,7 @@ void ToggleRecording() {
             g_encoder = BASS_Encode_MP3_StartFile(g_fxStream, options, BASS_ENCODE_AUTOFREE, fullPath.c_str());
             if (!g_encoder) {
                 // Fall back to WAV if MP3 encoding fails
-                MessageBoxW(g_hwnd, L"MP3 encoding failed.\nFalling back to WAV format.",
+                MessageBoxW(GetMessageBoxOwner(), L"MP3 encoding failed.\nFalling back to WAV format.",
                             APP_NAME, MB_ICONWARNING);
                 fullPath = outputPath;
                 if (!fullPath.empty() && fullPath.back() != L'\\') fullPath += L'\\';
@@ -2621,7 +2644,7 @@ void ToggleRecording() {
             g_encoder = BASS_Encode_OGG_StartFile(g_fxStream, options, BASS_ENCODE_AUTOFREE, fullPath.c_str());
             if (!g_encoder) {
                 // Fall back to WAV if OGG encoding fails
-                MessageBoxW(g_hwnd, L"OGG encoding failed.\nFalling back to WAV format.",
+                MessageBoxW(GetMessageBoxOwner(), L"OGG encoding failed.\nFalling back to WAV format.",
                             APP_NAME, MB_ICONWARNING);
                 fullPath = outputPath;
                 if (!fullPath.empty() && fullPath.back() != L'\\') fullPath += L'\\';
@@ -2635,7 +2658,7 @@ void ToggleRecording() {
             g_encoder = BASS_Encode_FLAC_StartFile(g_fxStream, nullptr, wavFlags, fullPath.c_str());
             if (!g_encoder) {
                 // Fall back to WAV if FLAC encoding fails
-                MessageBoxW(g_hwnd, L"FLAC encoding failed.\nFalling back to WAV format.",
+                MessageBoxW(GetMessageBoxOwner(), L"FLAC encoding failed.\nFalling back to WAV format.",
                             APP_NAME, MB_ICONWARNING);
                 fullPath = outputPath;
                 if (!fullPath.empty() && fullPath.back() != L'\\') fullPath += L'\\';
@@ -2650,7 +2673,7 @@ void ToggleRecording() {
         int err = BASS_ErrorGetCode();
         wchar_t msg[256];
         swprintf(msg, 256, L"Failed to start recording (error %d)", err);
-        MessageBoxW(g_hwnd, msg, APP_NAME, MB_ICONERROR);
+        MessageBoxW(GetMessageBoxOwner(), msg, APP_NAME, MB_ICONERROR);
         return;
     }
 

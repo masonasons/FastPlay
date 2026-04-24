@@ -3,7 +3,7 @@
 
 #define MyAppName "FastPlay"
 #define MyAppPublisher "Mew"
-#define MyAppURL "https://github.com/masonasons/FastPlay"
+#define MyAppURL "https://masonasons.me"
 #define MyAppExeName "FastPlay.exe"
 
 ; Version is passed via command line: /DMyAppVersion=x.x.x
@@ -29,7 +29,7 @@ AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}/releases
+AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
@@ -63,12 +63,17 @@ Source: "{#SourceDir}\FastPlay.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Install config file if exists
 Source: "{#SourceDir}\FastPlay.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; Install lib folder with DLLs
-Source: "{#SourceDir}\lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\lib\*.dll"; DestDir: "{app}\lib"; Flags: ignoreversion
+; Install documentation
+Source: "{#SourceDir}\docs\readme.txt"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "{#SourceDir}\docs\changelog.txt"; DestDir: "{app}\docs"; Flags: ignoreversion
 ; Create installed marker file
 Source: "{#SourceDir}\FastPlay.exe"; DestDir: "{app}"; AfterInstall: CreateInstalledMarker; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Readme"; Filename: "{app}\docs\readme.txt"
+Name: "{group}\Changelog"; Filename: "{app}\docs\changelog.txt"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: quicklaunchicon
@@ -87,38 +92,4 @@ var
 begin
   MarkerFile := ExpandConstant('{app}\installed.txt');
   SaveStringToFile(MarkerFile, 'Installed via setup', False);
-end;
-
-// Check if the app is running before uninstall/upgrade
-function InitializeUninstall(): Boolean;
-var
-  ResultCode: Integer;
-begin
-  Result := True;
-  // Try to find if FastPlay is running
-  if Exec('tasklist', '/FI "IMAGENAME eq FastPlay.exe" /NH', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-  begin
-    // The app might be running - warn user
-    if MsgBox('FastPlay may be running. Please close it before continuing.' + #13#10 + #13#10 + 'Continue anyway?', mbConfirmation, MB_YESNO) = IDNO then
-    begin
-      Result := False;
-    end;
-  end;
-end;
-
-// Check if app is running before install/upgrade
-function InitializeSetup(): Boolean;
-var
-  ResultCode: Integer;
-begin
-  Result := True;
-  // Try to find if FastPlay is running
-  if Exec('tasklist', '/FI "IMAGENAME eq FastPlay.exe" /NH', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-  begin
-    // The app might be running - warn user
-    if MsgBox('FastPlay may be running. Please close it before continuing.' + #13#10 + #13#10 + 'Continue anyway?', mbConfirmation, MB_YESNO) = IDNO then
-    begin
-      Result := False;
-    end;
-  end;
 end;

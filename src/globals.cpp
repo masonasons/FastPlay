@@ -10,6 +10,12 @@ const wchar_t* MUTEX_NAME = L"FastPlaySingleInstance";
 HWND g_hwnd = nullptr;
 HWND g_statusBar = nullptr;
 
+HWND GetMessageBoxOwner() {
+    HWND active = GetActiveWindow();
+    if (active) return active;
+    return g_hwnd;
+}
+
 // BASS state
 HSTREAM g_stream = 0;      // Source stream
 HSTREAM g_fxStream = 0;    // Tempo stream (wraps g_stream for pitch/tempo)
@@ -19,6 +25,7 @@ HSYNC g_metaSync = 0;      // Sync for stream metadata changes
 float g_volume = 1.0f;
 bool g_muted = false;      // Muted state (recording still works)
 bool g_legacyVolume = false;  // Use legacy volume (faster, but affects recordings)
+bool g_disableBatchDelay = false; // Skip batch delay when opening files from explorer
 
 // Effect state
 float g_tempo = 0.0f;
@@ -63,28 +70,62 @@ DWORD g_startupTime = 0;
 // Recent files
 std::vector<std::wstring> g_recentFiles;
 
-// File associations
+// File associations - all formats BASS and its plugins can play
 const FileAssoc g_fileAssocs[] = {
-    {L".mp3", L"MP3 Audio", IDC_ASSOC_MP3},
-    {L".wav", L"WAV Audio", IDC_ASSOC_WAV},
-    {L".ogg", L"OGG Audio", IDC_ASSOC_OGG},
-    {L".oga", L"OGA Audio", IDC_ASSOC_OGA},
-    {L".flac", L"FLAC Audio", IDC_ASSOC_FLAC},
-    {L".m4a", L"M4A Audio", IDC_ASSOC_M4A},
-    {L".m4b", L"M4B Audiobook", IDC_ASSOC_M4B},
-    {L".wma", L"WMA Audio", IDC_ASSOC_WMA},
-    {L".aac", L"AAC Audio", IDC_ASSOC_AAC},
-    {L".opus", L"Opus Audio", IDC_ASSOC_OPUS},
-    {L".aiff", L"AIFF Audio", IDC_ASSOC_AIFF},
-    {L".ape", L"APE Audio", IDC_ASSOC_APE},
-    {L".wv", L"WavPack Audio", IDC_ASSOC_WV},
-    {L".mid", L"MIDI Audio", IDC_ASSOC_MID},
-    {L".midi", L"MIDI Audio", IDC_ASSOC_MIDI},
-    {L".m3u", L"M3U Playlist", IDC_ASSOC_M3U},
-    {L".m3u8", L"M3U8 Playlist", IDC_ASSOC_M3U8},
-    {L".pls", L"PLS Playlist", IDC_ASSOC_PLS}
+    // Core BASS formats
+    {L".mp3", L"MP3 Audio"},
+    {L".mp2", L"MP2 Audio"},
+    {L".mp1", L"MP1 Audio"},
+    {L".wav", L"WAV Audio"},
+    {L".ogg", L"OGG Audio"},
+    {L".oga", L"OGA Audio"},
+    {L".aiff", L"AIFF Audio"},
+    {L".aif", L"AIF Audio"},
+    // FLAC plugin
+    {L".flac", L"FLAC Audio"},
+    // AAC plugin
+    {L".aac", L"AAC Audio"},
+    {L".m4a", L"M4A Audio"},
+    {L".m4b", L"M4B Audiobook"},
+    {L".m4r", L"M4R Ringtone"},
+    {L".mp4", L"MP4 Audio"},
+    // WMA plugin
+    {L".wma", L"WMA Audio"},
+    {L".wmv", L"WMV Video"},
+    // Opus plugin
+    {L".opus", L"Opus Audio"},
+    // WavPack plugin
+    {L".wv", L"WavPack Audio"},
+    // Monkey's Audio plugin
+    {L".ape", L"APE Audio"},
+    // ALAC plugin
+    {L".alac", L"ALAC Audio"},
+    // MIDI plugin
+    {L".mid", L"MIDI Audio"},
+    {L".midi", L"MIDI Audio"},
+    {L".rmi", L"RMI MIDI Audio"},
+    {L".kar", L"Karaoke MIDI"},
+    // DSD plugin
+    {L".dff", L"DSD Audio"},
+    {L".dsf", L"DSD Audio"},
+    // CD Audio plugin
+    {L".cda", L"CD Audio"},
+    // HLS streaming
+    // (no file extension - network only)
+    // MOD/tracker formats (built into BASS)
+    {L".mod", L"MOD Audio"},
+    {L".s3m", L"S3M Audio"},
+    {L".xm", L"XM Audio"},
+    {L".it", L"IT Audio"},
+    {L".mtm", L"MTM Audio"},
+    {L".umx", L"UMX Audio"},
+    // Playlist formats
+    {L".m3u", L"M3U Playlist"},
+    {L".m3u8", L"M3U8 Playlist"},
+    {L".pls", L"PLS Playlist"},
 };
 const int g_fileAssocCount = sizeof(g_fileAssocs) / sizeof(g_fileAssocs[0]);
+bool g_registerFileTypes = false;
 
 // Position thresholds
 const int g_posThresholds[] = {0, 5, 10, 20, 30, 45, 60};
@@ -148,6 +189,8 @@ const HotkeyAction g_hotkeyActions[] = {
     {IDM_TOGGLE_COMPRESSOR, L"Toggle Compressor"},
     {IDM_TOGGLE_STEREOWIDTH, L"Toggle Stereo Width"},
     {IDM_TOGGLE_CENTERCANCEL, L"Toggle Center Cancel"},
+    {IDM_TOGGLE_CONVOLUTION, L"Toggle Convolution Reverb"},
+    {IDM_TOGGLE_SPATIAL, L"Toggle 3D Audio"},
     // Window/UI
     {IDM_TOGGLE_WINDOW, L"Toggle Window"},
     {IDM_FILE_YOUTUBE, L"YouTube Search"},
@@ -187,7 +230,7 @@ const int g_bufferSizeCount = sizeof(g_bufferSizes) / sizeof(g_bufferSizes[0]);
 const int g_updatePeriods[] = {5, 10, 20, 50, 100, 200};
 const int g_updatePeriodCount = sizeof(g_updatePeriods) / sizeof(g_updatePeriods[0]);
 
-// Tempo/pitch algorithm (0=SoundTouch, 1=RubberBandR2, 2=RubberBandR3)
+// Tempo/pitch algorithm (0=SoundTouch, 1=Speedy, 2=Signalsmith)
 int g_tempoAlgorithm = 0;  // Default to SoundTouch
 
 // SoundTouch settings
@@ -199,16 +242,6 @@ int g_stSeekWindowMs = 28;         // Seek window (0=auto)
 int g_stOverlapMs = 8;             // Overlap window
 bool g_stPreventClick = false;     // Click prevention
 int g_stAlgorithm = 1;             // 0=Linear, 1=Cubic, 2=Shannon
-
-// Rubber Band settings
-bool g_rbFormantPreserved = false; // Preserve formants when pitch shifting
-int g_rbPitchMode = 2;             // 0=HighSpeed, 1=HighQuality, 2=HighConsistency
-int g_rbWindowSize = 0;            // 0=Standard, 1=Short, 2=Long
-int g_rbTransients = 0;            // 0=Crisp, 1=Mixed, 2=Smooth (R2 only)
-int g_rbDetector = 0;              // 0=Compound, 1=Percussive, 2=Soft (R2 only)
-int g_rbChannels = 0;              // 0=Apart, 1=Together
-int g_rbPhase = 0;                 // 0=Laminar, 1=Independent (R2 only)
-bool g_rbSmoothing = false;        // Time-domain smoothing (R2 only)
 
 // Speedy settings
 bool g_speedyNonlinear = true;     // Enable nonlinear speedup (recommended)
@@ -257,6 +290,7 @@ bool g_speechEffect = true;                         // Speak effect value when a
 // Shuffle and auto-advance
 bool g_shuffle = false;                             // Shuffle playback order
 bool g_autoAdvance = true;                          // Auto-play next track when current ends
+int g_repeatMode = 0;                               // 0 = off, 1 = repeat one, 2 = repeat all
 
 // Chapter support
 std::vector<Chapter> g_chapters;                    // Chapters for current file

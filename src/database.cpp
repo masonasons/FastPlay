@@ -148,6 +148,21 @@ bool InitDatabase() {
     sqlite3_exec(g_db, "ALTER TABLE scheduled_events ADD COLUMN stop_action INTEGER DEFAULT 0;",
                  nullptr, nullptr, nullptr);
 
+    // Migration: Add sort_order column to radio_favorites and podcast_subscriptions
+    sqlite3_exec(g_db, "ALTER TABLE radio_favorites ADD COLUMN sort_order INTEGER DEFAULT 0;",
+                 nullptr, nullptr, nullptr);
+    sqlite3_exec(g_db, "ALTER TABLE podcast_subscriptions ADD COLUMN sort_order INTEGER DEFAULT 0;",
+                 nullptr, nullptr, nullptr);
+
+    // Create song_history table (stream metadata capture)
+    const char* songHistorySql =
+        "CREATE TABLE IF NOT EXISTS song_history ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "title TEXT NOT NULL, "
+        "timestamp INTEGER NOT NULL"
+        ");";
+    sqlite3_exec(g_db, songHistorySql, nullptr, nullptr, nullptr);
+
     return true;
 }
 
@@ -303,7 +318,8 @@ int AddRadioStation(const std::wstring& name, const std::wstring& url) {
     std::string urlUtf8 = WideToUtf8(url);
 
     const char* sql =
-        "INSERT INTO radio_favorites (name, url, created) VALUES (?, ?, ?);";
+        "INSERT INTO radio_favorites (name, url, created, sort_order) "
+        "VALUES (?, ?, ?, (SELECT CASE WHEN MAX(sort_order) > 0 THEN MAX(sort_order) + 1 ELSE 0 END FROM radio_favorites));";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -377,7 +393,8 @@ std::vector<RadioStation> GetRadioFavorites() {
     std::vector<RadioStation> stations;
     if (!g_db) return stations;
 
-    const char* sql = "SELECT id, name, url, created FROM radio_favorites ORDER BY name COLLATE NOCASE ASC;";
+    const char* sql = "SELECT id, name, url, created, sort_order FROM radio_favorites "
+                      "ORDER BY sort_order ASC, name COLLATE NOCASE ASC;";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -392,6 +409,7 @@ std::vector<RadioStation> GetRadioFavorites() {
             rs.url = Utf8ToWide(urlUtf8 ? urlUtf8 : "");
 
             rs.timestamp = sqlite3_column_int64(stmt, 3);
+            rs.sortOrder = sqlite3_column_int(stmt, 4);
 
             stations.push_back(rs);
         }
@@ -399,6 +417,31 @@ std::vector<RadioStation> GetRadioFavorites() {
     }
 
     return stations;
+}
+
+// Update sort_order for all radio stations based on vector order
+bool UpdateRadioSortOrders(const std::vector<RadioStation>& stations) {
+    if (!g_db) return false;
+
+    const char* sql = "UPDATE radio_favorites SET sort_order = ? WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+    for (int i = 0; i < static_cast<int>(stations.size()); i++) {
+        sqlite3_reset(stmt);
+        sqlite3_bind_int(stmt, 1, i + 1);
+        sqlite3_bind_int(stmt, 2, stations[i].id);
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+    return true;
+}
+
+// Reset radio sort order to alphabetical
+bool ResetRadioSortOrder() {
+    if (!g_db) return false;
+    return sqlite3_exec(g_db, "UPDATE radio_favorites SET sort_order = 0;",
+                        nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 // Add a podcast subscription, returns the subscription ID or -1 on failure
@@ -411,8 +454,8 @@ int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl
     std::string imageUtf8 = WideToUtf8(imageUrl);
 
     const char* sql =
-        "INSERT INTO podcast_subscriptions (name, feed_url, image_url, last_updated) "
-        "VALUES (?, ?, ?, ?);";
+        "INSERT INTO podcast_subscriptions (name, feed_url, image_url, last_updated, sort_order) "
+        "VALUES (?, ?, ?, ?, (SELECT CASE WHEN MAX(sort_order) > 0 THEN MAX(sort_order) + 1 ELSE 0 END FROM podcast_subscriptions));";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -488,8 +531,8 @@ std::vector<PodcastSubscription> GetPodcastSubscriptions() {
     std::vector<PodcastSubscription> subscriptions;
     if (!g_db) return subscriptions;
 
-    const char* sql = "SELECT id, name, feed_url, image_url, last_updated "
-                      "FROM podcast_subscriptions ORDER BY name COLLATE NOCASE ASC;";
+    const char* sql = "SELECT id, name, feed_url, image_url, last_updated, sort_order "
+                      "FROM podcast_subscriptions ORDER BY sort_order ASC, name COLLATE NOCASE ASC;";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -507,6 +550,7 @@ std::vector<PodcastSubscription> GetPodcastSubscriptions() {
             ps.imageUrl = Utf8ToWide(imageUtf8 ? imageUtf8 : "");
 
             ps.lastUpdated = sqlite3_column_int64(stmt, 4);
+            ps.sortOrder = sqlite3_column_int(stmt, 5);
 
             subscriptions.push_back(ps);
         }
@@ -514,6 +558,31 @@ std::vector<PodcastSubscription> GetPodcastSubscriptions() {
     }
 
     return subscriptions;
+}
+
+// Update sort_order for all podcast subscriptions based on vector order
+bool UpdatePodcastSortOrders(const std::vector<PodcastSubscription>& subs) {
+    if (!g_db) return false;
+
+    const char* sql = "UPDATE podcast_subscriptions SET sort_order = ? WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+    for (int i = 0; i < static_cast<int>(subs.size()); i++) {
+        sqlite3_reset(stmt);
+        sqlite3_bind_int(stmt, 1, i + 1);
+        sqlite3_bind_int(stmt, 2, subs[i].id);
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+    return true;
+}
+
+// Reset podcast sort order to alphabetical
+bool ResetPodcastSortOrder() {
+    if (!g_db) return false;
+    return sqlite3_exec(g_db, "UPDATE podcast_subscriptions SET sort_order = 0;",
+                        nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 // Helper to format schedule time
@@ -789,4 +858,67 @@ std::vector<ScheduledEvent> GetPendingScheduledEvents() {
     }
 
     return events;
+}
+
+// Song history operations
+
+void AddSongHistoryEntry(const std::wstring& title) {
+    if (!g_db || title.empty()) return;
+
+    std::string titleUtf8 = WideToUtf8(title);
+
+    // Avoid consecutive duplicates: if the most recent entry matches this title, skip.
+    const char* checkSql = "SELECT title FROM song_history ORDER BY id DESC LIMIT 1;";
+    sqlite3_stmt* checkStmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, checkSql, -1, &checkStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+            const char* prev = reinterpret_cast<const char*>(sqlite3_column_text(checkStmt, 0));
+            if (prev && titleUtf8 == prev) {
+                sqlite3_finalize(checkStmt);
+                return;
+            }
+        }
+        sqlite3_finalize(checkStmt);
+    }
+
+    const char* insertSql = "INSERT INTO song_history (title, timestamp) VALUES (?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, insertSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, titleUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(time(nullptr)));
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    // Trim to last 100 entries
+    const char* trimSql =
+        "DELETE FROM song_history WHERE id NOT IN ("
+        "SELECT id FROM song_history ORDER BY id DESC LIMIT 100"
+        ");";
+    sqlite3_exec(g_db, trimSql, nullptr, nullptr, nullptr);
+}
+
+std::vector<SongHistoryEntry> GetSongHistory() {
+    std::vector<SongHistoryEntry> history;
+    if (!g_db) return history;
+
+    const char* sql = "SELECT id, title, timestamp FROM song_history ORDER BY id DESC LIMIT 100;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            SongHistoryEntry entry;
+            entry.id = sqlite3_column_int(stmt, 0);
+            const char* titleUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            if (titleUtf8) entry.title = Utf8ToWide(titleUtf8);
+            entry.timestamp = sqlite3_column_int64(stmt, 2);
+            history.push_back(entry);
+        }
+        sqlite3_finalize(stmt);
+    }
+    return history;
+}
+
+void ClearSongHistory() {
+    if (!g_db) return;
+    sqlite3_exec(g_db, "DELETE FROM song_history;", nullptr, nullptr, nullptr);
 }

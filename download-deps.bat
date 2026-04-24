@@ -150,11 +150,6 @@ powershell -Command "Expand-Archive -Path 'temp_dl\sqlite.zip' -DestinationPath 
 copy /y "temp_dl\sqlite\sqlite-amalgamation-3510200\sqlite3.c" "src\" >nul
 
 echo.
-echo Cloning Rubber Band...
-if exist "deps\rubberband-4.0.0" rmdir /s /q "deps\rubberband-4.0.0"
-git clone --depth 1 --branch v4.0.0 https://github.com/breakfastquay/rubberband.git "deps\rubberband-4.0.0"
-
-echo.
 echo Cloning Speedy (Google's nonlinear speech speedup)...
 if exist "deps\speedy" rmdir /s /q "deps\speedy"
 git clone --depth 1 https://github.com/google/speedy.git "deps\speedy"

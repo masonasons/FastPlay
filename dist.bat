@@ -57,6 +57,8 @@ copy /y "lib\bassenc.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\bassenc_mp3.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\bassenc_ogg.dll" "dist_temp\lib\" 2>&1
 copy /y "lib\bassenc_flac.dll" "dist_temp\lib\" 2>&1
+copy /y "lib\bassmix.dll" "dist_temp\lib\" 2>&1
+copy /y "lib\phonon.dll" "dist_temp\lib\" 2>&1
 
 REM Create zip using PowerShell
 echo Creating %ZIPNAME%...

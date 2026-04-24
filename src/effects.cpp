@@ -6,6 +6,9 @@
 #include "tempo_processor.h"
 #include "center_cancel.h"
 #include "convolution.h"
+#ifdef USE_STEAM_AUDIO
+#include "spatial_audio.h"
+#endif
 #include <cstdio>
 #include <vector>
 #include <cmath>
@@ -59,6 +62,15 @@ static const ParamDef g_paramDefs[] = {
     // Convolution reverb parameters
     {ParamId::ConvolutionMix,  "Conv Mix",   "%",      0.0f, 100.0f, 5.0f, 50.0f, DSPEffectType::Convolution},
     {ParamId::ConvolutionGain, "Conv Gain",  "dB",    -20.0f, 20.0f, 1.0f, 0.0f, DSPEffectType::Convolution},
+    // 3D audio parameters
+    {ParamId::SpatialBlend,      "3D Blend",       "%",    0.0f,   100.0f,  5.0f,  100.0f, DSPEffectType::SpatialAudio},
+    {ParamId::SpatialWidth,      "3D Width",       " deg", 15.0f,  90.0f,   5.0f,  45.0f,  DSPEffectType::SpatialAudio},
+    {ParamId::SpatialRotation,   "3D Rotation",    " deg",-180.0f, 180.0f,  5.0f,  0.0f,   DSPEffectType::SpatialAudio},
+    {ParamId::SpatialMode,       "3D Mode",        "",     0.0f,   1.0f,    1.0f,  0.0f,   DSPEffectType::SpatialAudio},
+    {ParamId::SpatialRearCenter, "3D Rear Speaker","",     0.0f,   1.0f,    1.0f,  1.0f,   DSPEffectType::SpatialAudio},
+    {ParamId::SpatialX,          "3D Listener X",  "",    -50.0f,  50.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
+    {ParamId::SpatialY,          "3D Listener Y",  "",    -50.0f,  50.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
+    {ParamId::SpatialZ,          "3D Listener Z",  "",    -50.0f,  50.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
 };
 static const int g_paramDefCount = sizeof(g_paramDefs) / sizeof(g_paramDefs[0]);
 
@@ -73,10 +85,11 @@ static HFX g_hfxCompressor = 0;
 static HDSP g_hdspStereoWidth = 0;  // Custom DSP for stereo width
 static HDSP g_hdspCenterCancel = 0; // Custom DSP for center cancel/extract
 static HDSP g_hdspConvolution = 0;  // Custom DSP for convolution reverb
+static HDSP g_hdspSpatialAudio = 0;  // Custom DSP for 3D audio (Steam Audio)
 static HDSP g_hdspVolume = 0;       // Custom DSP for volume (runs LAST, after encoder)
 
 // DSP effect enabled states
-static bool g_dspEnabled[(int)DSPEffectType::COUNT] = {false, false, false, false, false, false, false};
+static bool g_dspEnabled[(int)DSPEffectType::COUNT] = {false, false, false, false, false, false, false, false};
 
 // Parameter values
 static float g_paramValues[(int)ParamId::COUNT];
@@ -98,6 +111,9 @@ bool InitEffects() {
 void FreeEffects() {
     RemoveDSPEffects();
     FreeCenterCancelProcessor();
+#ifdef USE_STEAM_AUDIO
+    FreeSpatialAudio();
+#endif
 }
 
 // Helper to check if a reverb param matches current algorithm
@@ -192,7 +208,7 @@ void ToggleDSPEffect(DSPEffectType type) {
     bool newState = !g_dspEnabled[(int)type];
     EnableDSPEffect(type, newState);
 
-    const char* names[] = {"Reverb", "Echo", "EQ", "Compressor", "Stereo Width", "Center Cancel"};
+    const char* names[] = {"Reverb", "Echo", "EQ", "Compressor", "Stereo Width", "Center Cancel", "Convolution", "3D Audio"};
     std::string msg = std::string(names[(int)type]) +
                       (newState ? " enabled" : " disabled");
     Speak(msg);
@@ -253,6 +269,9 @@ void EnableDSPEffect(DSPEffectType type, bool enable) {
                     break;
                 case DSPEffectType::Convolution:
                     if (g_hdspConvolution) { BASS_ChannelRemoveDSP(g_fxStream, g_hdspConvolution); g_hdspConvolution = 0; }
+                    break;
+                case DSPEffectType::SpatialAudio:
+                    if (g_hdspSpatialAudio) { BASS_ChannelRemoveDSP(g_fxStream, g_hdspSpatialAudio); g_hdspSpatialAudio = 0; }
                     break;
                 default:
                     break;
@@ -419,6 +438,77 @@ static void CALLBACK ConvolutionDSPProc(HDSP handle, DWORD channel, void* buffer
         }
     }
 }
+
+// 3D Audio DSP callback - HRTF binaural rendering via Steam Audio
+#ifdef USE_STEAM_AUDIO
+static volatile int g_spatialCrashStep = 0;
+
+static void SpatialAudioDSPProcInner(HDSP handle, DWORD channel, void* buffer, DWORD length) {
+    g_spatialCrashStep = 1;  // entered callback
+    BASS_CHANNELINFO info;
+    if (!BASS_ChannelGetInfo(channel, &info)) return;
+    if (info.chans != 2) return;
+
+    g_spatialCrashStep = 2;  // got channel info
+    SpatialAudio* spatial = GetSpatialAudio();
+    if (!spatial || !spatial->IsInitialized()) return;
+
+    g_spatialCrashStep = 3;  // spatial ready
+    float blend = g_paramValues[(int)ParamId::SpatialBlend] / 100.0f;
+    if (blend <= 0.0f) return;
+
+    g_spatialCrashStep = 4;  // about to process
+    if (info.flags & BASS_SAMPLE_FLOAT) {
+        float* samples = static_cast<float*>(buffer);
+        int frameCount = length / (sizeof(float) * 2);
+        g_spatialCrashStep = 5;  // float path, calling Process
+        spatial->Process(samples, frameCount, blend);
+        g_spatialCrashStep = 6;  // Process returned OK
+    } else {
+        short* samples = static_cast<short*>(buffer);
+        int frameCount = length / (sizeof(short) * 2);
+        int totalSamples = frameCount * 2;
+        g_spatialCrashStep = 7;  // int16 path, getting conv buffer
+        float* floatBuf = spatial->GetConversionBuffer(totalSamples);
+        if (!floatBuf) return;
+        g_spatialCrashStep = 8;  // converting to float
+        for (int i = 0; i < totalSamples; i++)
+            floatBuf[i] = samples[i] / 32768.0f;
+        g_spatialCrashStep = 9;  // calling Process (int16)
+        spatial->Process(floatBuf, frameCount, blend);
+        g_spatialCrashStep = 10; // converting back
+        for (int i = 0; i < totalSamples; i++) {
+            float v = floatBuf[i];
+            if (v > 1.0f) v = 1.0f; else if (v < -1.0f) v = -1.0f;
+            samples[i] = static_cast<short>(v * 32767.0f);
+        }
+        g_spatialCrashStep = 11; // int16 done
+    }
+}
+
+// Wrap in SEH to catch delay-load failures or access violations from Steam Audio
+static void CALLBACK SpatialAudioDSPProc(HDSP handle, DWORD channel, void* buffer, DWORD length, void* user) {
+    DWORD exCode = 0;
+    __try {
+        SpatialAudioDSPProcInner(handle, channel, buffer, length);
+    } __except(exCode = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
+        // Steam Audio crashed - disable the effect to prevent repeated crashes
+        g_dspEnabled[(int)DSPEffectType::SpatialAudio] = false;
+        if (g_hdspSpatialAudio) {
+            BASS_ChannelRemoveDSP(channel, g_hdspSpatialAudio);
+            g_hdspSpatialAudio = 0;
+        }
+        int innerStep = 0;
+        SpatialAudio* sp = GetSpatialAudio();
+        if (sp) innerStep = sp->m_debugStep;
+        char msg[256];
+        snprintf(msg, sizeof(msg), "3D Audio crashed at step %d dot %d with exception 0x%08X. "
+                 "120 is fill, 130 is deinterleave, 150 is surround, 160 is binaural, 170 is done.",
+                 g_spatialCrashStep, innerStep, (unsigned int)exCode);
+        Speak(msg);
+    }
+}
+#endif
 
 // Volume DSP - runs LAST (very low priority) so encoder captures full volume
 // This allows recording at full volume while playback respects g_volume/g_muted
@@ -626,6 +716,30 @@ void ApplyDSPEffects() {
         g_hdspConvolution = BASS_ChannelSetDSP(g_fxStream, ConvolutionDSPProc, nullptr, 0);
     }
 
+    // 3D Audio (Steam Audio HRTF)
+#ifdef USE_STEAM_AUDIO
+    if (g_dspEnabled[(int)DSPEffectType::SpatialAudio] && !g_hdspSpatialAudio) {
+        bool initOk = false;
+        SpatialAudio* spatial = GetSpatialAudio();
+        if (spatial) {
+            BASS_CHANNELINFO info;
+            if (BASS_ChannelGetInfo(g_fxStream, &info)) {
+                initOk = spatial->Initialize((int)info.freq);
+                if (!initOk) {
+                    const wchar_t* err = spatial->GetLastError();
+                    if (err && err[0]) {
+                        MessageBoxW(GetMessageBoxOwner(), err, L"3D Audio Error", MB_OK | MB_ICONERROR);
+                    }
+                    g_dspEnabled[(int)DSPEffectType::SpatialAudio] = false;
+                }
+            }
+        }
+        if (initOk) {
+            g_hdspSpatialAudio = BASS_ChannelSetDSP(g_fxStream, SpatialAudioDSPProc, nullptr, 0);
+        }
+    }
+#endif
+
     // Legacy volume mode - apply volume directly to stream attribute
     // This must be done every time a new stream is created
     if (g_legacyVolume) {
@@ -654,6 +768,7 @@ void RemoveDSPEffects() {
     if (g_hdspStereoWidth) { if (g_fxStream) BASS_ChannelRemoveDSP(g_fxStream, g_hdspStereoWidth); g_hdspStereoWidth = 0; }
     if (g_hdspCenterCancel) { if (g_fxStream) BASS_ChannelRemoveDSP(g_fxStream, g_hdspCenterCancel); g_hdspCenterCancel = 0; }
     if (g_hdspConvolution) { if (g_fxStream) BASS_ChannelRemoveDSP(g_fxStream, g_hdspConvolution); g_hdspConvolution = 0; }
+    if (g_hdspSpatialAudio) { if (g_fxStream) BASS_ChannelRemoveDSP(g_fxStream, g_hdspSpatialAudio); g_hdspSpatialAudio = 0; }
     if (g_hdspVolume) { if (g_fxStream) BASS_ChannelRemoveDSP(g_fxStream, g_hdspVolume); g_hdspVolume = 0; }
 }
 
@@ -846,6 +961,18 @@ void SetParamValue(ParamId id, float value) {
                 BASS_FXSetParameters(g_hfxCompressor, &comp);
             }
             break;
+    #ifdef USE_STEAM_AUDIO
+        case ParamId::SpatialMode: {
+            SpatialAudio* spatial = GetSpatialAudio();
+            if (spatial) spatial->SetMode(value >= 0.5f ? SpatialMode::Surround51 : SpatialMode::Binaural);
+            break;
+        }
+        case ParamId::SpatialRearCenter: {
+            SpatialAudio* spatial = GetSpatialAudio();
+            if (spatial) spatial->SetRearCenter(value >= 0.5f);
+            break;
+        }
+    #endif
         default:
             break;
     }
@@ -932,7 +1059,22 @@ void AdjustCurrentParam(int direction) {
     } else {
         newVal = currentVal + (direction * step);
     }
-    newVal = clamp_val(newVal, def->minValue, maxVal);
+
+    // 3D Rotation, Mode, and Rear Speaker wrap around instead of clamping
+    // so the user can cycle through modes or rotate continuously.
+    if (id == ParamId::SpatialRotation) {
+        // Angular: ±180° meet, so full range = max - min
+        float range = def->maxValue - def->minValue;
+        while (newVal > def->maxValue) newVal -= range;
+        while (newVal < def->minValue) newVal += range;
+    } else if (id == ParamId::SpatialMode || id == ParamId::SpatialRearCenter) {
+        // Discrete toggle: add step so past-max wraps to min
+        float range = def->maxValue - def->minValue + def->step;
+        while (newVal > def->maxValue) newVal -= range;
+        while (newVal < def->minValue) newVal += range;
+    } else {
+        newVal = clamp_val(newVal, def->minValue, maxVal);
+    }
 
     SetParamValue(id, newVal);
     AnnounceCurrentParam();
@@ -1048,7 +1190,11 @@ void AnnounceCurrentParam() {
     char buf[64];
 
     // Format based on parameter type
-    if (id == ParamId::Volume) {
+    if (id == ParamId::SpatialMode) {
+        snprintf(buf, sizeof(buf), "3D Mode: %s", val >= 0.5f ? "5.1 Surround" : "Binaural");
+    } else if (id == ParamId::SpatialRearCenter) {
+        snprintf(buf, sizeof(buf), "3D Rear Speaker: %s", val >= 0.5f ? "On" : "Off");
+    } else if (id == ParamId::Volume) {
         snprintf(buf, sizeof(buf), "%s %d%s", def->name, (int)(val * 100 + 0.5f), def->unit);
     } else if (id == ParamId::Rate) {
         snprintf(buf, sizeof(buf), "%s %.2f%s", def->name, val, def->unit);
@@ -1116,4 +1262,176 @@ void CycleEffect(int direction) {
 
 void AdjustCurrentEffect(int direction) {
     AdjustCurrentParam(direction);
+}
+
+// ---------------------------------------------------------------------------
+// Effect presets: save/load/delete named sets of all enabled effects + params.
+// Stored in FastPlay.ini under [Presets] (index) and [Preset_<name>] (values).
+// ---------------------------------------------------------------------------
+
+static std::wstring PresetSectionName(const std::wstring& name) {
+    return L"Preset_" + name;
+}
+
+static float GetPrivateProfileFloatW_Preset(const wchar_t* section, const wchar_t* key, float defaultVal) {
+    wchar_t buf[64] = {0};
+    GetPrivateProfileStringW(section, key, L"", buf, 64, g_configPath.c_str());
+    if (buf[0] == L'\0') return defaultVal;
+    return (float)_wtof(buf);
+}
+
+std::vector<std::wstring> GetEffectPresetNames() {
+    std::vector<std::wstring> names;
+    int count = GetPrivateProfileIntW(L"Presets", L"Count", 0, g_configPath.c_str());
+    for (int i = 0; i < count; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"Name%d", i);
+        wchar_t buf[128] = {0};
+        GetPrivateProfileStringW(L"Presets", key, L"", buf, 128, g_configPath.c_str());
+        if (buf[0] != L'\0') names.push_back(buf);
+    }
+    return names;
+}
+
+static void WritePresetNameList(const std::vector<std::wstring>& names) {
+    // Clear old name entries first
+    int oldCount = GetPrivateProfileIntW(L"Presets", L"Count", 0, g_configPath.c_str());
+    for (int i = 0; i < oldCount; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"Name%d", i);
+        WritePrivateProfileStringW(L"Presets", key, nullptr, g_configPath.c_str());
+    }
+    wchar_t buf[32];
+    swprintf(buf, 32, L"%d", (int)names.size());
+    WritePrivateProfileStringW(L"Presets", L"Count", buf, g_configPath.c_str());
+    for (size_t i = 0; i < names.size(); i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"Name%zu", i);
+        WritePrivateProfileStringW(L"Presets", key, names[i].c_str(), g_configPath.c_str());
+    }
+}
+
+bool SaveEffectPreset(const std::wstring& name) {
+    if (name.empty()) return false;
+
+    std::wstring section = PresetSectionName(name);
+    wchar_t buf[64];
+
+    // Stream effect enabled flags
+    for (int i = 0; i < 4; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"StreamEnabled%d", i);
+        WritePrivateProfileStringW(section.c_str(), key, g_effectEnabled[i] ? L"1" : L"0", g_configPath.c_str());
+    }
+
+    // Stream effect values (pitch, tempo, rate — volume intentionally excluded)
+    swprintf(buf, 64, L"%.4f", g_pitch);
+    WritePrivateProfileStringW(section.c_str(), L"Pitch", buf, g_configPath.c_str());
+    swprintf(buf, 64, L"%.4f", g_tempo);
+    WritePrivateProfileStringW(section.c_str(), L"Tempo", buf, g_configPath.c_str());
+    swprintf(buf, 64, L"%.4f", g_rate);
+    WritePrivateProfileStringW(section.c_str(), L"Rate", buf, g_configPath.c_str());
+
+    // Reverb algorithm
+    swprintf(buf, 64, L"%d", g_reverbAlgorithm);
+    WritePrivateProfileStringW(section.c_str(), L"ReverbAlgorithm", buf, g_configPath.c_str());
+
+    // DSP effect enabled flags
+    for (int i = 0; i < (int)DSPEffectType::COUNT; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"DSPEnabled%d", i);
+        WritePrivateProfileStringW(section.c_str(), key,
+            g_dspEnabled[i] ? L"1" : L"0", g_configPath.c_str());
+    }
+
+    // All param values (DSP params plus stream effect params)
+    for (int i = 0; i < g_paramDefCount; i++) {
+        const ParamDef& def = g_paramDefs[i];
+        // Skip volume - presets shouldn't hijack playback volume
+        if (def.id == ParamId::Volume) continue;
+        wchar_t key[64];
+        swprintf(key, 64, L"Param%d", (int)def.id);
+        swprintf(buf, 64, L"%.6f", g_paramValues[(int)def.id]);
+        WritePrivateProfileStringW(section.c_str(), key, buf, g_configPath.c_str());
+    }
+
+    // Add to name list if not already present
+    auto names = GetEffectPresetNames();
+    bool found = false;
+    for (auto& n : names) { if (n == name) { found = true; break; } }
+    if (!found) {
+        names.push_back(name);
+        WritePresetNameList(names);
+    }
+    return true;
+}
+
+bool LoadEffectPreset(const std::wstring& name) {
+    if (name.empty()) return false;
+    std::wstring section = PresetSectionName(name);
+
+    // Quick existence check
+    wchar_t test[8] = {0};
+    GetPrivateProfileStringW(section.c_str(), L"Pitch", L"__MISSING__", test, 8, g_configPath.c_str());
+    if (wcscmp(test, L"__MISSING__") == 0) return false;
+
+    // Stream effect values
+    wchar_t buf[64] = {0};
+    GetPrivateProfileStringW(section.c_str(), L"Pitch", L"0", buf, 64, g_configPath.c_str());
+    g_pitch = (float)_wtof(buf);
+    GetPrivateProfileStringW(section.c_str(), L"Tempo", L"0", buf, 64, g_configPath.c_str());
+    g_tempo = (float)_wtof(buf);
+    GetPrivateProfileStringW(section.c_str(), L"Rate", L"1", buf, 64, g_configPath.c_str());
+    g_rate = (float)_wtof(buf);
+
+    // Stream effect enabled flags
+    for (int i = 0; i < 4; i++) {
+        wchar_t key[32];
+        swprintf(key, 32, L"StreamEnabled%d", i);
+        g_effectEnabled[i] = GetPrivateProfileIntW(section.c_str(), key,
+            g_effectEnabled[i] ? 1 : 0, g_configPath.c_str()) != 0;
+    }
+
+    // Reverb algorithm
+    int ra = GetPrivateProfileIntW(section.c_str(), L"ReverbAlgorithm", g_reverbAlgorithm, g_configPath.c_str());
+    if (ra < 0) ra = 0;
+    if (ra > 3) ra = 3;
+    SetReverbAlgorithm(ra);
+
+    // DSP effect enabled flags (apply via EnableDSPEffect so handlers hook up properly)
+    for (int i = 0; i < (int)DSPEffectType::COUNT; i++) {
+        if ((DSPEffectType)i == DSPEffectType::Reverb) continue;  // controlled by algorithm
+        wchar_t key[32];
+        swprintf(key, 32, L"DSPEnabled%d", i);
+        bool en = GetPrivateProfileIntW(section.c_str(), key,
+            g_dspEnabled[i] ? 1 : 0, g_configPath.c_str()) != 0;
+        EnableDSPEffect((DSPEffectType)i, en);
+    }
+
+    // All param values (via SetParamValue so effects update live)
+    for (int i = 0; i < g_paramDefCount; i++) {
+        const ParamDef& def = g_paramDefs[i];
+        if (def.id == ParamId::Volume) continue;
+        wchar_t key[64];
+        swprintf(key, 64, L"Param%d", (int)def.id);
+        float val = GetPrivateProfileFloatW_Preset(section.c_str(), key, g_paramValues[(int)def.id]);
+        SetParamValue(def.id, val);
+    }
+
+    return true;
+}
+
+bool DeleteEffectPreset(const std::wstring& name) {
+    if (name.empty()) return false;
+    std::wstring section = PresetSectionName(name);
+    // Wipe the preset's entire section
+    WritePrivateProfileStringW(section.c_str(), nullptr, nullptr, g_configPath.c_str());
+
+    auto names = GetEffectPresetNames();
+    bool found = false;
+    for (auto it = names.begin(); it != names.end(); ) {
+        if (*it == name) { it = names.erase(it); found = true; } else { ++it; }
+    }
+    if (found) WritePresetNameList(names);
+    return found;
 }

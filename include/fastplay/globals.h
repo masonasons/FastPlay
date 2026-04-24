@@ -33,6 +33,11 @@ constexpr int SB_PART_COUNT = 3;
 extern HWND g_hwnd;
 extern HWND g_statusBar;
 
+// Returns the best parent for a MessageBox so focus returns correctly.
+// Prefers the current thread's active window (e.g. an open modal dialog),
+// falling back to the main window.
+HWND GetMessageBoxOwner();
+
 // BASS state
 extern HSTREAM g_stream;      // Source stream
 extern HSTREAM g_fxStream;    // Tempo stream (wraps g_stream for pitch/tempo)
@@ -42,6 +47,7 @@ extern HSYNC g_metaSync;      // Sync for stream metadata changes
 extern float g_volume;
 extern bool g_muted;          // Muted state (recording still works)
 extern bool g_legacyVolume;   // Use legacy volume (faster, but affects recordings)
+extern bool g_disableBatchDelay; // Skip batch delay when opening files from explorer
 
 // Effect state (for BASS_FX)
 extern float g_tempo;
@@ -105,6 +111,7 @@ extern bool g_hotkeysEnabled;
 // File associations
 extern const FileAssoc g_fileAssocs[];
 extern const int g_fileAssocCount;
+extern bool g_registerFileTypes;
 
 // Position thresholds
 extern const int g_posThresholds[];
@@ -131,7 +138,7 @@ extern const int g_updatePeriods[];
 extern const int g_updatePeriodCount;
 
 // Tempo/pitch algorithm setting
-extern int g_tempoAlgorithm;   // 0=SoundTouch, 1=RubberBandR2, 2=RubberBandR3
+extern int g_tempoAlgorithm;   // 0=SoundTouch, 1=Speedy, 2=Signalsmith
 
 // SoundTouch settings
 extern bool g_stAntiAliasFilter;   // Enable anti-alias filter (default true)
@@ -142,16 +149,6 @@ extern int g_stSeekWindowMs;       // Seek window 0-100ms (default 28, 0=auto)
 extern int g_stOverlapMs;          // Overlap window 0-50ms (default 8)
 extern bool g_stPreventClick;      // Click prevention (default false)
 extern int g_stAlgorithm;          // 0=Linear, 1=Cubic, 2=Shannon (default 1)
-
-// Rubber Band settings
-extern bool g_rbFormantPreserved;  // Preserve formants when pitch shifting (default false)
-extern int g_rbPitchMode;          // 0=HighSpeed, 1=HighQuality, 2=HighConsistency (default 2)
-extern int g_rbWindowSize;         // 0=Standard, 1=Short, 2=Long (default 0)
-extern int g_rbTransients;         // 0=Crisp, 1=Mixed, 2=Smooth (default 0, R2 only)
-extern int g_rbDetector;           // 0=Compound, 1=Percussive, 2=Soft (default 0, R2 only)
-extern int g_rbChannels;           // 0=Apart, 1=Together (default 0)
-extern int g_rbPhase;              // 0=Laminar, 1=Independent (default 0, R2 only)
-extern bool g_rbSmoothing;         // Time-domain smoothing (default false, R2 only)
 
 // Speedy settings
 extern bool g_speedyNonlinear;     // Enable nonlinear speedup (default true, recommended for speech)
@@ -200,6 +197,7 @@ extern bool g_speechEffect;             // Speak effect value when adjusted
 // Shuffle and auto-advance
 extern bool g_shuffle;                  // Shuffle playback order
 extern bool g_autoAdvance;              // Auto-play next track when current ends (default true)
+extern int g_repeatMode;                // 0 = off, 1 = repeat one, 2 = repeat all
 
 // Chapter support
 struct Chapter {
