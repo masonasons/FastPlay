@@ -10,8 +10,10 @@
 struct UpdateInfo {
     bool available;
     std::string latestVersion;
+    std::string latestCommit;
     std::string downloadUrl;        // URL for portable zip
     std::string installerUrl;       // URL for installer exe
+    std::string releaseNotes;
     std::string errorMessage;
 };
 

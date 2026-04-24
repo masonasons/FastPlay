@@ -60,7 +60,17 @@ goto :parse_args
 REM Read version from version.h
 set "APP_VERSION="
 for /f "tokens=3 delims= " %%v in ('findstr /C:"#define APP_VERSION " include\fastplay\version.h') do set "APP_VERSION=%%~v"
-echo Building FastPlay %APP_VERSION%...
+
+REM Get git commit hash for update-check comparison (short SHA, e.g. "ad07165")
+set "BUILD_COMMIT="
+for /f "tokens=*" %%i in ('git rev-parse --short HEAD 2^>nul') do set "BUILD_COMMIT=%%i"
+if defined BUILD_COMMIT (
+    set "COMMIT_FLAG=/DBUILD_COMMIT=\"%BUILD_COMMIT%\""
+    echo Building FastPlay %APP_VERSION% ^(commit %BUILD_COMMIT%^)...
+) else (
+    set "COMMIT_FLAG="
+    echo Building FastPlay %APP_VERSION%...
+)
 
 REM Source files
 set "SOURCES=src\main.cpp src\globals.cpp src\utils.cpp src\player.cpp"
@@ -77,7 +87,7 @@ rc /nologo FastPlay.rc
 if errorlevel 1 goto :error
 
 REM Compile and link
-cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE /DNOMINMAX %SPEECH_FLAG% %SPEEDY_FLAG% %SIGNALSMITH_FLAG% %STEAMAUDIO_FLAG% ^
+cl /nologo /W3 /O2 /MT /EHsc /DUNICODE /D_UNICODE /DNOMINMAX %COMMIT_FLAG% %SPEECH_FLAG% %SPEEDY_FLAG% %SIGNALSMITH_FLAG% %STEAMAUDIO_FLAG% ^
    /I"." /I"include" /I"include\fastplay" %SPEEDY_INC% %SIGNALSMITH_INC% %STEAMAUDIO_INC% ^
    %SOURCES% FastPlay.res ^
    /Fe:FastPlay.exe ^
@@ -90,14 +100,6 @@ REM Clean up intermediate files
 del /q *.obj *.res 2>nul
 
 REM DLLs are loaded from lib subfolder via SetDllDirectory, no copy needed
-
-REM Generate version file for upload to update server
-if defined APP_VERSION (
-    echo version=%APP_VERSION%> fastplayversion.txt
-    echo download=https://masonasons.me/softs/FastPlay.zip>> fastplayversion.txt
-    echo installer=https://masonasons.me/softs/FastPlayInstaller.exe>> fastplayversion.txt
-    echo Generated fastplayversion.txt for version %APP_VERSION%
-)
 
 REM Build distribution zip
 echo Building distribution...

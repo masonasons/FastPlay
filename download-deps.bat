@@ -144,6 +144,19 @@ copy /y "temp_dl\bassenc_flac\c\x64\bassenc_flac.lib" "lib\" >nul
 copy /y "temp_dl\bassenc_flac\x64\bassenc_flac.dll" "lib\" >nul
 
 echo.
+echo Downloading Steam Audio SDK (for 3D spatial audio)...
+if exist "deps\steamaudio" rmdir /s /q "deps\steamaudio"
+mkdir "deps\steamaudio\include"
+powershell -Command "Invoke-WebRequest -Uri 'https://github.com/ValveSoftware/steam-audio/releases/download/v4.6.1/steamaudio_4.6.1.zip' -OutFile 'temp_dl\steamaudio.zip'"
+powershell -Command "Expand-Archive -Path 'temp_dl\steamaudio.zip' -DestinationPath 'temp_dl\steamaudio' -Force"
+copy /y "temp_dl\steamaudio\steamaudio\include\phonon.h" "deps\steamaudio\include\" >nul
+copy /y "temp_dl\steamaudio\steamaudio\include\phonon_interfaces.h" "deps\steamaudio\include\" >nul
+copy /y "temp_dl\steamaudio\steamaudio\include\phonon_version.h" "deps\steamaudio\include\" >nul
+copy /y "temp_dl\steamaudio\steamaudio\lib\windows-x64\phonon.dll" "lib\" >nul
+copy /y "temp_dl\steamaudio\steamaudio\lib\windows-x64\phonon.lib" "lib\" >nul
+echo Steam Audio SDK installed.
+
+echo.
 echo Downloading SQLite...
 powershell -Command "Invoke-WebRequest -Uri 'https://sqlite.org/2026/sqlite-amalgamation-3510200.zip' -OutFile 'temp_dl\sqlite.zip'"
 powershell -Command "Expand-Archive -Path 'temp_dl\sqlite.zip' -DestinationPath 'temp_dl\sqlite' -Force"

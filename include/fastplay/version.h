@@ -7,7 +7,12 @@
 #define APP_VERSION_MINOR 6
 #define APP_VERSION_PATCH 6
 
-#define VERSION_CHECK_HOST L"masonasons.me"
-#define VERSION_CHECK_PATH L"/projects/fastplayversion.txt"
+// This will be set during build from git commit
+#ifndef BUILD_COMMIT
+#define BUILD_COMMIT ""
+#endif
+
+#define GITHUB_REPO "masonasons/FastPlay"
+#define GITHUB_API_URL "https://api.github.com/repos/masonasons/FastPlay/releases"
 
 #endif // FASTPLAY_VERSION_H

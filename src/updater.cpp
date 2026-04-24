@@ -8,33 +8,48 @@
 #include <fstream>
 #include <sstream>
 #include <thread>
+#include <regex>
 
 #pragma comment(lib, "winhttp.lib")
 
-// Compare version strings numerically (e.g. "0.5.2" vs "0.6.0")
-// Returns: -1 if a < b, 0 if equal, 1 if a > b
-static int CompareVersions(const std::string& a, const std::string& b) {
-    auto parseInts = [](const std::string& v) {
-        std::vector<int> parts;
-        std::istringstream ss(v);
-        std::string token;
-        while (std::getline(ss, token, '.')) {
-            parts.push_back(atoi(token.c_str()));
-        }
-        return parts;
-    };
+// Simple JSON value extraction (no external library needed)
+static std::string ExtractJsonString(const std::string& json, const std::string& key) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return "";
 
-    auto pa = parseInts(a);
-    auto pb = parseInts(b);
+    size_t colonPos = json.find(':', keyPos + searchKey.length());
+    if (colonPos == std::string::npos) return "";
 
-    size_t len = (pa.size() > pb.size()) ? pa.size() : pb.size();
-    for (size_t i = 0; i < len; i++) {
-        int va = (i < pa.size()) ? pa[i] : 0;
-        int vb = (i < pb.size()) ? pb[i] : 0;
-        if (va < vb) return -1;
-        if (va > vb) return 1;
+    size_t startQuote = json.find('"', colonPos + 1);
+    if (startQuote == std::string::npos) return "";
+
+    size_t endQuote = startQuote + 1;
+    while (endQuote < json.length()) {
+        if (json[endQuote] == '"' && json[endQuote - 1] != '\\') break;
+        endQuote++;
     }
-    return 0;
+
+    return json.substr(startQuote + 1, endQuote - startQuote - 1);
+}
+
+// Extract first object from JSON array
+static std::string ExtractFirstArrayObject(const std::string& json) {
+    size_t start = json.find('[');
+    if (start == std::string::npos) return "";
+
+    size_t objStart = json.find('{', start);
+    if (objStart == std::string::npos) return "";
+
+    int depth = 1;
+    size_t objEnd = objStart + 1;
+    while (objEnd < json.length() && depth > 0) {
+        if (json[objEnd] == '{') depth++;
+        else if (json[objEnd] == '}') depth--;
+        objEnd++;
+    }
+
+    return json.substr(objStart, objEnd - objStart);
 }
 
 // Convert string to lowercase
@@ -44,6 +59,91 @@ static std::string ToLower(const std::string& str) {
         c = (char)tolower((unsigned char)c);
     }
     return result;
+}
+
+// Asset URLs for Windows
+struct WindowsAssets {
+    std::string zipUrl;
+    std::string installerUrl;
+};
+
+// Find Windows assets in release (both zip and installer)
+static WindowsAssets FindWindowsAssets(const std::string& releaseJson) {
+    WindowsAssets assets;
+
+    size_t assetsPos = releaseJson.find("\"assets\"");
+    if (assetsPos == std::string::npos) return assets;
+
+    size_t arrayStart = releaseJson.find('[', assetsPos);
+    if (arrayStart == std::string::npos) return assets;
+
+    int depth = 1;
+    size_t arrayEnd = arrayStart + 1;
+    while (arrayEnd < releaseJson.length() && depth > 0) {
+        if (releaseJson[arrayEnd] == '[') depth++;
+        else if (releaseJson[arrayEnd] == ']') depth--;
+        arrayEnd++;
+    }
+
+    std::string assetsArray = releaseJson.substr(arrayStart, arrayEnd - arrayStart);
+
+    std::string fallbackZipUrl;
+
+    size_t pos = 0;
+    while (pos < assetsArray.length()) {
+        size_t objStart = assetsArray.find('{', pos);
+        if (objStart == std::string::npos) break;
+
+        int objDepth = 1;
+        size_t objEnd = objStart + 1;
+        while (objEnd < assetsArray.length() && objDepth > 0) {
+            if (assetsArray[objEnd] == '{') objDepth++;
+            else if (assetsArray[objEnd] == '}') objDepth--;
+            objEnd++;
+        }
+
+        std::string asset = assetsArray.substr(objStart, objEnd - objStart);
+        std::string name = ExtractJsonString(asset, "name");
+        std::string nameLower = ToLower(name);
+        std::string url = ExtractJsonString(asset, "browser_download_url");
+
+        // Skip non-Windows platforms
+        if (nameLower.find("linux") != std::string::npos ||
+            nameLower.find("macos") != std::string::npos ||
+            nameLower.find("darwin") != std::string::npos ||
+            nameLower.find("mac-") != std::string::npos ||
+            nameLower.find("-mac") != std::string::npos) {
+            pos = objEnd;
+            continue;
+        }
+
+        // Installer exe (Setup.exe, Installer.exe, etc.)
+        if ((nameLower.find("setup") != std::string::npos ||
+             nameLower.find("installer") != std::string::npos) &&
+            nameLower.find(".exe") != std::string::npos) {
+            assets.installerUrl = url;
+        }
+        // Zip file
+        else if (nameLower.find(".zip") != std::string::npos) {
+            if (nameLower.find("windows") != std::string::npos ||
+                nameLower.find("win64") != std::string::npos ||
+                nameLower.find("win32") != std::string::npos ||
+                nameLower.find("win-") != std::string::npos ||
+                nameLower.find("-win") != std::string::npos) {
+                assets.zipUrl = url;
+            } else if (fallbackZipUrl.empty()) {
+                fallbackZipUrl = url;
+            }
+        }
+
+        pos = objEnd;
+    }
+
+    if (assets.zipUrl.empty() && !fallbackZipUrl.empty()) {
+        assets.zipUrl = fallbackZipUrl;
+    }
+
+    return assets;
 }
 
 // HTTP GET request using WinHTTP
@@ -57,7 +157,7 @@ static std::string HttpGet(const std::wstring& host, const std::wstring& path, b
 
     if (!hSession) return "";
 
-    // Enable TLS 1.2
+    // Enable TLS 1.2 (required for GitHub API)
     DWORD secureProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
     WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secureProtocols, sizeof(secureProtocols));
 
@@ -78,6 +178,11 @@ static std::string HttpGet(const std::wstring& host, const std::wstring& path, b
         WinHttpCloseHandle(hSession);
         return "";
     }
+
+    // GitHub API requires a User-Agent header
+    WinHttpAddRequestHeaders(hRequest,
+        L"Accept: application/vnd.github.v3+json\r\nUser-Agent: FastPlay/1.0",
+        -1, WINHTTP_ADDREQ_FLAG_ADD);
 
     if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
             WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
@@ -104,7 +209,6 @@ static std::string HttpGet(const std::wstring& host, const std::wstring& path, b
 // Download file with progress callback
 static bool HttpDownload(const std::string& url, const std::wstring& destPath,
                          DownloadProgressCallback progressCallback) {
-    // Parse URL
     std::wstring wurl(url.begin(), url.end());
     URL_COMPONENTS urlComp = {0};
     urlComp.dwStructSize = sizeof(urlComp);
@@ -129,8 +233,7 @@ static bool HttpDownload(const std::string& url, const std::wstring& destPath,
 
     if (!hSession) return false;
 
-    HINTERNET hConnect = WinHttpConnect(hSession, hostName,
-        urlComp.nPort, 0);
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName, urlComp.nPort, 0);
 
     if (!hConnect) {
         WinHttpCloseHandle(hSession);
@@ -160,7 +263,6 @@ static bool HttpDownload(const std::string& url, const std::wstring& destPath,
             WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusCodeSize, WINHTTP_NO_HEADER_INDEX);
 
         if (statusCode >= 300 && statusCode < 400) {
-            // Handle redirect
             wchar_t redirectUrl[2048] = {0};
             DWORD redirectUrlSize = sizeof(redirectUrl);
             if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_LOCATION,
@@ -169,20 +271,17 @@ static bool HttpDownload(const std::string& url, const std::wstring& destPath,
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
 
-                // Convert to narrow string and recurse
                 std::wstring wRedirect(redirectUrl);
                 std::string redirect(wRedirect.begin(), wRedirect.end());
                 return HttpDownload(redirect, destPath, progressCallback);
             }
         }
 
-        // Get content length
         DWORD contentLength = 0;
         DWORD contentLengthSize = sizeof(contentLength);
         WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
             WINHTTP_HEADER_NAME_BY_INDEX, &contentLength, &contentLengthSize, WINHTTP_NO_HEADER_INDEX);
 
-        // Open output file
         std::ofstream outFile(destPath, std::ios::binary);
         if (!outFile) {
             WinHttpCloseHandle(hRequest);
@@ -193,7 +292,7 @@ static bool HttpDownload(const std::string& url, const std::wstring& destPath,
 
         size_t totalDownloaded = 0;
         DWORD bytesAvailable;
-        std::vector<char> buffer(65536); // 64KB buffer
+        std::vector<char> buffer(65536);
 
         while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable) && bytesAvailable > 0) {
             DWORD toRead = (bytesAvailable < (DWORD)buffer.size()) ? bytesAvailable : (DWORD)buffer.size();
@@ -204,7 +303,6 @@ static bool HttpDownload(const std::string& url, const std::wstring& destPath,
 
                 if (progressCallback) {
                     if (!progressCallback(totalDownloaded, contentLength)) {
-                        // Cancelled
                         outFile.close();
                         DeleteFileW(destPath.c_str());
                         WinHttpCloseHandle(hRequest);
@@ -262,55 +360,63 @@ static std::wstring GetUpdateInstallerPath() {
 }
 
 UpdateInfo CheckForUpdates() {
-    UpdateInfo info = {false, "", "", "", ""};
+    UpdateInfo info = {false, "", "", "", "", "", ""};
 
-    // Fetch version info from server
-    std::string response = HttpGet(
-        VERSION_CHECK_HOST,
-        VERSION_CHECK_PATH);
+    // Fetch releases from GitHub API
+    std::string response = HttpGet(L"api.github.com", L"/repos/masonasons/FastPlay/releases");
 
     if (response.empty()) {
-        info.errorMessage = "Failed to connect to update server. Please check your internet connection.";
+        info.errorMessage = "Failed to connect to GitHub. Please check your internet connection.";
         return info;
     }
 
-    // Parse key=value lines from the version file
-    std::istringstream stream(response);
-    std::string line;
-    while (std::getline(stream, line)) {
-        // Strip \r if present
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
-
-        size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-
-        std::string key = line.substr(0, eq);
-        std::string value = line.substr(eq + 1);
-
-        if (key == "version") {
-            info.latestVersion = value;
-        } else if (key == "download") {
-            info.downloadUrl = value;
-        } else if (key == "installer") {
-            info.installerUrl = value;
-        }
-    }
-
-    if (info.latestVersion.empty()) {
-        info.errorMessage = "Could not determine latest version.";
+    // Get first (latest) release
+    std::string release = ExtractFirstArrayObject(response);
+    if (release.empty()) {
+        info.errorMessage = "No releases found.";
         return info;
     }
 
-    if (info.downloadUrl.empty() && info.installerUrl.empty()) {
-        info.errorMessage = "No download available for this release.";
+    std::string body = ExtractJsonString(release, "body");
+    std::string tagName = ExtractJsonString(release, "tag_name");
+
+    // Look for commit SHA in body: "commit XXXX"
+    std::regex commitRegex("commit ([a-f0-9]+)");
+    std::smatch commitMatch;
+    if (std::regex_search(body, commitMatch, commitRegex)) {
+        info.latestCommit = commitMatch[1].str();
+    }
+
+    // Look for version in body: "**Version:** X.Y.Z"
+    std::regex versionRegex("\\*\\*Version:\\*\\* ([0-9.]+)");
+    std::smatch versionMatch;
+    if (std::regex_search(body, versionMatch, versionRegex)) {
+        info.latestVersion = versionMatch[1].str();
+    } else {
+        info.latestVersion = tagName;
+    }
+
+    WindowsAssets assets = FindWindowsAssets(release);
+    if (assets.zipUrl.empty() && assets.installerUrl.empty()) {
+        info.errorMessage = "No Windows download available for this release.";
         return info;
     }
 
-    // Compare versions numerically
+    info.downloadUrl = assets.zipUrl;
+    info.installerUrl = assets.installerUrl;
+    info.releaseNotes = body;
+
+    // Compare commits if both are available, otherwise fall back to version strings
+    std::string localCommit = BUILD_COMMIT;
     std::string localVersion = APP_VERSION;
-    info.available = (CompareVersions(info.latestVersion, localVersion) > 0);
+
+    if (!info.latestCommit.empty() && !localCommit.empty()) {
+        std::string latestShort = info.latestCommit.substr(0, 7);
+        std::string localShort = localCommit.substr(0, 7);
+        info.available = (latestShort != localShort);
+    } else {
+        info.available = (info.latestVersion != localVersion);
+    }
 
     return info;
 }
@@ -319,7 +425,6 @@ UpdateInfo CheckForUpdates() {
 static bool g_updateWithInstaller = false;
 
 bool DownloadUpdate(const std::string& url, DownloadProgressCallback progressCallback) {
-    // Determine destination based on file type
     std::wstring destPath;
     std::string urlLower = ToLower(url);
     if ((urlLower.find("setup") != std::string::npos || urlLower.find("installer") != std::string::npos) &&
@@ -335,19 +440,14 @@ bool DownloadUpdate(const std::string& url, DownloadProgressCallback progressCal
 
 void ApplyUpdate() {
     if (g_updateWithInstaller) {
-        // Run installer in silent mode
         std::wstring installerPath = GetUpdateInstallerPath();
 
-        // Verify installer exists
         if (GetFileAttributesW(installerPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
             MessageBoxW(GetMessageBoxOwner(), L"Update file not found. The download may have failed.",
                 L"Update Error", MB_OK | MB_ICONERROR);
             return;
         }
 
-        // Run installer with /SILENT flag (Inno Setup)
-        // /SILENT shows progress but no prompts
-        // /VERYSILENT hides everything
         HINSTANCE result = ShellExecuteW(NULL, L"open", installerPath.c_str(), L"/SILENT", NULL, SW_SHOWNORMAL);
         if (reinterpret_cast<intptr_t>(result) <= 32) {
             MessageBoxW(GetMessageBoxOwner(), L"Failed to launch installer.",
@@ -356,20 +456,17 @@ void ApplyUpdate() {
         }
         PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
     } else {
-        // Portable mode: extract zip with batch script
         std::wstring appDir = GetAppDirectory();
         std::wstring zipPath = GetUpdateZipPath();
         std::wstring batchPath = appDir + L"\\update.bat";
         std::wstring extractDir = appDir + L"\\update_temp";
 
-        // Verify zip exists
         if (GetFileAttributesW(zipPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
             MessageBoxW(GetMessageBoxOwner(), L"Update file not found. The download may have failed.",
                 L"Update Error", MB_OK | MB_ICONERROR);
             return;
         }
 
-        // Get exe name
         wchar_t exePath[MAX_PATH];
         GetModuleFileNameW(NULL, exePath, MAX_PATH);
         std::wstring exeName(exePath);
@@ -378,7 +475,6 @@ void ApplyUpdate() {
             exeName = exeName.substr(lastSlash + 1);
         }
 
-        // Create batch script
         std::ofstream batch(batchPath);
         batch << "@echo off\r\n";
         batch << "echo Updating FastPlay...\r\n";
@@ -391,7 +487,6 @@ void ApplyUpdate() {
         batch << "del \"%~f0\"\r\n";
         batch.close();
 
-        // Run batch script and exit
         HINSTANCE result = ShellExecuteW(NULL, L"open", batchPath.c_str(), NULL, appDir.c_str(), SW_HIDE);
         if (reinterpret_cast<intptr_t>(result) <= 32) {
             MessageBoxW(GetMessageBoxOwner(), L"Failed to launch update script.",
@@ -430,7 +525,7 @@ static INT_PTR CALLBACK ProgressDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             }
             break;
 
-        case WM_USER + 100: // Update progress
+        case WM_USER + 100:
             if (g_progressData) {
                 int percent = (g_progressData->totalBytes > 0)
                     ? (int)((g_progressData->downloadedBytes * 100) / g_progressData->totalBytes)
@@ -446,11 +541,11 @@ static INT_PTR CALLBACK ProgressDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             }
             return TRUE;
 
-        case WM_USER + 101: // Download complete
+        case WM_USER + 101:
             DestroyWindow(hwnd);
             return TRUE;
 
-        case WM_USER + 102: // Download failed
+        case WM_USER + 102:
             DestroyWindow(hwnd);
             return TRUE;
     }
@@ -458,11 +553,9 @@ static INT_PTR CALLBACK ProgressDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 }
 
 void ShowCheckForUpdatesDialog(HWND hwndParent, bool silent) {
-    // Run check in background thread
     std::thread([hwndParent, silent]() {
         UpdateInfo info = CheckForUpdates();
 
-        // Post result to UI thread
         PostMessageW(hwndParent, WM_USER + 200, 0,
             reinterpret_cast<LPARAM>(new std::pair<UpdateInfo, bool>(info, silent)));
     }).detach();
@@ -471,7 +564,6 @@ void ShowCheckForUpdatesDialog(HWND hwndParent, bool silent) {
 void CheckForUpdatesOnStartup() {
     if (!g_checkForUpdates) return;
 
-    // Delay 3 seconds to let UI initialize
     std::thread([]() {
         Sleep(3000);
         if (g_hwnd) {
@@ -480,7 +572,6 @@ void CheckForUpdatesOnStartup() {
     }).detach();
 }
 
-// Handle update check result in main window (call from WndProc)
 void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
     if (!info->errorMessage.empty()) {
         if (!silent) {
@@ -498,26 +589,28 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
         return;
     }
 
-    // Update available - ask user
     std::string message = "A new version of FastPlay is available!\n\n";
     message += "Current version: " + std::string(APP_VERSION);
+    if (strlen(BUILD_COMMIT) > 0) {
+        message += " (" + std::string(BUILD_COMMIT).substr(0, 7) + ")";
+    }
     message += "\nLatest version: " + info->latestVersion;
+    if (!info->latestCommit.empty()) {
+        message += " (" + info->latestCommit.substr(0, 7) + ")";
+    }
     message += "\n\nDo you want to download and install the update?";
 
     Speak("Update available. " + info->latestVersion);
 
     if (MessageBoxA(hwnd, message.c_str(), "Update Available", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-        // Initialize progress data BEFORE creating dialog (dialog proc accesses it in WM_INITDIALOG)
         ProgressDialogData progressData = {0};
         progressData.cancelled = false;
         g_progressData = &progressData;
 
-        // Create progress dialog
         HWND hwndProgress = CreateDialogW(GetModuleHandle(NULL),
             MAKEINTRESOURCEW(IDD_PROGRESS), hwnd, ProgressDlgProc);
 
         if (!hwndProgress) {
-            // Fallback: create simple dialog
             MessageBoxA(hwnd, "Starting download...", "Update", MB_OK);
         }
 
@@ -525,14 +618,12 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
             ShowWindow(hwndProgress, SW_SHOW);
         }
 
-        // Choose download URL: use installer if installed, otherwise use zip
         std::string downloadUrl;
         if (IsInstalledMode() && !info->installerUrl.empty()) {
             downloadUrl = info->installerUrl;
         } else if (!info->downloadUrl.empty()) {
             downloadUrl = info->downloadUrl;
         } else if (!info->installerUrl.empty()) {
-            // Fallback to installer if no zip available
             downloadUrl = info->installerUrl;
         }
 
@@ -551,7 +642,6 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
                 return true;
             });
 
-            // Capture cancelled state before destroying dialog (which nulls g_progressData)
             if (g_progressData) {
                 wasCancelled = g_progressData->cancelled;
             }
@@ -560,11 +650,9 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
                 PostMessageW(hwndProgress, success ? WM_USER + 101 : WM_USER + 102, 0, 0);
             }
 
-            // Small delay to let dialog close before showing results
             Sleep(100);
 
             if (success && !wasCancelled) {
-                // Apply update
                 PostMessageW(hwnd, WM_USER + 201, 0, 0);
             } else if (!success && !wasCancelled) {
                 MessageBoxA(hwnd, "Failed to download update.", "Error", MB_OK | MB_ICONERROR);
@@ -572,7 +660,6 @@ void HandleUpdateCheckResult(HWND hwnd, UpdateInfo* info, bool silent) {
         }).detach();
 
         if (hwndProgress) {
-            // Run dialog message loop
             MSG msg;
             while (GetMessageW(&msg, NULL, 0, 0)) {
                 if (!IsDialogMessageW(hwndProgress, &msg)) {
