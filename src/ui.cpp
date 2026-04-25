@@ -2453,6 +2453,11 @@ static LRESULT CALLBACK HistoryListSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
             }
             return 0;
         }
+    } else if (msg == WM_CHAR) {
+        // Ctrl+C generates WM_CHAR with control character 3 (ETX) via TranslateMessage,
+        // which the listbox would otherwise feed into its prefix-search and move the
+        // selection. Swallow it so focus stays on the song the user just copied.
+        if (wParam == 3) return 0;
     } else if (msg == WM_GETDLGCODE) {
         MSG* pmsg = reinterpret_cast<MSG*>(lParam);
         if (pmsg && pmsg->wParam == VK_ESCAPE) {
