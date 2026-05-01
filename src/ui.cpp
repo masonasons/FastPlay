@@ -4942,6 +4942,113 @@ static std::wstring BuildPodcastDiagMessage(const std::wstring& feedUrl, const P
     return msg;
 }
 
+// Deferred description-update message — posted from the listbox subclass
+// after the default proc handles a key/click, so the listbox finishes its
+// own selection bookkeeping and accessibility events BEFORE we rewrite the
+// description edit.
+static const UINT WM_PODCAST_UPDATE_DESC = WM_APP + 12;
+// Track the last caret index we updated the description for so we don't
+// rewrite the description on Ctrl+Space toggles or other events that don't
+// move the caret.
+static int g_lastDescCaret = -1;
+static WNDPROC g_origPodcastEpsProc = nullptr;
+
+// Helper: post a deferred description update if the caret moved.
+static void NotifyEpsCaretMoved(HWND hwnd) {
+    int caret = static_cast<int>(SendMessageW(hwnd, LB_GETCARETINDEX, 0, 0));
+    if (caret != g_lastDescCaret) {
+        g_lastDescCaret = caret;
+        PostMessageW(GetParent(hwnd), WM_PODCAST_UPDATE_DESC, static_cast<WPARAM>(caret), 0);
+    }
+}
+
+// Subclass for the episodes listbox. Implements Ctrl+Up / Ctrl+Down (move the
+// caret without changing selection) and Ctrl+Space (toggle selection of the
+// focused item) explicitly, since not all environments honor the listbox's
+// built-in extended-selection keyboard interface for caret-only moves. All
+// other keys/clicks fall through to the default proc unchanged so plain and
+// Shift+arrow extension keep their stock behavior.
+static LRESULT CALLBACK PodcastEpsListSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        int count = static_cast<int>(SendMessageW(hwnd, LB_GETCOUNT, 0, 0));
+        if (ctrl && !shift && (wParam == VK_UP || wParam == VK_DOWN) && count > 0) {
+            int caret = static_cast<int>(SendMessageW(hwnd, LB_GETCARETINDEX, 0, 0));
+            int newCaret = caret + (wParam == VK_DOWN ? 1 : -1);
+            if (newCaret < 0) newCaret = 0;
+            if (newCaret >= count) newCaret = count - 1;
+            if (newCaret != caret) {
+                // Move just the focus rectangle; preserve selection state of all items.
+                SendMessageW(hwnd, LB_SETCARETINDEX, newCaret, FALSE);
+                // Fire MSAA focus event so screen readers announce the new item.
+                NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd, OBJID_CLIENT, newCaret + 1);
+                NotifyEpsCaretMoved(hwnd);
+            }
+            return 0;
+        }
+        if (ctrl && !shift && wParam == VK_SPACE && count > 0) {
+            int caret = static_cast<int>(SendMessageW(hwnd, LB_GETCARETINDEX, 0, 0));
+            if (caret >= 0 && caret < count) {
+                int sel = static_cast<int>(SendMessageW(hwnd, LB_GETSEL, caret, 0));
+                SendMessageW(hwnd, LB_SETSEL, sel ? FALSE : TRUE, caret);
+                // Fire MSAA selection state change so the screen reader announces it.
+                NotifyWinEvent(EVENT_OBJECT_SELECTIONADD, hwnd, OBJID_CLIENT, caret + 1);
+                NotifyWinEvent(EVENT_OBJECT_STATECHANGE, hwnd, OBJID_CLIENT, caret + 1);
+            }
+            return 0;
+        }
+    }
+    LRESULT result = CallWindowProcW(g_origPodcastEpsProc, hwnd, msg, wParam, lParam);
+    if (msg == WM_KEYDOWN || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) {
+        NotifyEpsCaretMoved(hwnd);
+    }
+    return result;
+}
+
+// Compute the cleaned plain-text description for an episode, ready for the
+// IDC_PODCAST_EP_DESC edit control.
+static std::wstring CleanPodcastDescription(const std::wstring& raw) {
+    std::wstring desc = raw;
+    size_t pos;
+    while ((pos = desc.find(L"<br")) != std::wstring::npos) {
+        size_t endPos = desc.find(L'>', pos);
+        if (endPos != std::wstring::npos) {
+            desc.replace(pos, endPos - pos + 1, L"\n");
+        } else {
+            break;
+        }
+    }
+    while ((pos = desc.find(L"</p>")) != std::wstring::npos) desc.replace(pos, 4, L"\n\n");
+    while ((pos = desc.find(L"</div>")) != std::wstring::npos) desc.replace(pos, 6, L"\n");
+    while ((pos = desc.find(L'<')) != std::wstring::npos) {
+        size_t endPos = desc.find(L'>', pos);
+        if (endPos != std::wstring::npos) {
+            desc.erase(pos, endPos - pos + 1);
+        } else {
+            break;
+        }
+    }
+    while ((pos = desc.find(L"&nbsp;")) != std::wstring::npos) desc.replace(pos, 6, L" ");
+    while ((pos = desc.find(L"&amp;")) != std::wstring::npos) desc.replace(pos, 5, L"&");
+    while ((pos = desc.find(L"&quot;")) != std::wstring::npos) desc.replace(pos, 6, L"\"");
+    while ((pos = desc.find(L"&apos;")) != std::wstring::npos) desc.replace(pos, 6, L"'");
+    while ((pos = desc.find(L"&lt;")) != std::wstring::npos) desc.replace(pos, 4, L"<");
+    while ((pos = desc.find(L"&gt;")) != std::wstring::npos) desc.replace(pos, 4, L">");
+    while ((pos = desc.find(L"&#39;")) != std::wstring::npos) desc.replace(pos, 5, L"'");
+    while ((pos = desc.find(L"\n\n\n")) != std::wstring::npos) desc.erase(pos, 1);
+    pos = 0;
+    while ((pos = desc.find(L'\n', pos)) != std::wstring::npos) {
+        if (pos == 0 || desc[pos - 1] != L'\r') {
+            desc.insert(pos, 1, L'\r');
+            pos += 2;
+        } else {
+            pos++;
+        }
+    }
+    return desc;
+}
+
 // Load episodes for a subscription
 static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
     HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
@@ -5010,12 +5117,14 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
             SendMessageW(hList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(display.c_str()));
         }
 
-        // Select first episode
+        // Select first episode (multi-select listbox needs LB_SETSEL + LB_SETCARETINDEX)
         if (!g_podcastEpisodes.empty()) {
-            SendMessageW(hList, LB_SETCURSEL, 0, 0);
-            // Trigger description update by simulating selection change
-            SendMessageW(hwnd, WM_COMMAND, MAKEWPARAM(IDC_PODCAST_EPISODES, LBN_SELCHANGE),
-                         reinterpret_cast<LPARAM>(hList));
+            SendMessageW(hList, LB_SETSEL, FALSE, -1);
+            SendMessageW(hList, LB_SETSEL, TRUE, 0);
+            SendMessageW(hList, LB_SETCARETINDEX, 0, FALSE);
+            // Force a description update for the newly selected first episode.
+            g_lastDescCaret = -1;
+            PostMessageW(hwnd, WM_PODCAST_UPDATE_DESC, 0, 0);
         }
 
         char buf[64];
@@ -5172,6 +5281,11 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             g_origPodcastSubsListProc = reinterpret_cast<WNDPROC>(
                 SetWindowLongPtrW(hSubsList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(PodcastSubsListSubclassProc)));
 
+            // Subclass episodes list to deferred-update the description on caret moves
+            HWND hEpsList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
+            g_origPodcastEpsProc = reinterpret_cast<WNDPROC>(
+                SetWindowLongPtrW(hEpsList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(PodcastEpsListSubclassProc)));
+
             // Load subscriptions
             RefreshPodcastSubsList(hwnd);
             g_podcastEpisodes.clear();
@@ -5197,13 +5311,27 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                             SetFocus(GetDlgItem(hwnd, IDC_PODCAST_EPISODES));
                         }
                     } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_EPISODES)) {
-                        // Play selected episode
-                        int sel = static_cast<int>(SendMessageW(hFocus, LB_GETCURSEL, 0, 0));
-                        if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
+                        // Play selected episode(s) — multiselect adds all to the playlist
+                        int selCount = static_cast<int>(SendMessageW(hFocus, LB_GETSELCOUNT, 0, 0));
+                        if (selCount > 0) {
+                            std::vector<int> selItems(selCount);
+                            SendMessageW(hFocus, LB_GETSELITEMS, selCount, reinterpret_cast<LPARAM>(selItems.data()));
                             g_playlist.clear();
-                            g_playlist.push_back(g_podcastEpisodes[sel].audioUrl);
-                            PlayTrack(0, true);
-                            Speak("Playing");
+                            for (int idx : selItems) {
+                                if (idx >= 0 && idx < static_cast<int>(g_podcastEpisodes.size())) {
+                                    g_playlist.push_back(g_podcastEpisodes[idx].audioUrl);
+                                }
+                            }
+                            if (!g_playlist.empty()) {
+                                PlayTrack(0, true);
+                                if (g_playlist.size() == 1) {
+                                    Speak("Playing");
+                                } else {
+                                    char msg[64];
+                                    snprintf(msg, sizeof(msg), "Playing %d episodes", static_cast<int>(g_playlist.size()));
+                                    Speak(msg);
+                                }
+                            }
                         }
                     } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_SEARCH_EDIT)) {
                         // Trigger search
@@ -5238,9 +5366,10 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 }
 
                 case IDC_PODCAST_DOWNLOAD: {
-                    // Download currently selected episode
-                    int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
-                    if (sel < 0 || sel >= static_cast<int>(g_podcastEpisodes.size())) {
+                    // Download all currently selected episodes
+                    HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
+                    int selCount = static_cast<int>(SendMessageW(hList, LB_GETSELCOUNT, 0, 0));
+                    if (selCount <= 0) {
                         Speak("No episode selected");
                         return TRUE;
                     }
@@ -5250,11 +5379,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         return TRUE;
                     }
 
-                    const auto& ep = g_podcastEpisodes[sel];
-                    if (ep.audioUrl.empty()) {
-                        Speak("No audio URL for this episode");
-                        return TRUE;
-                    }
+                    std::vector<int> selItems(selCount);
+                    SendMessageW(hList, LB_GETSELITEMS, selCount, reinterpret_cast<LPARAM>(selItems.data()));
 
                     // Build download folder path
                     std::wstring downloadFolder = g_downloadPath;
@@ -5274,22 +5400,64 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         }
                     }
 
-                    // Build filename from episode title
-                    std::wstring filename = SanitizeFilename(ep.title);
-                    if (filename.empty()) filename = L"episode";
-                    filename += GetUrlExtension(ep.audioUrl);
+                    std::vector<std::tuple<std::wstring, std::wstring, std::wstring>> downloads;
+                    std::set<std::wstring> usedFilenames;
+                    int skipped = 0;
 
-                    std::wstring filepath = downloadFolder + filename;
+                    for (int idx : selItems) {
+                        if (idx < 0 || idx >= static_cast<int>(g_podcastEpisodes.size())) continue;
+                        const auto& ep = g_podcastEpisodes[idx];
+                        if (ep.audioUrl.empty()) {
+                            skipped++;
+                            continue;
+                        }
 
-                    // Check if file already exists
-                    if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                        Speak("File already exists");
+                        std::wstring baseName = SanitizeFilename(ep.title);
+                        if (baseName.empty()) baseName = L"episode";
+                        std::wstring ext = GetUrlExtension(ep.audioUrl);
+                        std::wstring filename = baseName + ext;
+                        std::wstring filepath = downloadFolder + filename;
+
+                        // Skip if file already exists on disk
+                        if (GetFileAttributesW(filepath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                            skipped++;
+                            continue;
+                        }
+
+                        // Handle duplicate titles within this batch by adding number suffix
+                        int dupCount = 1;
+                        while (usedFilenames.count(filename) > 0) {
+                            dupCount++;
+                            wchar_t suffix[16];
+                            swprintf(suffix, 16, L" (%d)", dupCount);
+                            filename = baseName + suffix + ext;
+                            filepath = downloadFolder + filename;
+                        }
+                        usedFilenames.insert(filename);
+
+                        downloads.push_back(std::make_tuple(ep.audioUrl, filepath, ep.title));
+                    }
+
+                    if (downloads.empty()) {
+                        if (skipped > 0) Speak("All selected episodes already downloaded");
+                        else Speak("No episodes to download");
                         return TRUE;
                     }
 
-                    // Enqueue single download
-                    DownloadManager::Instance().Enqueue(ep.audioUrl, filepath, ep.title);
-                    Speak("Downloading");
+                    if (downloads.size() == 1) {
+                        const auto& d = downloads[0];
+                        DownloadManager::Instance().Enqueue(std::get<0>(d), std::get<1>(d), std::get<2>(d));
+                        Speak("Downloading");
+                    } else {
+                        DownloadManager::Instance().EnqueueMultiple(downloads);
+                        char msg[128];
+                        if (skipped > 0) {
+                            snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", static_cast<int>(downloads.size()), skipped);
+                        } else {
+                            snprintf(msg, sizeof(msg), "Downloading %d episodes", static_cast<int>(downloads.size()));
+                        }
+                        Speak(msg);
+                    }
                     return TRUE;
                 }
 
@@ -5594,69 +5762,19 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
                 case IDC_PODCAST_EPISODES:
                     if (HIWORD(wParam) == LBN_DBLCLK) {
-                        // Play episode on double-click
-                        int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
+                        // Double-click plays only the item that was clicked (the focused one)
+                        HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
+                        int sel = static_cast<int>(SendMessageW(hList, LB_GETCARETINDEX, 0, 0));
                         if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
                             g_playlist.clear();
                             g_playlist.push_back(g_podcastEpisodes[sel].audioUrl);
                             PlayTrack(0, true);
                             Speak("Playing");
                         }
-                    } else if (HIWORD(wParam) == LBN_SELCHANGE) {
-                        // Update description field
-                        int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_EPISODES), LB_GETCURSEL, 0, 0));
-                        if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
-                            std::wstring desc = g_podcastEpisodes[sel].description;
-                            // Convert HTML line breaks to newlines before stripping tags
-                            size_t pos;
-                            while ((pos = desc.find(L"<br")) != std::wstring::npos) {
-                                size_t endPos = desc.find(L'>', pos);
-                                if (endPos != std::wstring::npos) {
-                                    desc.replace(pos, endPos - pos + 1, L"\n");
-                                } else {
-                                    break;
-                                }
-                            }
-                            while ((pos = desc.find(L"</p>")) != std::wstring::npos) desc.replace(pos, 4, L"\n\n");
-                            while ((pos = desc.find(L"</div>")) != std::wstring::npos) desc.replace(pos, 6, L"\n");
-                            // Clean up description - remove remaining HTML tags
-                            while ((pos = desc.find(L'<')) != std::wstring::npos) {
-                                size_t endPos = desc.find(L'>', pos);
-                                if (endPos != std::wstring::npos) {
-                                    desc.erase(pos, endPos - pos + 1);
-                                } else {
-                                    break;
-                                }
-                            }
-                            // Decode HTML entities
-                            while ((pos = desc.find(L"&nbsp;")) != std::wstring::npos) desc.replace(pos, 6, L" ");
-                            while ((pos = desc.find(L"&amp;")) != std::wstring::npos) desc.replace(pos, 5, L"&");
-                            while ((pos = desc.find(L"&quot;")) != std::wstring::npos) desc.replace(pos, 6, L"\"");
-                            while ((pos = desc.find(L"&apos;")) != std::wstring::npos) desc.replace(pos, 6, L"'");
-                            while ((pos = desc.find(L"&lt;")) != std::wstring::npos) desc.replace(pos, 4, L"<");
-                            while ((pos = desc.find(L"&gt;")) != std::wstring::npos) desc.replace(pos, 4, L">");
-                            while ((pos = desc.find(L"&#39;")) != std::wstring::npos) desc.replace(pos, 5, L"'");
-                            // Collapse multiple consecutive newlines (max 2)
-                            while ((pos = desc.find(L"\n\n\n")) != std::wstring::npos) {
-                                desc.erase(pos, 1);
-                            }
-                            // Convert standalone \n to \r\n for edit control (skip existing \r\n)
-                            pos = 0;
-                            while ((pos = desc.find(L'\n', pos)) != std::wstring::npos) {
-                                if (pos == 0 || desc[pos - 1] != L'\r') {
-                                    desc.insert(pos, 1, L'\r');
-                                    pos += 2;
-                                } else {
-                                    pos++;
-                                }
-                            }
-                            SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, desc.c_str());
-                            // Scroll to top (deselect handled by subclass)
-                            SendDlgItemMessageW(hwnd, IDC_PODCAST_EP_DESC, WM_VSCROLL, SB_TOP, 0);
-                        } else {
-                            SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, L"");
-                        }
                     }
+                    // (No LBN_SELCHANGE handler — extended-selection listboxes need
+                    // arrow/click events to flow through to the default proc without
+                    // interference. Description updates happen via the listbox subclass.)
                     break;
 
                 case IDC_PODCAST_SEARCH_LIST:
@@ -5680,6 +5798,20 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             }
             break;
         }
+
+        default:
+            if (msg == WM_PODCAST_UPDATE_DESC) {
+                int sel = static_cast<int>(wParam);
+                if (sel >= 0 && sel < static_cast<int>(g_podcastEpisodes.size())) {
+                    std::wstring desc = CleanPodcastDescription(g_podcastEpisodes[sel].description);
+                    SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, desc.c_str());
+                    SendDlgItemMessageW(hwnd, IDC_PODCAST_EP_DESC, WM_VSCROLL, SB_TOP, 0);
+                } else {
+                    SetDlgItemTextW(hwnd, IDC_PODCAST_EP_DESC, L"");
+                }
+                return TRUE;
+            }
+            break;
 
         case WM_SIZE: {
             int width = LOWORD(lParam);
