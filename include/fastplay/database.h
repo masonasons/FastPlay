@@ -31,6 +31,8 @@ struct PodcastSubscription {
     std::wstring imageUrl;
     int64_t lastUpdated;
     int sortOrder;
+    std::wstring username;   // HTTP Basic auth for password-protected feeds
+    std::wstring password;
 };
 
 // Song history entry (captured from stream metadata)
@@ -123,9 +125,11 @@ bool ResetRadioSortOrder();
 
 // Podcast subscription operations
 int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
-                           const std::wstring& imageUrl = L"");
+                           const std::wstring& imageUrl = L"",
+                           const std::wstring& username = L"", const std::wstring& password = L"");
 bool RemovePodcastSubscription(int id);
 bool UpdatePodcastSubscription(int id, const std::wstring& name, const std::wstring& feedUrl);
+bool UpdatePodcastAuth(const std::wstring& feedUrl, const std::wstring& username, const std::wstring& password);
 bool UpdatePodcastLastUpdated(int id);
 std::vector<PodcastSubscription> GetPodcastSubscriptions();
 bool UpdatePodcastSortOrders(const std::vector<PodcastSubscription>& subs);

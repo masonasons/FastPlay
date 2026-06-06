@@ -4389,6 +4389,43 @@ static std::wstring PodcastHttpGet(const std::wstring& url, PodcastFetchDiag* di
     return result;
 }
 
+// Build an "Authorization: Basic <base64(user:pass)>" header from credentials (UTF-8 encoded).
+// Returns an empty string when no credentials are given.
+static std::wstring BuildBasicAuthHeader(const std::wstring& username, const std::wstring& password) {
+    if (username.empty() && password.empty()) return L"";
+
+    std::string creds = WideToUtf8(username) + ":" + WideToUtf8(password);
+
+    static const wchar_t b64[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::wstring encoded;
+    size_t i = 0;
+    while (i + 2 < creds.size()) {
+        unsigned int n = (static_cast<unsigned char>(creds[i]) << 16) |
+                         (static_cast<unsigned char>(creds[i + 1]) << 8) |
+                         static_cast<unsigned char>(creds[i + 2]);
+        encoded += b64[(n >> 18) & 63];
+        encoded += b64[(n >> 12) & 63];
+        encoded += b64[(n >> 6) & 63];
+        encoded += b64[n & 63];
+        i += 3;
+    }
+    if (i + 1 == creds.size()) {
+        unsigned int n = static_cast<unsigned char>(creds[i]) << 16;
+        encoded += b64[(n >> 18) & 63];
+        encoded += b64[(n >> 12) & 63];
+        encoded += L"==";
+    } else if (i + 2 == creds.size()) {
+        unsigned int n = (static_cast<unsigned char>(creds[i]) << 16) |
+                         (static_cast<unsigned char>(creds[i + 1]) << 8);
+        encoded += b64[(n >> 18) & 63];
+        encoded += b64[(n >> 12) & 63];
+        encoded += b64[(n >> 6) & 63];
+        encoded += L"=";
+    }
+
+    return L"Authorization: Basic " + encoded;
+}
+
 // HTTP GET with Basic Authentication support
 static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstring& username, const std::wstring& password, PodcastFetchDiag* diag = nullptr) {
     // If no credentials, use regular function
@@ -4446,9 +4483,32 @@ static std::wstring PodcastHttpGetAuth(const std::wstring& url, const std::wstri
                                           secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT,
                                           username.c_str(), password.c_str(), INTERNET_SERVICE_HTTP, 0, 0);
     if (hConnect) {
-        HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr, flags, 0);
+        // INTERNET_FLAG_KEEP_CONNECTION is required for the 401-retry below to reuse the
+        // authenticated connection (matters for NTLM/Negotiate realms).
+        HINTERNET hRequest = HttpOpenRequestW(hConnect, L"GET", path.c_str(), nullptr, nullptr, nullptr,
+                                              flags | INTERNET_FLAG_KEEP_CONNECTION, 0);
         if (hRequest) {
-            if (HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0)) {
+            // Send Basic credentials preemptively. WinInet only attaches the InternetConnect
+            // credentials after a 401 challenge, and only on a resend — relying on that alone
+            // means the first fetch of each session fails against Basic-auth feeds.
+            std::wstring authHeader = BuildBasicAuthHeader(username, password);
+            if (!authHeader.empty()) {
+                HttpAddRequestHeadersW(hRequest, authHeader.c_str(), static_cast<DWORD>(authHeader.size()),
+                                       HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
+            }
+
+            BOOL sent = HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0);
+            if (sent) {
+                // If the server still challenges (e.g. Digest/NTLM realm), resend once so
+                // WinInet can answer the challenge with the InternetConnect credentials.
+                DWORD status = 0, sz = sizeof(status);
+                HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                               &status, &sz, nullptr);
+                if (status == HTTP_STATUS_DENIED) {
+                    sent = HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0);
+                }
+            }
+            if (sent) {
                 if (diag) {
                     DWORD status = 0, sz = sizeof(status);
                     HttpQueryInfoW(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
@@ -5049,8 +5109,9 @@ static std::wstring CleanPodcastDescription(const std::wstring& raw) {
     return desc;
 }
 
-// Load episodes for a subscription
-static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
+// Load episodes for a subscription, using its stored credentials for password-protected feeds
+static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl,
+                                const std::wstring& username = L"", const std::wstring& password = L"") {
     HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
     SendMessageW(hList, LB_RESETCONTENT, 0, 0);
     g_podcastEpisodes.clear();
@@ -5060,7 +5121,7 @@ static void LoadPodcastEpisodes(HWND hwnd, const std::wstring& feedUrl) {
 
     std::wstring title;
     PodcastFetchDiag diag;
-    if (ParsePodcastFeed(feedUrl, title, g_podcastEpisodes, L"", L"", &diag)) {
+    if (ParsePodcastFeed(feedUrl, title, g_podcastEpisodes, username, password, &diag)) {
         for (const auto& ep : g_podcastEpisodes) {
             std::wstring display = ep.title;
             if (!ep.pubDate.empty()) {
@@ -5307,7 +5368,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         int sel = static_cast<int>(SendMessageW(hFocus, LB_GETCURSEL, 0, 0));
                         if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
                             g_currentPodcastId = g_podcastSubs[sel].id;
-                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl,
+                                                g_podcastSubs[sel].username, g_podcastSubs[sel].password);
                             SetFocus(GetDlgItem(hwnd, IDC_PODCAST_EPISODES));
                         }
                     } else if (hFocus == GetDlgItem(hwnd, IDC_PODCAST_EPISODES)) {
@@ -5359,7 +5421,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 case IDC_PODCAST_REFRESH: {
                     int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), LB_GETCURSEL, 0, 0));
                     if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
-                        LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                        LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl,
+                                            g_podcastSubs[sel].username, g_podcastSubs[sel].password);
                         UpdatePodcastLastUpdated(g_podcastSubs[sel].id);
                     }
                     return TRUE;
@@ -5367,6 +5430,17 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
                 case IDC_PODCAST_DOWNLOAD: {
                     // Download all currently selected episodes
+                    // Episodes from a password-protected feed need the feed's credentials
+                    std::wstring authHeader;
+                    if (g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                authHeader = BuildBasicAuthHeader(sub.username, sub.password);
+                                break;
+                            }
+                        }
+                    }
+
                     HWND hList = GetDlgItem(hwnd, IDC_PODCAST_EPISODES);
                     int selCount = static_cast<int>(SendMessageW(hList, LB_GETSELCOUNT, 0, 0));
                     if (selCount <= 0) {
@@ -5446,10 +5520,10 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
                     if (downloads.size() == 1) {
                         const auto& d = downloads[0];
-                        DownloadManager::Instance().Enqueue(std::get<0>(d), std::get<1>(d), std::get<2>(d));
+                        DownloadManager::Instance().Enqueue(std::get<0>(d), std::get<1>(d), std::get<2>(d), authHeader);
                         Speak("Downloading");
                     } else {
-                        DownloadManager::Instance().EnqueueMultiple(downloads);
+                        DownloadManager::Instance().EnqueueMultiple(downloads, authHeader);
                         char msg[128];
                         if (skipped > 0) {
                             snprintf(msg, sizeof(msg), "Downloading %d episodes, %d skipped", static_cast<int>(downloads.size()), skipped);
@@ -5463,6 +5537,17 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
                 case IDC_PODCAST_DOWNLOAD_ALL: {
                     // Download all episodes in the current feed using download queue
+                    // Episodes from a password-protected feed need the feed's credentials
+                    std::wstring authHeader;
+                    if (g_currentPodcastId >= 0) {
+                        for (const auto& sub : g_podcastSubs) {
+                            if (sub.id == g_currentPodcastId) {
+                                authHeader = BuildBasicAuthHeader(sub.username, sub.password);
+                                break;
+                            }
+                        }
+                    }
+
                     if (g_podcastEpisodes.empty()) {
                         Speak("No episodes loaded");
                         return TRUE;
@@ -5530,7 +5615,7 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
                     // Enqueue all downloads (manager handles concurrency limit and speech)
                     if (!downloads.empty()) {
-                        DownloadManager::Instance().EnqueueMultiple(downloads);
+                        DownloadManager::Instance().EnqueueMultiple(downloads, authHeader);
                     }
 
                     char msg[128];
@@ -5676,9 +5761,13 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         PodcastFetchDiag addDiag;
                         if (ParsePodcastFeed(addData.url, title, eps, addData.username, addData.password, &addDiag)) {
                             if (title.empty()) title = L"Unknown Podcast";
-                            if (AddPodcastSubscription(title, addData.url) > 0) {
+                            if (AddPodcastSubscription(title, addData.url, L"", addData.username, addData.password) > 0) {
                                 RefreshPodcastSubsList(hwnd);
                                 Speak("Podcast added");
+                            } else if (UpdatePodcastAuth(addData.url, addData.username, addData.password)) {
+                                // Already subscribed — treat re-adding as updating the stored credentials
+                                RefreshPodcastSubsList(hwnd);
+                                Speak("Already subscribed, credentials updated");
                             } else {
                                 Speak("Already subscribed or failed");
                             }
@@ -5754,7 +5843,8 @@ static INT_PTR CALLBACK PodcastDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         int sel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_PODCAST_SUBS_LIST), LB_GETCURSEL, 0, 0));
                         if (sel >= 0 && sel < static_cast<int>(g_podcastSubs.size())) {
                             g_currentPodcastId = g_podcastSubs[sel].id;
-                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl);
+                            LoadPodcastEpisodes(hwnd, g_podcastSubs[sel].feedUrl,
+                                                g_podcastSubs[sel].username, g_podcastSubs[sel].password);
                             SetFocus(GetDlgItem(hwnd, IDC_PODCAST_EPISODES));
                         }
                     }

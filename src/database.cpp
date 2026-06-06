@@ -154,6 +154,12 @@ bool InitDatabase() {
     sqlite3_exec(g_db, "ALTER TABLE podcast_subscriptions ADD COLUMN sort_order INTEGER DEFAULT 0;",
                  nullptr, nullptr, nullptr);
 
+    // Migration: Add Basic auth credentials to podcast_subscriptions for password-protected feeds
+    sqlite3_exec(g_db, "ALTER TABLE podcast_subscriptions ADD COLUMN username TEXT DEFAULT '';",
+                 nullptr, nullptr, nullptr);
+    sqlite3_exec(g_db, "ALTER TABLE podcast_subscriptions ADD COLUMN password TEXT DEFAULT '';",
+                 nullptr, nullptr, nullptr);
+
     // Create song_history table (stream metadata capture)
     const char* songHistorySql =
         "CREATE TABLE IF NOT EXISTS song_history ("
@@ -446,16 +452,19 @@ bool ResetRadioSortOrder() {
 
 // Add a podcast subscription, returns the subscription ID or -1 on failure
 int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
-                           const std::wstring& imageUrl) {
+                           const std::wstring& imageUrl,
+                           const std::wstring& username, const std::wstring& password) {
     if (!g_db) return -1;
 
     std::string nameUtf8 = WideToUtf8(name);
     std::string feedUtf8 = WideToUtf8(feedUrl);
     std::string imageUtf8 = WideToUtf8(imageUrl);
+    std::string userUtf8 = WideToUtf8(username);
+    std::string passUtf8 = WideToUtf8(password);
 
     const char* sql =
-        "INSERT INTO podcast_subscriptions (name, feed_url, image_url, last_updated, sort_order) "
-        "VALUES (?, ?, ?, ?, (SELECT CASE WHEN MAX(sort_order) > 0 THEN MAX(sort_order) + 1 ELSE 0 END FROM podcast_subscriptions));";
+        "INSERT INTO podcast_subscriptions (name, feed_url, image_url, last_updated, sort_order, username, password) "
+        "VALUES (?, ?, ?, ?, (SELECT CASE WHEN MAX(sort_order) > 0 THEN MAX(sort_order) + 1 ELSE 0 END FROM podcast_subscriptions), ?, ?);";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -463,6 +472,8 @@ int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl
         sqlite3_bind_text(stmt, 2, feedUtf8.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, imageUtf8.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(time(nullptr)));
+        sqlite3_bind_text(stmt, 5, userUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 6, passUtf8.c_str(), -1, SQLITE_TRANSIENT);
 
         if (sqlite3_step(stmt) == SQLITE_DONE) {
             sqlite3_finalize(stmt);
@@ -471,6 +482,28 @@ int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl
         sqlite3_finalize(stmt);
     }
     return -1;
+}
+
+// Update stored Basic auth credentials for an existing subscription (matched by feed URL)
+bool UpdatePodcastAuth(const std::wstring& feedUrl, const std::wstring& username, const std::wstring& password) {
+    if (!g_db) return false;
+
+    std::string feedUtf8 = WideToUtf8(feedUrl);
+    std::string userUtf8 = WideToUtf8(username);
+    std::string passUtf8 = WideToUtf8(password);
+
+    const char* sql = "UPDATE podcast_subscriptions SET username = ?, password = ? WHERE feed_url = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, userUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, passUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, feedUtf8.c_str(), -1, SQLITE_TRANSIENT);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE && sqlite3_changes(g_db) > 0;
+    }
+    return false;
 }
 
 // Remove a podcast subscription by ID
@@ -531,7 +564,7 @@ std::vector<PodcastSubscription> GetPodcastSubscriptions() {
     std::vector<PodcastSubscription> subscriptions;
     if (!g_db) return subscriptions;
 
-    const char* sql = "SELECT id, name, feed_url, image_url, last_updated, sort_order "
+    const char* sql = "SELECT id, name, feed_url, image_url, last_updated, sort_order, username, password "
                       "FROM podcast_subscriptions ORDER BY sort_order ASC, name COLLATE NOCASE ASC;";
 
     sqlite3_stmt* stmt = nullptr;
@@ -551,6 +584,12 @@ std::vector<PodcastSubscription> GetPodcastSubscriptions() {
 
             ps.lastUpdated = sqlite3_column_int64(stmt, 4);
             ps.sortOrder = sqlite3_column_int(stmt, 5);
+
+            const char* userUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+            ps.username = Utf8ToWide(userUtf8 ? userUtf8 : "");
+
+            const char* passUtf8 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+            ps.password = Utf8ToWide(passUtf8 ? passUtf8 : "");
 
             subscriptions.push_back(ps);
         }

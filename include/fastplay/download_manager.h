@@ -13,6 +13,7 @@ struct DownloadItem {
     std::wstring url;
     std::wstring destPath;
     std::wstring title;
+    std::wstring headers;   // extra HTTP request headers (e.g. Authorization for protected feeds)
     HANDLE thread;
 };
 
@@ -26,8 +27,10 @@ public:
     std::function<void()> onQueueChanged;
 
     // Queue management
-    void Enqueue(const std::wstring& url, const std::wstring& destPath, const std::wstring& title);
-    void EnqueueMultiple(const std::vector<std::tuple<std::wstring, std::wstring, std::wstring>>& items);
+    void Enqueue(const std::wstring& url, const std::wstring& destPath, const std::wstring& title,
+                 const std::wstring& headers = L"");
+    void EnqueueMultiple(const std::vector<std::tuple<std::wstring, std::wstring, std::wstring>>& items,
+                         const std::wstring& headers = L"");
     void CancelAll();
 
     // Status

@@ -11,6 +11,7 @@ struct DownloadThreadParams {
     int id;
     std::wstring url;
     std::wstring destPath;
+    std::wstring headers;   // extra HTTP request headers (e.g. Authorization)
 };
 
 // Download thread function
@@ -38,7 +39,9 @@ static DWORD WINAPI DownloadThread(LPVOID lpParam) {
         InternetSetOptionW(hInternet, INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
 
         DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
-        HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), nullptr, 0, flags, 0);
+        const wchar_t* headers = params->headers.empty() ? nullptr : params->headers.c_str();
+        DWORD headersLen = params->headers.empty() ? 0 : static_cast<DWORD>(params->headers.size());
+        HINTERNET hUrl = InternetOpenUrlW(hInternet, params->url.c_str(), headers, headersLen, flags, 0);
         if (hUrl) {
             FILE* file = _wfopen(params->destPath.c_str(), L"wb");
             if (file) {
@@ -78,7 +81,8 @@ DownloadManager::~DownloadManager() {
     DeleteCriticalSection(&m_cs);
 }
 
-void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destPath, const std::wstring& title) {
+void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destPath, const std::wstring& title,
+                              const std::wstring& headers) {
     EnterCriticalSection(&m_cs);
 
     // Check if already queued or downloading
@@ -106,6 +110,7 @@ void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destP
     item.url = url;
     item.destPath = destPath;
     item.title = title;
+    item.headers = headers;
     item.thread = nullptr;
 
     m_queue.push_back(item);
@@ -121,7 +126,8 @@ void DownloadManager::Enqueue(const std::wstring& url, const std::wstring& destP
     ProcessQueue();
 }
 
-void DownloadManager::EnqueueMultiple(const std::vector<std::tuple<std::wstring, std::wstring, std::wstring>>& items) {
+void DownloadManager::EnqueueMultiple(const std::vector<std::tuple<std::wstring, std::wstring, std::wstring>>& items,
+                                      const std::wstring& headers) {
     EnterCriticalSection(&m_cs);
 
     // Reset batch tracking
@@ -153,6 +159,7 @@ void DownloadManager::EnqueueMultiple(const std::vector<std::tuple<std::wstring,
         item.url = url;
         item.destPath = destPath;
         item.title = title;
+        item.headers = headers;
         item.thread = nullptr;
 
         m_queue.push_back(item);
@@ -220,6 +227,7 @@ void DownloadManager::StartDownload(DownloadItem& item) {
     params->id = item.id;
     params->url = item.url;
     params->destPath = item.destPath;
+    params->headers = item.headers;
 
     item.thread = CreateThread(nullptr, 0, DownloadThread, params, 0, nullptr);
     if (!item.thread) {
