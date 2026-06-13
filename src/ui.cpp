@@ -3827,6 +3827,22 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     if (GetOpenFileNameW(&ofn)) {
                         std::wstring playlistPath = szFile;
                         int imported = 0;
+                        int skipped = 0;
+                        // Track imported station ids in file order so we can preserve that
+                        // order (e.g. an order previously arranged and exported to M3U).
+                        std::vector<int> importedIds;
+
+                        // Skip URLs that are already saved (or repeated within the file), so
+                        // re-importing an exported playlist doesn't create duplicates. Keyed
+                        // on a lowercased URL for robustness against case differences.
+                        std::set<std::wstring> seenUrls;
+                        auto urlKey = [](std::wstring u) {
+                            while (!u.empty() && (u.front() == L' ' || u.front() == L'\t')) u.erase(0, 1);
+                            while (!u.empty() && (u.back() == L' ' || u.back() == L'\t')) u.pop_back();
+                            for (auto& c : u) c = towlower(c);
+                            return u;
+                        };
+                        for (const auto& s : GetRadioFavorites()) seenUrls.insert(urlKey(s.url));
 
                         // Determine file type and parse
                         std::wstring ext = playlistPath.substr(playlistPath.find_last_of(L'.'));
@@ -3851,8 +3867,16 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                                 GetPrivateProfileStringW(L"playlist", titleKey, L"", title, 512, playlistPath.c_str());
                                 std::wstring name = title[0] ? title : url;
 
-                                if (AddRadioStation(name, url) >= 0) {
+                                std::wstring key = urlKey(url);
+                                if (!seenUrls.insert(key).second) {
+                                    skipped++;
+                                    continue;
+                                }
+
+                                int sid = AddRadioStation(name, url);
+                                if (sid >= 0) {
                                     imported++;
+                                    importedIds.push_back(sid);
                                 }
                             }
                         } else {
@@ -3916,8 +3940,16 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                                     if (_wcsnicmp(wline.c_str(), L"http://", 7) == 0 ||
                                         _wcsnicmp(wline.c_str(), L"https://", 8) == 0) {
                                         std::wstring name = pendingName.empty() ? wline : pendingName;
-                                        if (AddRadioStation(name, wline) >= 0) {
+                                        std::wstring key = urlKey(wline);
+                                        if (!seenUrls.insert(key).second) {
+                                            skipped++;
+                                            pendingName.clear();
+                                            continue;
+                                        }
+                                        int sid = AddRadioStation(name, wline);
+                                        if (sid >= 0) {
                                             imported++;
+                                            importedIds.push_back(sid);
                                         }
                                     }
                                     pendingName.clear();
@@ -3927,10 +3959,20 @@ static INT_PTR CALLBACK RadioDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                         }
 
                         if (imported > 0) {
+                            // Preserve the playlist's file order. Without this the imported
+                            // stations all get sort_order 0 and fall back to alphabetical,
+                            // so a previously-arranged, exported order would be lost on import.
+                            AppendRadioSortOrder(importedIds);
                             RefreshRadioList(hwnd);
-                            wchar_t msg[64];
-                            swprintf(msg, 64, L"Imported %d stations", imported);
+                            wchar_t msg[80];
+                            if (skipped > 0) {
+                                swprintf(msg, 80, L"Imported %d stations, %d already present", imported, skipped);
+                            } else {
+                                swprintf(msg, 80, L"Imported %d stations", imported);
+                            }
                             Speak(WideToUtf8(msg).c_str());
+                        } else if (skipped > 0) {
+                            Speak("All stations already present");
                         } else {
                             Speak("No stations found to import");
                         }

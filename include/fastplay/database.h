@@ -122,6 +122,7 @@ bool UpdateRadioStation(int id, const std::wstring& newName, const std::wstring&
 std::vector<RadioStation> GetRadioFavorites();
 bool UpdateRadioSortOrders(const std::vector<RadioStation>& stations);
 bool ResetRadioSortOrder();
+bool AppendRadioSortOrder(const std::vector<int>& orderedIds);
 
 // Podcast subscription operations
 int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,

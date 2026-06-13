@@ -450,6 +450,35 @@ bool ResetRadioSortOrder() {
                         nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
+// Assign sequential sort_order values to the given station ids, in vector order,
+// starting just after the current maximum. Used by playlist import so imported
+// stations keep their file order instead of collapsing to alphabetical when no
+// manual order has been set yet (all existing sort_order = 0).
+bool AppendRadioSortOrder(const std::vector<int>& orderedIds) {
+    if (!g_db || orderedIds.empty()) return false;
+
+    int base = 0;
+    sqlite3_stmt* maxStmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, "SELECT COALESCE(MAX(sort_order), 0) FROM radio_favorites;",
+                           -1, &maxStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(maxStmt) == SQLITE_ROW) base = sqlite3_column_int(maxStmt, 0);
+        sqlite3_finalize(maxStmt);
+    }
+
+    const char* sql = "UPDATE radio_favorites SET sort_order = ? WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+    for (size_t i = 0; i < orderedIds.size(); i++) {
+        sqlite3_reset(stmt);
+        sqlite3_bind_int(stmt, 1, base + 1 + static_cast<int>(i));
+        sqlite3_bind_int(stmt, 2, orderedIds[i]);
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+    return true;
+}
+
 // Add a podcast subscription, returns the subscription ID or -1 on failure
 int AddPodcastSubscription(const std::wstring& name, const std::wstring& feedUrl,
                            const std::wstring& imageUrl,
