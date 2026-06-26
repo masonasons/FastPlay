@@ -520,11 +520,12 @@ static void CALLBACK VolumeDSPProc(HDSP handle, DWORD channel, void* buffer, DWO
     if (g_legacyVolume) return;
 
     float volume = g_muted ? 0.0f : g_volume;
-    if (volume == 1.0f) return; // No processing needed at full volume
 
     // Apply perceptual volume curve (quadratic) to match BASS_ATTRIB_VOL behavior
-    // This makes lower volumes feel more gradual and natural
-    float curvedVolume = volume * volume;
+    // This makes lower volumes feel more gradual and natural, then fold in the
+    // ReplayGain multiplier so loudness normalization applies in normal volume mode.
+    float curvedVolume = volume * volume * g_replayGainScale;
+    if (curvedVolume == 1.0f) return; // No processing needed
 
     BASS_CHANNELINFO info;
     if (!BASS_ChannelGetInfo(channel, &info)) return;
@@ -743,7 +744,7 @@ void ApplyDSPEffects() {
     // Legacy volume mode - apply volume directly to stream attribute
     // This must be done every time a new stream is created
     if (g_legacyVolume) {
-        float curvedVolume = g_muted ? 0.0f : (g_volume * g_volume);
+        float curvedVolume = (g_muted ? 0.0f : (g_volume * g_volume)) * g_replayGainScale;
         BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, curvedVolume);
     }
 
@@ -824,7 +825,7 @@ void SetParamValue(ParamId id, float value) {
             // In legacy mode, apply via BASS_ATTRIB_VOL
             // In normal mode, volume DSP automatically uses updated g_volume
             if (g_legacyVolume && g_fxStream) {
-                float curvedVolume = g_muted ? 0.0f : (g_volume * g_volume);
+                float curvedVolume = (g_muted ? 0.0f : (g_volume * g_volume)) * g_replayGainScale;
                 BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, curvedVolume);
             }
             break;

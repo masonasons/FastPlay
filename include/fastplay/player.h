@@ -37,6 +37,7 @@ int GetCurrentChapterIndex();
 // Volume
 void SetVolume(float vol);
 void ToggleMute();
+void RefreshReplayGain();  // Recompute and re-apply ReplayGain for the current track (after settings change)
 
 // Track navigation
 void NextTrack(bool autoPlay = true);

@@ -71,6 +71,12 @@ void LoadSettings() {
     g_volumeStep = GetPrivateProfileIntW(L"Playback", L"VolumeStep", 2, g_configPath.c_str()) / 100.0f;
     if (g_volumeStep < 0.01f) g_volumeStep = 0.01f;
     if (g_volumeStep > 0.25f) g_volumeStep = 0.25f;
+    g_replayGainMode = GetPrivateProfileIntW(L"Playback", L"ReplayGainMode", 0, g_configPath.c_str());
+    if (g_replayGainMode < 0 || g_replayGainMode > 2) g_replayGainMode = 0;
+    g_replayGainPreamp = GetPrivateProfileIntW(L"Playback", L"ReplayGainPreamp", 0, g_configPath.c_str()) / 100.0f;
+    if (g_replayGainPreamp < -15.0f) g_replayGainPreamp = -15.0f;
+    if (g_replayGainPreamp > 15.0f) g_replayGainPreamp = 15.0f;
+    g_replayGainPreventClip = GetPrivateProfileIntW(L"Playback", L"ReplayGainPreventClip", 1, g_configPath.c_str()) != 0;
     g_showTitleInWindow = GetPrivateProfileIntW(L"Playback", L"ShowTitleInWindow", 1, g_configPath.c_str()) != 0;
     g_volume = GetPrivateProfileIntW(L"Playback", L"Volume", 100, g_configPath.c_str()) / 100.0f;
 
@@ -409,6 +415,12 @@ void SaveSettings() {
     swprintf(buf, 32, L"%d", static_cast<int>(g_volumeStep * 100 + 0.5f));
     WritePrivateProfileStringW(L"Playback", L"VolumeStep", buf, g_configPath.c_str());
     WritePrivateProfileStringW(L"Playback", L"ShowTitleInWindow", g_showTitleInWindow ? L"1" : L"0", g_configPath.c_str());
+
+    swprintf(buf, 32, L"%d", g_replayGainMode);
+    WritePrivateProfileStringW(L"Playback", L"ReplayGainMode", buf, g_configPath.c_str());
+    swprintf(buf, 32, L"%d", static_cast<int>(g_replayGainPreamp * 100 + (g_replayGainPreamp >= 0 ? 0.5f : -0.5f)));
+    WritePrivateProfileStringW(L"Playback", L"ReplayGainPreamp", buf, g_configPath.c_str());
+    WritePrivateProfileStringW(L"Playback", L"ReplayGainPreventClip", g_replayGainPreventClip ? L"1" : L"0", g_configPath.c_str());
 
     swprintf(buf, 32, L"%d", static_cast<int>(g_volume * 100 + 0.5f));
     WritePrivateProfileStringW(L"Playback", L"Volume", buf, g_configPath.c_str());

@@ -49,6 +49,12 @@ extern bool g_muted;          // Muted state (recording still works)
 extern bool g_legacyVolume;   // Use legacy volume (faster, but affects recordings)
 extern bool g_disableBatchDelay; // Skip batch delay when opening files from explorer
 
+// ReplayGain (loudness normalization from REPLAYGAIN_* / R128 tags)
+extern int g_replayGainMode;        // 0 = Off, 1 = Track, 2 = Album (album falls back to track)
+extern float g_replayGainPreamp;    // Extra gain in dB applied on top of the tag value
+extern bool g_replayGainPreventClip; // Reduce gain using the peak tag to avoid clipping
+extern float g_replayGainScale;     // Computed linear multiplier for the current track (1.0 = no change)
+
 // Effect state (for BASS_FX)
 extern float g_tempo;
 extern float g_pitch;

@@ -61,12 +61,12 @@ BEGIN
     END
 END
 
-IDD_OPTIONS DIALOGEX 0, 0, 280, 220
+IDD_OPTIONS DIALOGEX 0, 0, 280, 250
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Options"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    CONTROL         "", IDC_TAB, "SysTabControl32", WS_TABSTOP, 7, 7, 266, 185
+    CONTROL         "", IDC_TAB, "SysTabControl32", WS_TABSTOP, 7, 7, 266, 215
 
     // Playback tab controls (shown when tab 0 selected)
     LTEXT           "&Output device:", -1, 17, 30, 55, 10
@@ -88,6 +88,11 @@ BEGIN
     EDITTEXT        IDC_REWIND_ON_PAUSE, 250, 143, 30, 14, ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Volu&me step:", -1, 160, 118, 50, 10
     COMBOBOX        IDC_VOLUME_STEP, 215, 116, 55, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Replay&Gain:", IDC_REPLAYGAIN_MODE_LABEL, 17, 200, 45, 10
+    COMBOBOX        IDC_REPLAYGAIN_MODE, 64, 198, 70, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Pre&amp (dB):", IDC_REPLAYGAIN_PREAMP_LABEL, 145, 200, 48, 10
+    EDITTEXT        IDC_REPLAYGAIN_PREAMP, 195, 198, 28, 14, ES_AUTOHSCROLL
+    AUTOCHECKBOX    "Prevent clippin&g", IDC_REPLAYGAIN_CLIP, 17, 216, 130, 10
 
     // Recording tab controls (shown when tab 1 selected)
     LTEXT           "Record audio output to file. Press R to toggle recording.", -1, 17, 30, 230, 10
@@ -232,8 +237,8 @@ BEGIN
     LTEXT           "(1-1000, default 128)", -1, 155, 82, 90, 10
     AUTOCHECKBOX    "Use s&inc interpolation (higher quality, more CPU)", IDC_MIDI_SINC, 17, 100, 220, 10
 
-    DEFPUSHBUTTON   "OK", IDOK, 169, 199, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 223, 199, 50, 14
+    DEFPUSHBUTTON   "OK", IDOK, 169, 229, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 223, 229, 50, 14
 END
 
 IDD_HOTKEY DIALOGEX 0, 0, 220, 80

@@ -833,7 +833,7 @@ void ShowTabControls(HWND hwnd, int tab) {
     //              6=Effects, 7=Advanced, 8=YouTube, 9=SoundTouch, 10=Speedy, 11=Signalsmith, 12=MIDI
 
     // Playback tab controls (tab 0)
-    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_MULTI_INSTANCE, IDC_REGISTER_FILE_TYPES, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL};
+    int playbackCtrls[] = {IDC_SOUNDCARD, IDC_ALLOW_AMPLIFY, IDC_REMEMBER_STATE, IDC_REMEMBER_POS, IDC_BRING_TO_FRONT, IDC_LOAD_FOLDER, IDC_MINIMIZE_TO_TRAY, IDC_VOLUME_STEP, IDC_SHOW_TITLE, IDC_AUTO_ADVANCE, IDC_PLAYLIST_FOLLOW, IDC_CHECK_UPDATES, IDC_MULTI_INSTANCE, IDC_REGISTER_FILE_TYPES, IDC_DOWNLOAD_PATH, IDC_DOWNLOAD_BROWSE, IDC_REWIND_ON_PAUSE, IDC_REWIND_LABEL, IDC_REPLAYGAIN_MODE, IDC_REPLAYGAIN_MODE_LABEL, IDC_REPLAYGAIN_PREAMP, IDC_REPLAYGAIN_PREAMP_LABEL, IDC_REPLAYGAIN_CLIP};
     // Recording tab controls (tab 1)
     int recordingCtrls[] = {IDC_REC_PATH, IDC_REC_BROWSE, IDC_REC_TEMPLATE, IDC_REC_FORMAT, IDC_REC_BITRATE};
     // Downloads tab controls (tab 2)
@@ -1039,6 +1039,23 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     }
                 }
                 SendMessageW(hVolStepCombo, CB_SETCURSEL, stepIndex, 0);
+            }
+
+            // Populate ReplayGain controls
+            {
+                HWND hRgCombo = GetDlgItem(hwnd, IDC_REPLAYGAIN_MODE);
+                const wchar_t* rgLabels[] = {L"Off", L"Track", L"Album"};
+                for (int i = 0; i < 3; i++) {
+                    SendMessageW(hRgCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(rgLabels[i]));
+                }
+                int rgMode = (g_replayGainMode >= 0 && g_replayGainMode <= 2) ? g_replayGainMode : 0;
+                SendMessageW(hRgCombo, CB_SETCURSEL, rgMode, 0);
+
+                wchar_t preampBuf[32];
+                swprintf(preampBuf, 32, L"%g", g_replayGainPreamp);
+                SetDlgItemTextW(hwnd, IDC_REPLAYGAIN_PREAMP, preampBuf);
+
+                CheckDlgButton(hwnd, IDC_REPLAYGAIN_CLIP, g_replayGainPreventClip ? BST_CHECKED : BST_UNCHECKED);
             }
 
             // Populate remember position combo box
@@ -1348,6 +1365,24 @@ INT_PTR CALLBACK OptionsDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         if (volStepSel >= 0 && volStepSel < 7) {
                             g_volumeStep = stepValues[volStepSel] / 100.0f;
                         }
+                    }
+
+                    // Get ReplayGain settings
+                    {
+                        int rgSel = static_cast<int>(SendMessageW(GetDlgItem(hwnd, IDC_REPLAYGAIN_MODE), CB_GETCURSEL, 0, 0));
+                        if (rgSel >= 0 && rgSel <= 2) g_replayGainMode = rgSel;
+
+                        wchar_t preampBuf[32];
+                        GetDlgItemTextW(hwnd, IDC_REPLAYGAIN_PREAMP, preampBuf, 32);
+                        float preamp = static_cast<float>(_wtof(preampBuf));
+                        if (preamp < -15.0f) preamp = -15.0f;
+                        if (preamp > 15.0f) preamp = 15.0f;
+                        g_replayGainPreamp = preamp;
+
+                        g_replayGainPreventClip = (IsDlgButtonChecked(hwnd, IDC_REPLAYGAIN_CLIP) == BST_CHECKED);
+
+                        // Re-apply to the currently playing track so the change is audible immediately
+                        RefreshReplayGain();
                     }
 
                     // Get remember position threshold

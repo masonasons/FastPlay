@@ -19,11 +19,66 @@
 #include <shlobj.h>
 #include <map>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 
 // Forward declarations for tag reading helpers (defined later in file)
 static std::string GetMetadataTag(HSTREAM stream, const char* tagName);
 static std::string GetStreamTitle(HSTREAM stream);
 static std::string GetTrimmedTag(const char* data, size_t maxLen);
+static std::string GetID3v2UserText(const unsigned char* tag, const char* desc);
+
+// Read a ReplayGain tag value by name, trying the standard tag lists first
+// (Vorbis/APE/MP4/WMA) and then ID3v2 TXXX frames (common for MP3).
+static std::string GetReplayGainTag(HSTREAM stream, const char* name) {
+    std::string v = GetMetadataTag(stream, name);
+    if (!v.empty()) return v;
+    const unsigned char* id3v2 = (const unsigned char*)BASS_ChannelGetTags(stream, BASS_TAG_ID3V2);
+    if (id3v2) return GetID3v2UserText(id3v2, name);
+    return "";
+}
+
+// Compute the linear ReplayGain multiplier for a freshly-loaded source stream and
+// store it in g_replayGainScale. Reads REPLAYGAIN_TRACK_GAIN / REPLAYGAIN_ALBUM_GAIN
+// (and the matching _PEAK tags) which BASS exposes through Vorbis/APE/MP4/WMA/ID3v2
+// comments. Returns 1.0 (no change) when disabled or when the file has no gain tag,
+// so untagged files and live streams play untouched.
+static void ComputeReplayGainScale(HSTREAM stream) {
+    g_replayGainScale = 1.0f;
+    if (g_replayGainMode == 0 || !stream) return;
+
+    std::string gainStr, peakStr;
+    if (g_replayGainMode == 2) {
+        // Album mode, falling back to track gain when no album tag is present.
+        gainStr = GetReplayGainTag(stream, "REPLAYGAIN_ALBUM_GAIN");
+        peakStr = GetReplayGainTag(stream, "REPLAYGAIN_ALBUM_PEAK");
+        if (gainStr.empty()) {
+            gainStr = GetReplayGainTag(stream, "REPLAYGAIN_TRACK_GAIN");
+            peakStr = GetReplayGainTag(stream, "REPLAYGAIN_TRACK_PEAK");
+        }
+    } else {
+        gainStr = GetReplayGainTag(stream, "REPLAYGAIN_TRACK_GAIN");
+        peakStr = GetReplayGainTag(stream, "REPLAYGAIN_TRACK_PEAK");
+    }
+
+    if (gainStr.empty()) return;  // No ReplayGain info: leave the file untouched.
+
+    // Tag values look like "-6.48 dB"; strtod reads the leading number and stops at the space.
+    float gainDb = static_cast<float>(strtod(gainStr.c_str(), nullptr));
+    gainDb += g_replayGainPreamp;
+
+    float scale = powf(10.0f, gainDb / 20.0f);
+
+    // Avoid clipping by capping the gain so the (tagged) peak stays at or below full scale.
+    if (g_replayGainPreventClip && !peakStr.empty()) {
+        float peak = static_cast<float>(strtod(peakStr.c_str(), nullptr));
+        if (peak > 0.0f && scale * peak > 1.0f) {
+            scale = 1.0f / peak;
+        }
+    }
+
+    if (scale > 0.0f) g_replayGainScale = scale;
+}
 
 // Global SoundFont handle for MIDI playback
 static HSOUNDFONT g_hSoundFont = 0;
@@ -468,6 +523,9 @@ bool LoadURL(const wchar_t* url) {
     // Set larger playback buffer for streams (helps prevent choppiness during long playback)
     BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_BUFFER, 1.0f);  // 1 second buffer
 
+    // Compute ReplayGain from tags (live streams normally have none, so this stays 1.0)
+    ComputeReplayGainScale(g_sourceStream ? g_sourceStream : g_fxStream);
+
     // Apply DSP effects (including volume DSP which handles g_volume/g_muted)
     ApplyDSPEffects();
 
@@ -858,6 +916,9 @@ bool LoadFile(const wchar_t* path) {
         BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_FREQ, g_originalFreq * g_rate);
     }
 
+    // Compute ReplayGain from the file's tags before the volume DSP is attached
+    ComputeReplayGainScale(g_sourceStream ? g_sourceStream : g_fxStream);
+
     // Apply DSP effects (including volume DSP which handles g_volume/g_muted)
     ApplyDSPEffects();
 
@@ -1210,7 +1271,7 @@ void SetVolume(float vol) {
     // In legacy mode, use BASS_ATTRIB_VOL (faster but affects recordings)
     // In normal mode, volume DSP automatically uses updated g_volume
     if (g_legacyVolume && g_fxStream) {
-        float curvedVolume = vol * vol;  // Apply perceptual curve
+        float curvedVolume = vol * vol * g_replayGainScale;  // Apply perceptual curve + ReplayGain
         BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, curvedVolume);
     }
 
@@ -1234,7 +1295,7 @@ void ToggleMute() {
         if (g_muted) {
             BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, 0.0f);
         } else {
-            float curvedVolume = g_volume * g_volume;
+            float curvedVolume = g_volume * g_volume * g_replayGainScale;
             BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, curvedVolume);
         }
     }
@@ -1242,6 +1303,19 @@ void ToggleMute() {
 
     Speak(g_muted ? "Muted" : "Unmuted");
     UpdateStatusBar();
+}
+
+// Recompute ReplayGain for the currently playing track and re-apply it immediately,
+// so changing the ReplayGain options takes effect without restarting the track.
+void RefreshReplayGain() {
+    ComputeReplayGainScale(g_sourceStream ? g_sourceStream : g_fxStream);
+
+    // In normal volume mode the volume DSP reads g_replayGainScale on the fly. In legacy
+    // mode the gain is baked into BASS_ATTRIB_VOL, so push the updated value now.
+    if (g_legacyVolume && g_fxStream) {
+        float curvedVolume = (g_muted ? 0.0f : (g_volume * g_volume)) * g_replayGainScale;
+        BASS_ChannelSetAttribute(g_fxStream, BASS_ATTRIB_VOL, curvedVolume);
+    }
 }
 
 // Speak elapsed time
@@ -1681,6 +1755,64 @@ static std::string GetID3v2Frame(const unsigned char* tag, const char* frameId) 
         pos += frameSize;
     }
 
+    return "";
+}
+
+// Get the value of an ID3v2 TXXX (user-defined text) frame by its description,
+// e.g. description "REPLAYGAIN_TRACK_GAIN" -> value "-6.48 dB". Handles Latin-1
+// and UTF-8 encoded frames (which is what ReplayGain taggers use); UTF-16 TXXX
+// frames are skipped. Comparison is case-insensitive.
+static std::string GetID3v2UserText(const unsigned char* tag, const char* desc) {
+    if (!tag || !desc) return "";
+    if (tag[0] != 'I' || tag[1] != 'D' || tag[2] != '3') return "";
+
+    unsigned char version = tag[3];
+    unsigned char flags = tag[5];
+    size_t tagSize = ((tag[6] & 0x7F) << 21) | ((tag[7] & 0x7F) << 14) |
+                     ((tag[8] & 0x7F) << 7) | (tag[9] & 0x7F);
+
+    const unsigned char* pos = tag + 10;
+    const unsigned char* end = tag + 10 + tagSize;
+
+    if (flags & 0x40) {
+        size_t extSize = (pos[0] << 24) | (pos[1] << 16) | (pos[2] << 8) | pos[3];
+        pos += 4 + extSize;
+    }
+
+    while (pos < end - 10) {
+        char id[5] = {(char)pos[0], (char)pos[1], (char)pos[2], (char)pos[3], 0};
+        if (id[0] == 0) break;
+
+        size_t frameSize;
+        if (version >= 4) {
+            frameSize = ((pos[4] & 0x7F) << 21) | ((pos[5] & 0x7F) << 14) |
+                        ((pos[6] & 0x7F) << 7) | (pos[7] & 0x7F);
+        } else {
+            frameSize = (pos[4] << 24) | (pos[5] << 16) | (pos[6] << 8) | pos[7];
+        }
+        pos += 10;
+        if (frameSize == 0 || pos + frameSize > end) break;
+
+        if (strcmp(id, "TXXX") == 0 && frameSize >= 2) {
+            unsigned char enc = pos[0];
+            if (enc == 0 || enc == 3) {  // Latin-1 or UTF-8: description is single-byte, null-terminated
+                size_t i = 1;
+                while (i < frameSize && pos[i] != 0) i++;
+                std::string description((const char*)pos + 1, i - 1);
+                if (_stricmp(description.c_str(), desc) == 0) {
+                    size_t valStart = i + 1;
+                    if (valStart <= frameSize) {
+                        size_t valLen = frameSize - valStart;
+                        // Trim trailing nulls
+                        while (valLen > 0 && pos[valStart + valLen - 1] == 0) valLen--;
+                        return std::string((const char*)pos + valStart, valLen);
+                    }
+                }
+            }
+        }
+
+        pos += frameSize;
+    }
     return "";
 }
 

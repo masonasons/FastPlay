@@ -27,6 +27,12 @@ bool g_muted = false;      // Muted state (recording still works)
 bool g_legacyVolume = false;  // Use legacy volume (faster, but affects recordings)
 bool g_disableBatchDelay = false; // Skip batch delay when opening files from explorer
 
+// ReplayGain
+int g_replayGainMode = 0;          // Off by default (opt-in)
+float g_replayGainPreamp = 0.0f;
+bool g_replayGainPreventClip = true;
+float g_replayGainScale = 1.0f;    // No change until a track with tags is loaded
+
 // Effect state
 float g_tempo = 0.0f;
 float g_pitch = 0.0f;
