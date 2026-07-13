@@ -15,6 +15,10 @@ std::vector<std::wstring> ParsePlaylist(const std::wstring& playlistPath);
 // Returns the url unchanged if it's not a playlist URL or resolution fails.
 std::wstring ResolvePlaylistUrl(const std::wstring& url);
 
+// Resolve an HTTP(S) URL's redirects to its final target (headers only, no body).
+// Returns the url unchanged if it isn't http(s) or resolution fails.
+std::wstring ResolveHttpRedirects(const std::wstring& url);
+
 // Status bar
 void CreateStatusBar(HWND hwnd, HINSTANCE hInstance);
 void UpdateStatusBar();

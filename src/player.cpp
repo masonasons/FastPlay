@@ -411,26 +411,33 @@ bool LoadURL(const wchar_t* url) {
     // Convert URL to UTF-8 for BASS
     std::string urlUtf8 = WideToUtf8(playUrl);
 
-    // Create URL stream - try without BLOCK first (allows seeking for podcasts)
-    // BLOCK mode is only needed for live streams where seeking isn't expected
-    DWORD flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_SAMPLE_FLOAT;
+    // Create URL stream - try without BLOCK first (allows seeking for podcasts);
+    // BLOCK mode is only needed for live streams where seeking isn't expected.
+    // AAC first (handles raw AAC/M4A better), then generic, each in non-BLOCK
+    // then BLOCK mode.
+    auto tryCreateStream = [](const std::string& u) -> HSTREAM {
+        DWORD f = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_SAMPLE_FLOAT;
+        HSTREAM s = BASS_AAC_StreamCreateURL(u.c_str(), 0, f, nullptr, nullptr);
+        if (!s) s = BASS_StreamCreateURL(u.c_str(), 0, f, nullptr, nullptr);
+        if (!s) {
+            f = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK | BASS_SAMPLE_FLOAT;
+            s = BASS_AAC_StreamCreateURL(u.c_str(), 0, f, nullptr, nullptr);
+            if (!s) s = BASS_StreamCreateURL(u.c_str(), 0, f, nullptr, nullptr);
+        }
+        return s;
+    };
 
-    // Try BASS_AAC_StreamCreateURL first (handles raw AAC/M4A better)
-    g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
+    g_stream = tryCreateStream(urlUtf8);
 
-    // If AAC fails, try generic
+    // If BASS couldn't open it, the URL may redirect somewhere BASS won't follow
+    // (e.g. a podcast enclosure that 302s to a delivery-script URL). Resolve the
+    // redirect chain ourselves and retry with the final direct URL.
     if (!g_stream) {
-        g_stream = BASS_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
-    }
-
-    // If non-BLOCK fails, try with BLOCK (for live streams)
-    if (!g_stream) {
-        flags = BASS_STREAM_DECODE | BASS_STREAM_STATUS | BASS_STREAM_BLOCK | BASS_SAMPLE_FLOAT;
-        g_stream = BASS_AAC_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
-    }
-
-    if (!g_stream) {
-        g_stream = BASS_StreamCreateURL(urlUtf8.c_str(), 0, flags, nullptr, nullptr);
+        std::wstring finalUrl = ResolveHttpRedirects(resolvedUrl);
+        if (finalUrl != resolvedUrl) {
+            std::string finalUtf8 = WideToUtf8(finalUrl);
+            g_stream = tryCreateStream(finalUtf8);
+        }
     }
 
     if (!g_stream) {
