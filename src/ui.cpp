@@ -3112,6 +3112,36 @@ static std::vector<StreamOption> ResolveTuneInUrls(const std::wstring& playlistU
     return filtered;
 }
 
+// Resolve a remote playlist URL (.m3u/.pls/.m3u8) to a direct stream URL.
+// Used by the playback path so saved favorites or directly-opened URLs that
+// point at a playlist file get resolved to a real stream before reaching BASS
+// (which can't parse a playlist). Returns the url unchanged when it isn't a
+// playlist URL, or when the fetch/parse fails (so the caller can still try it).
+std::wstring ResolvePlaylistUrl(const std::wstring& url) {
+    if (!IsPlaylistUrl(url)) return url;
+
+    std::wstring currentUrl = url;
+    // Follow up to 3 nested playlist levels (a playlist can point at another).
+    for (int i = 0; i < 3; i++) {
+        std::wstring content = RadioHttpGet(currentUrl);
+        if (content.empty()) return url;  // Fetch failed - fall back to original.
+
+        std::string narrow = WideToUtf8(content);
+        std::vector<StreamOption> options = ParsePlaylistContentMultiple(narrow);
+
+        // Pick the first non-empty entry (playlists often list failover mirrors).
+        std::wstring next;
+        for (const auto& opt : options) {
+            if (!opt.url.empty()) { next = opt.url; break; }
+        }
+        if (next.empty()) return url;  // Couldn't parse - fall back to original.
+
+        if (IsPlaylistUrl(next)) { currentUrl = next; continue; }  // Nested playlist.
+        return next;  // Resolved to a direct stream.
+    }
+    return currentUrl;
+}
+
 // Search TuneIn API (returns OPML/XML)
 static bool SearchTuneIn(const std::wstring& query, std::vector<RadioSearchResult>& results) {
     results.clear();

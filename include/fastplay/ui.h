@@ -11,6 +11,10 @@
 bool IsPlaylistFile(const std::wstring& path);
 std::vector<std::wstring> ParsePlaylist(const std::wstring& playlistPath);
 
+// Resolve a remote playlist URL (.m3u/.pls/.m3u8) to a direct stream URL.
+// Returns the url unchanged if it's not a playlist URL or resolution fails.
+std::wstring ResolvePlaylistUrl(const std::wstring& url);
+
 // Status bar
 void CreateStatusBar(HWND hwnd, HINSTANCE hInstance);
 void UpdateStatusBar();

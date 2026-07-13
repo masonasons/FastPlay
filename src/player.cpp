@@ -401,8 +401,15 @@ bool LoadURL(const wchar_t* url) {
         g_stream = 0;
     }
 
+    // If the URL points at a playlist file (.m3u/.pls/.m3u8), resolve it to a
+    // direct stream URL first - BASS can't parse a playlist. This covers saved
+    // favorites and directly-opened URLs; the radio search path resolves
+    // separately. Falls back to the original URL if resolution fails.
+    std::wstring resolvedUrl = ResolvePlaylistUrl(url);
+    const wchar_t* playUrl = resolvedUrl.c_str();
+
     // Convert URL to UTF-8 for BASS
-    std::string urlUtf8 = WideToUtf8(url);
+    std::string urlUtf8 = WideToUtf8(playUrl);
 
     // Create URL stream - try without BLOCK first (allows seeking for podcasts)
     // BLOCK mode is only needed for live streams where seeking isn't expected
