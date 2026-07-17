@@ -1451,6 +1451,50 @@ void PlayTrack(int index, bool autoPlay) {
     g_isBusy = false;
 }
 
+// Shuffle playback order. Rather than picking a random track on every advance
+// (which makes small playlists replay the same handful of tracks before others
+// have played), we build a fixed random permutation of the playlist and walk it
+// in order, reshuffling only after every track has played once.
+static std::vector<int> g_shuffleOrder;   // permutation of playlist indices
+static int g_shufflePos = -1;             // index of the current track within g_shuffleOrder
+
+// Build a fresh Fisher-Yates shuffle of the current playlist. If startIndex is a
+// valid index it is moved to the front so the currently-playing track stays put.
+static void BuildShuffleOrder(int startIndex) {
+    int n = static_cast<int>(g_playlist.size());
+    g_shuffleOrder.resize(n);
+    for (int i = 0; i < n; i++) g_shuffleOrder[i] = i;
+    for (int i = n - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        std::swap(g_shuffleOrder[i], g_shuffleOrder[j]);
+    }
+    if (startIndex >= 0 && startIndex < n) {
+        for (int i = 0; i < n; i++) {
+            if (g_shuffleOrder[i] == startIndex) { std::swap(g_shuffleOrder[0], g_shuffleOrder[i]); break; }
+        }
+        g_shufflePos = 0;
+    } else {
+        g_shufflePos = -1;
+    }
+}
+
+// Make sure g_shufflePos points at g_currentTrack, rebuilding the order if it's
+// stale (playlist changed) or the user jumped to a track directly.
+static void SyncShufflePos() {
+    int n = static_cast<int>(g_playlist.size());
+    if (static_cast<int>(g_shuffleOrder.size()) != n || g_shufflePos < 0) {
+        BuildShuffleOrder(g_currentTrack);
+        return;
+    }
+    if (g_shufflePos >= n || g_shuffleOrder[g_shufflePos] != g_currentTrack) {
+        for (int i = 0; i < n; i++) {
+            if (g_shuffleOrder[i] == g_currentTrack) { g_shufflePos = i; return; }
+        }
+        // Current track not in the order at all - rebuild around it.
+        BuildShuffleOrder(g_currentTrack);
+    }
+}
+
 // Play next track
 void NextTrack(bool autoPlay) {
     if (g_playlist.empty() || g_isBusy) return;
@@ -1463,10 +1507,24 @@ void NextTrack(bool autoPlay) {
 
     int next;
     if (g_shuffle && g_playlist.size() > 1) {
-        // Random track (excluding current)
-        do {
-            next = rand() % static_cast<int>(g_playlist.size());
-        } while (next == g_currentTrack && g_playlist.size() > 1);
+        int n = static_cast<int>(g_playlist.size());
+        SyncShufflePos();
+        g_shufflePos++;
+        if (g_shufflePos >= n) {
+            // Whole playlist has played - reshuffle for the next cycle.
+            if (g_repeatMode == 2) {
+                int last = g_currentTrack;
+                BuildShuffleOrder(-1);
+                // Avoid repeating the just-played track as the first of the new cycle.
+                if (n > 1 && g_shuffleOrder[0] == last) std::swap(g_shuffleOrder[0], g_shuffleOrder[n - 1]);
+                g_shufflePos = 0;
+            } else {
+                // End of playlist - stop.
+                Stop();
+                return;
+            }
+        }
+        next = g_shuffleOrder[g_shufflePos];
     } else {
         next = g_currentTrack + 1;
         if (next >= static_cast<int>(g_playlist.size())) {
@@ -1508,8 +1566,20 @@ void PrevTrack() {
         }
     }
 
-    int prev = g_currentTrack - 1;
-    if (prev < 0) prev = 0;
+    int prev;
+    if (g_shuffle && g_playlist.size() > 1) {
+        // Walk the shuffle order backward so Previous retraces the shuffled path.
+        SyncShufflePos();
+        if (g_shufflePos > 0) {
+            g_shufflePos--;
+            prev = g_shuffleOrder[g_shufflePos];
+        } else {
+            prev = g_currentTrack;  // already at the start of the cycle
+        }
+    } else {
+        prev = g_currentTrack - 1;
+        if (prev < 0) prev = 0;
+    }
     PlayTrack(prev);
 }
 
@@ -2201,6 +2271,9 @@ void SpeakTagTitle() {
         SpeakUtf8(title);
     } else if (!artist.empty()) {
         SpeakUtf8(artist);
+    } else if (g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+        // No usable metadata - fall back to the filename
+        SpeakW(GetFileName(g_playlist[g_currentTrack]));
     } else {
         Speak("No title");
     }
