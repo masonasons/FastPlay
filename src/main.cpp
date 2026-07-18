@@ -344,6 +344,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     break;
                 case IDM_PLAY_SHUFFLE:
                     g_shuffle = !g_shuffle;
+                    if (g_shuffle) ResetShuffleOrder();  // fresh order each time shuffle is enabled
                     Speak(g_shuffle ? "Shuffle on" : "Shuffle off");
                     CheckMenuItem(GetMenu(hwnd), IDM_PLAY_SHUFFLE, g_shuffle ? MF_CHECKED : MF_UNCHECKED);
                     SaveSettings();
@@ -646,6 +647,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 // Entry point
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    // Seed the RNG so shuffle order differs between runs (rand() is otherwise
+    // deterministic and would produce the same "random" order every launch).
+    srand(GetTickCount());
+
     // Set DLL search path to lib subfolder (must be before any DLL loads)
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);

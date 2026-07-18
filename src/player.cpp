@@ -1366,11 +1366,35 @@ void SpeakTotal() {
 }
 
 // Play a specific track by index
+// Shuffle playback order. Rather than picking a random track on every advance
+// (which makes small playlists replay the same handful of tracks before others
+// have played), we build a fixed random permutation of the playlist and walk it
+// in order, reshuffling only after every track has played once.
+static std::vector<int> g_shuffleOrder;   // permutation of playlist indices
+static int g_shufflePos = -1;             // index of the current track within g_shuffleOrder
+static bool g_shuffleAdvance = false;     // set by Next/PrevTrack so PlayTrack keeps the current order
+
+// Discard the current shuffle order so the next advance builds a fresh one.
+// Called when shuffle is toggled on and when a new playlist/selection loads,
+// so a fresh random order is produced instead of replaying the last one.
+void ResetShuffleOrder() {
+    g_shuffleOrder.clear();
+    g_shufflePos = -1;
+}
+
 void PlayTrack(int index, bool autoPlay) {
+    // Consume the advance flag up front so it never leaks past an early return.
+    bool advancing = g_shuffleAdvance;
+    g_shuffleAdvance = false;
+
     if (g_isBusy) return;  // Prevent re-entrancy
     if (index < 0 || index >= static_cast<int>(g_playlist.size())) {
         return;
     }
+
+    // A direct selection or a freshly loaded playlist starts a new shuffle cycle;
+    // only Next/Prev advances keep the existing order.
+    if (!advancing) ResetShuffleOrder();
 
     g_isBusy = true;
 
@@ -1451,13 +1475,6 @@ void PlayTrack(int index, bool autoPlay) {
     g_isBusy = false;
 }
 
-// Shuffle playback order. Rather than picking a random track on every advance
-// (which makes small playlists replay the same handful of tracks before others
-// have played), we build a fixed random permutation of the playlist and walk it
-// in order, reshuffling only after every track has played once.
-static std::vector<int> g_shuffleOrder;   // permutation of playlist indices
-static int g_shufflePos = -1;             // index of the current track within g_shuffleOrder
-
 // Build a fresh Fisher-Yates shuffle of the current playlist. If startIndex is a
 // valid index it is moved to the front so the currently-playing track stays put.
 static void BuildShuffleOrder(int startIndex) {
@@ -1501,6 +1518,7 @@ void NextTrack(bool autoPlay) {
 
     // Repeat one: restart current track
     if (g_repeatMode == 1 && g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size())) {
+        g_shuffleAdvance = true;
         PlayTrack(g_currentTrack, autoPlay);
         return;
     }
@@ -1538,6 +1556,7 @@ void NextTrack(bool autoPlay) {
             }
         }
     }
+    g_shuffleAdvance = true;
     PlayTrack(next, autoPlay);
 }
 
@@ -1580,6 +1599,7 @@ void PrevTrack() {
         prev = g_currentTrack - 1;
         if (prev < 0) prev = 0;
     }
+    g_shuffleAdvance = true;
     PlayTrack(prev);
 }
 

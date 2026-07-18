@@ -44,6 +44,7 @@ void NextTrack(bool autoPlay = true);
 void PrevTrack();
 void PlayTrack(int index, bool autoPlay = true);
 void ToggleRepeatMode();
+void ResetShuffleOrder();  // Discard the current shuffle order (fresh shuffle on next advance)
 
 // Track end callback
 void CALLBACK OnTrackEnd(HSYNC handle, DWORD channel, DWORD data, void* user);
