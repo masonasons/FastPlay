@@ -656,6 +656,47 @@ size_t JsonContainerEnd(const std::wstring& json, size_t start) {
 	return std::wstring::npos;
 }
 
+// JSON keeps tabs, newlines and quotes in titles/descriptions from changing the
+// boundaries of the printed fields. Numeric fields are printed as strings too.
+const wchar_t* const kMediaFormat =
+	L"{\"title\":%(title|null)j,\"url\":%(url|null)j,\"channel\":%(channel,uploader|null)j,"
+	L"\"artist\":%(artist,creator,channel,uploader|null)j,\"album\":%(album|null)j,"
+	L"\"year\":\"%(release_year,release_date>%Y,upload_date>%Y|)s\","
+	L"\"track\":\"%(track_number|)s\",\"genre\":%(genre|null)j,\"description\":%(description|null)j,"
+	L"\"duration\":\"%(duration|)s\",\"bitrate\":\"%(abr|)s\",\"live_status\":%(live_status|null)j}";
+
+bool ReadPreparedMedia(const std::string& output, YouTubeMedia& media) {
+	std::istringstream lines(output);
+	std::string line;
+	while (std::getline(lines, line)) {
+		std::wstring json = Utf8ToWide(line);
+		size_t start = json.find_first_not_of(L" \t\r");
+		if (start == std::wstring::npos || json[start] != L'{' ||
+			JsonContainerEnd(json, start) == std::wstring::npos) continue;
+		std::wstring title = ParseJsonString(json, L"title");
+		if (title.empty()) continue;
+		media = YouTubeMedia();
+		media.title = title;
+		media.url = ParseJsonString(json, L"url");
+		media.channel = ParseJsonString(json, L"channel");
+		media.metadata.tags["TITLE"] = WideToUtf8(title);
+		for (const auto& field : {std::pair<const char*, const wchar_t*>{"ARTIST", L"artist"},
+			{"ALBUM", L"album"}, {"DATE", L"year"}, {"TRACKNUMBER", L"track"},
+			{"GENRE", L"genre"}, {"COMMENT", L"description"}}) {
+			std::wstring value = ParseJsonString(json, field.second);
+			if (!value.empty()) media.metadata.tags[field.first] = WideToUtf8(value);
+		}
+		if (ParseJsonString(json, L"live_status") != L"is_live") {
+			double duration = std::wcstod(ParseJsonString(json, L"duration").c_str(), nullptr);
+			if (duration > 0 && duration < 2147483647.0) media.metadata.duration = duration;
+		}
+		double bitrate = std::wcstod(ParseJsonString(json, L"bitrate").c_str(), nullptr);
+		if (bitrate > 0 && bitrate < 2147483646.5) media.metadata.bitrate = static_cast<int>(bitrate + 0.5);
+		return true;
+	}
+	return false;
+}
+
 bool SearchWithAPI(const std::wstring& query, std::vector<YouTubeResult>& results, std::wstring& nextPageToken,
                    const std::wstring& pageToken) {
 	std::wstring url = L"https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=25&q=";
@@ -982,72 +1023,77 @@ bool YouTubeResolveFavorite(const std::wstring& text, YouTubeListInfo& info, int
 }
 
 bool YouTubePrepare(const std::wstring& videoId, YouTubeMedia& media, std::wstring& error,
-                    const YouTubeStatus& status) {
+	const YouTubeStatus& status) {
 	const auto tools = GetYouTubeToolSettings();
-    media = YouTubeMedia();
-    error.clear();
-    std::wstring url = L"https://www.youtube.com/watch?v=" + videoId;
+	media = YouTubeMedia();
+	error.clear();
+	std::wstring url = L"https://www.youtube.com/watch?v=" + videoId;
 
-    // Stream it: YouTube's HLS audio (234, 233), or for a live stream the
-    // smallest HLS video, whose audio FFmpeg plays as it arrives, with seeking.
-    YtdlpRun run;
-    if (!RunYtdlp({L"--no-playlist", L"-f", L"234/233/93/92/91/94/95", L"--print",
-                   L"%(title)s\t%(url)s\t%(channel,uploader|)s", url},
+	// Stream it: YouTube's HLS audio (234, 233), or for a live stream the
+	// smallest HLS video, whose audio FFmpeg plays as it arrives, with seeking.
+	YtdlpRun run;
+	if (!RunYtdlp({L"--no-playlist", L"-f", L"234/233/93/92/91/94/95", L"--print",
+		kMediaFormat, url}, true, run, error, status, tools)) {
+		return false;
+	}
+	if (run.exitCode == 0 && ReadPreparedMedia(run.output, media) && !media.url.empty()) {
+		media.metadata.sourceUrl = url;
+		return true;
+	}
+	if (run.errors.find("Requested format is not available") == std::string::npos) {
+		error = YtdlpError(run);
+		return false;
+	}
+
+	// Nothing to stream: download the AAC audio and play it from the file.
+	std::wstring cached = FindDownloaded(videoId);
+	if (!cached.empty()) {
+		std::error_code ec;
+		fs::last_write_time(fs::path(cached), fs::file_time_type::clock::now(), ec);  // keep it another week
+		// The older cached files contain only title and channel tags. Refresh
+		// service metadata without downloading their audio again; a lookup
+		// failure still leaves the cached file playable.
+		YtdlpRun lookup;
+		std::wstring lookupError;
+		if (RunYtdlp({L"--no-playlist", L"--skip-download", L"-f", L"140/bestaudio[ext=m4a]",
+			L"--print", kMediaFormat, url}, true, lookup, lookupError, status, tools) && lookup.exitCode == 0) {
+			ReadPreparedMedia(lookup.output, media);
+		}
+		media.url.clear();
+		media.file = cached;
+		media.metadata.sourceUrl = url;
+		return true;
+	}
+
+	std::wstring download = CacheDir() + videoId + L".download.m4a";
+	std::error_code ec;
+	fs::remove(fs::path(download), ec);
+	run = YtdlpRun();
+	if (!RunYtdlp({L"--no-playlist", L"-f", L"140/bestaudio[ext=m4a]", L"--fixup", L"never", L"--no-part",
+		L"--no-mtime", L"-o", download, L"--no-simulate", L"--print", kMediaFormat, url},
 		true, run, error, status, tools)) {
-        return false;
-    }
-    auto rows = PrintedRows(run.output);
-    if (run.exitCode == 0 && !rows.empty() && rows[0].size() >= 3 && !rows[0][1].empty()) {
-        media.title = rows[0][0];
-        media.url = rows[0][1];
-        media.channel = rows[0][2];
-        return true;
-    }
-    if (run.errors.find("Requested format is not available") == std::string::npos) {
-        error = YtdlpError(run);
-        return false;
-    }
-
-    // Nothing to stream: download the AAC audio and play it from the file.
-    std::wstring cached = FindDownloaded(videoId);
-    if (!cached.empty()) {
-        std::error_code ec;
-        fs::last_write_time(fs::path(cached), fs::file_time_type::clock::now(), ec);  // keep it another week
-        media.file = cached;
-        return true;
-    }
-
-    std::wstring download = CacheDir() + videoId + L".download.m4a";
-    std::error_code ec;
-    fs::remove(fs::path(download), ec);
-    run = YtdlpRun();
-    if (!RunYtdlp({L"--no-playlist", L"-f", L"140/bestaudio[ext=m4a]", L"--fixup", L"never", L"--no-part",
-                   L"--no-mtime", L"-o", download, L"--no-simulate", L"--print", L"%(title)s\t%(channel,uploader|)s",
-                   url},
-		true, run, error, status, tools)) {
-        return false;
-    }
-    rows = PrintedRows(run.output);
-    if (run.exitCode != 0 || !FileExists(download) || rows.empty()) {
-        fs::remove(fs::path(download), ec);
-        error = run.exitCode != 0 ? YtdlpError(run) : L"YouTube gave no audio for this video.";
-        return false;
-    }
-    media.title = rows[0][0];
-    media.channel = rows[0].size() > 1 ? rows[0][1] : L"";
-    std::wstring file = CacheDir() + FileNameFrom(media.title) + L" [" + videoId + L"].m4a";
-    if (!DefragmentMp4(download, file, media.title, media.channel)) {
-        // Not fragmented after all: it plays as it is.
-        fs::remove(fs::path(file), ec);
-        fs::rename(fs::path(download), fs::path(file), ec);
-        if (ec) {
-            error = L"Could not save the downloaded audio.";
-            return false;
-        }
-    }
-    fs::remove(fs::path(download), ec);
-    media.file = file;
-    return true;
+		return false;
+	}
+	if (run.exitCode != 0 || !FileExists(download) || !ReadPreparedMedia(run.output, media)) {
+		fs::remove(fs::path(download), ec);
+		error = run.exitCode != 0 ? YtdlpError(run) : L"YouTube gave no audio for this video.";
+		return false;
+	}
+	media.url.clear();
+	media.metadata.sourceUrl = url;
+	std::wstring file = CacheDir() + FileNameFrom(media.title) + L" [" + videoId + L"].m4a";
+	if (!DefragmentMp4(download, file, media.title, media.channel)) {
+		// Not fragmented after all: it plays as it is.
+		fs::remove(fs::path(file), ec);
+		fs::rename(fs::path(download), fs::path(file), ec);
+		if (ec) {
+			error = L"Could not save the downloaded audio.";
+			return false;
+		}
+	}
+	fs::remove(fs::path(download), ec);
+	media.file = file;
+	return true;
 }
 
 bool YouTubeImportCookies(const std::wstring& path, std::wstring& error) {

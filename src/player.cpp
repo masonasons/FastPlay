@@ -237,6 +237,7 @@ static void ReadChapters(const wchar_t* path) {
 // not the playlist's current entry: the playlist may already hold what is to
 // play next (a file opened from Explorer replaces it before it is played).
 static std::wstring g_loadedPath;
+static TrackMetadata g_loadedMetadata;
 
 void SaveCurrentPosition() {
     if (!g_loadedPath.empty() && !g_isLiveStream) SaveFilePosition(g_loadedPath);
@@ -245,6 +246,7 @@ void SaveCurrentPosition() {
 static void UnloadCurrent() {
     SaveCurrentPosition();
     g_loadedPath.clear();
+	g_loadedMetadata = TrackMetadata();
     RemoveDSPEffects();
     audio::Unload();
     g_isLiveStream = false;
@@ -269,6 +271,7 @@ static bool StartDecoder(std::unique_ptr<audio::Decoder> decoder, const wchar_t*
     }
 
     g_loadedPath = path;
+	g_loadedMetadata = GetTrackMetadata(path);
     ComputeReplayGainScale();
     UpdateOutputGain();
     ApplyDSPEffects();
@@ -1058,6 +1061,11 @@ static std::string GetMetadataTag(const char* tagName) {
     const audio::Decoder* decoder = audio::Current();
     if (!decoder) return "";
 
+	// Service metadata describes the video; HLS container tags can instead
+	// describe the transport (or the tool that produced it).
+	auto supplied = g_loadedMetadata.tags.find(tagName);
+	if (supplied != g_loadedMetadata.tags.end() && !supplied->second.empty()) return supplied->second;
+
     std::string result = decoder->Tag(tagName);
     if (!result.empty()) return result;
 
@@ -1272,6 +1280,7 @@ int GetCurrentBitrate() {
     if (bitrate > 0) return bitrate;
     std::string icy = decoder->Tag("icy-br");
     if (!icy.empty()) return atoi(icy.c_str());
+	if (g_loadedMetadata.bitrate > 0) return g_loadedMetadata.bitrate;
     return g_currentBitrate;
 }
 
@@ -1286,7 +1295,8 @@ void SpeakTagDuration() {
         return;
     }
 
-    double length = audio::Length();
+	double length = audio::Length();
+	if (length <= 0) length = g_loadedMetadata.duration;
     if (length <= 0) {
         if (g_isLiveStream || (g_currentTrack >= 0 && g_currentTrack < (int)g_playlist.size() &&
                                IsURL(g_playlist[g_currentTrack].c_str()))) {
@@ -1321,6 +1331,7 @@ void SpeakTagFilename() {
     }
 
     std::wstring path = g_playlist[g_currentTrack];
+	if (audio::IsLoaded() && !g_loadedMetadata.sourceUrl.empty()) path = g_loadedMetadata.sourceUrl;
 
     // Check if it's a URL
     if (IsURL(path.c_str())) {
@@ -1388,6 +1399,7 @@ std::wstring GetTagBitrate() {
 std::wstring GetTagDuration() {
     if (!audio::IsLoaded()) return L"Nothing playing";
     double length = audio::Length();
+	if (length <= 0) length = g_loadedMetadata.duration;
     if (length <= 0) return g_isLiveStream ? L"Live stream" : L"Unknown duration";
     return FormatTime(length);
 }
@@ -1398,6 +1410,7 @@ std::wstring GetTagFilename() {
     }
 
     std::wstring path = g_playlist[g_currentTrack];
+	if (audio::IsLoaded() && !g_loadedMetadata.sourceUrl.empty()) return g_loadedMetadata.sourceUrl;
     if (IsURL(path.c_str())) return path;
     return GetFileName(path);
 }

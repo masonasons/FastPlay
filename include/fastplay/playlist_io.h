@@ -5,6 +5,7 @@
 // Local files and playlist files: which extensions FastPlay plays, expanding a file
 // or folder into a list of them, and reading .m3u / .m3u8 / .pls playlists.
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,17 @@ std::vector<std::wstring> ParsePlaylist(const std::wstring& playlistPath);
 // name, otherwise its file name.
 void SetTrackName(const std::wstring& path, const std::wstring& name);
 std::wstring GetTrackName(const std::wstring& path);
+
+// Metadata supplied by a service when the audio itself has no usable tags.
+// Kept by playback path so stopping, replaying and switching devices retain it.
+struct TrackMetadata {
+	std::map<std::string, std::string> tags;  // common tag names, UTF-8 values
+	std::wstring sourceUrl;
+	double duration = 0;
+	int bitrate = 0;  // kbps
+};
+void SetTrackMetadata(const std::wstring& path, const TrackMetadata& metadata);
+TrackMetadata GetTrackMetadata(const std::wstring& path);
 
 // A line of a playlist file: UTF-8 if it is valid UTF-8, otherwise the system's
 // legacy code page (Latin-1 outside Windows).

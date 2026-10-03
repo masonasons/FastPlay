@@ -11,6 +11,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include "playlist_io.h"
 
 enum class YouTubeKind { Video, Channel, Playlist };
 
@@ -27,10 +28,11 @@ struct YouTubeResult {
 // A video ready to play: a stream address, or a downloaded audio file when there
 // is nothing to stream.
 struct YouTubeMedia {
-    std::wstring url;
-    std::wstring file;
-    std::wstring title;
-    std::wstring channel;
+	std::wstring url;
+	std::wstring file;
+	std::wstring title;
+	std::wstring channel;
+	TrackMetadata metadata;
 };
 
 // A channel or playlist, as identified from its URL

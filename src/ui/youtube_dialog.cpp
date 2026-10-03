@@ -65,27 +65,30 @@ void RunInBackground(std::function<void()> work) {
 // Get a video ready on a worker thread, then play it (whether or not the window is
 // still open).
 void StartPlaying(const std::wstring& videoId) {
-    int request = ++g_playRequest;
-    Speak("Loading");
-    RunInBackground([videoId, request]() {
-        YouTubeMedia media;
-        std::wstring error;
-        bool ok = YouTubePrepare(videoId, media, error, SpeakStatus);
-        RunOnUiThread([ok, media, error, request]() {
-            if (request != g_playRequest) return;  // another video was chosen meanwhile
-            if (!ok) {
-                Speak("Could not play the video");
-                ShowMessage(L"Could not play the video.\n\n" + error, L"YouTube", MessageIcon::Error);
-                return;
-            }
-            // Played like an opened file or stream: it becomes the playlist.
-            std::wstring path = media.url.empty() ? media.file : media.url;
-            SetTrackName(path, media.channel.empty() ? media.title : media.channel + L" - " + media.title);
-            g_playlist.clear();
-            g_playlist.push_back(path);
-            PlayTrack(0);
-        });
-    });
+	int request = ++g_playRequest;
+	Speak("Loading");
+	RunInBackground([videoId, request]() {
+		YouTubeMedia media;
+		std::wstring error;
+		bool ok = YouTubePrepare(videoId, media, error, SpeakStatus);
+		RunOnUiThread([ok, media, error, request]() {
+			if (request != g_playRequest) return;  // another video was chosen meanwhile
+			if (!ok) {
+				Speak("Could not play the video");
+				ShowMessage(L"Could not play the video.\n\n" + error, L"YouTube", MessageIcon::Error);
+				return;
+			}
+			// Played like an opened file or stream: it becomes the playlist.
+			std::wstring path = media.url.empty() ? media.file : media.url;
+			if (!media.title.empty()) {
+				SetTrackName(path, media.channel.empty() ? media.title : media.channel + L" - " + media.title);
+			}
+			SetTrackMetadata(path, media.metadata);
+			g_playlist.clear();
+			g_playlist.push_back(path);
+			PlayTrack(0);
+		});
+	});
 }
 
 // "3 days ago", for when a favorite last uploaded.

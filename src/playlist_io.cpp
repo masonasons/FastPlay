@@ -320,6 +320,18 @@ std::vector<std::wstring> ParsePlaylist(const std::wstring& playlistPath) {
 
 static std::mutex g_trackNamesMutex;
 static std::map<std::wstring, std::wstring> g_trackNames;
+static std::map<std::wstring, TrackMetadata> g_trackMetadata;
+
+void SetTrackMetadata(const std::wstring& path, const TrackMetadata& metadata) {
+	std::lock_guard<std::mutex> lock(g_trackNamesMutex);
+	g_trackMetadata[path] = metadata;
+}
+
+TrackMetadata GetTrackMetadata(const std::wstring& path) {
+	std::lock_guard<std::mutex> lock(g_trackNamesMutex);
+	auto it = g_trackMetadata.find(path);
+	return it == g_trackMetadata.end() ? TrackMetadata() : it->second;
+}
 
 void SetTrackName(const std::wstring& path, const std::wstring& name) {
     std::lock_guard<std::mutex> lock(g_trackNamesMutex);
