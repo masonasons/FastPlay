@@ -23,7 +23,33 @@ final class FilesViewController: FastPlayTableViewController, UIDocumentPickerDe
     private struct Entry {
         let url: URL
         let isFolder: Bool
+        let modified: Date
+        let size: Int
         var name: String { url.lastPathComponent }
+    }
+
+    /// What the list is ordered by: one choice for every folder, kept between runs.
+    private enum SortKey: Int, CaseIterable {
+        case name, date, size, type
+
+        var title: String {
+            switch self {
+            case .name: return "Name"
+            case .date: return "Date Modified"
+            case .size: return "Size"
+            case .type: return "Type"
+            }
+        }
+
+        static var current: SortKey {
+            get { SortKey(rawValue: UserDefaults.standard.integer(forKey: "FilesSortKey")) ?? .name }
+            set { UserDefaults.standard.set(newValue.rawValue, forKey: "FilesSortKey") }
+        }
+
+        static var reversed: Bool {
+            get { UserDefaults.standard.bool(forKey: "FilesSortReversed") }
+            set { UserDefaults.standard.set(newValue, forKey: "FilesSortReversed") }
+        }
     }
 
     private let directory: URL
@@ -69,7 +95,25 @@ final class FilesViewController: FastPlayTableViewController, UIDocumentPickerDe
                                       action: #selector(playAll))
         playAll.accessibilityLabel = "Play all"
         playAll.accessibilityHint = "Plays everything in this folder and the folders inside it"
-        navigationItem.rightBarButtonItems = [add, playAll]
+        // Built each time it opens, so the ticks show the order as it is
+        let sort = UIBarButtonItem(image: UIImage(systemName: "arrow.up.arrow.down"), menu: UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] provide in
+                let keys = SortKey.allCases.map { key in
+                    UIAction(title: key.title, state: key == SortKey.current ? .on : .off) { _ in
+                        SortKey.current = key
+                        self?.sortChanged()
+                    }
+                }
+                let reverse = UIAction(title: "Reversed", state: SortKey.reversed ? .on : .off) { _ in
+                    SortKey.reversed.toggle()
+                    self?.sortChanged()
+                }
+                provide([UIMenu(title: "Sort By", options: .displayInline, children: keys),
+                         UIMenu(options: .displayInline, children: [reverse])])
+            },
+        ]))
+        sort.accessibilityLabel = "Sort"
+        navigationItem.rightBarButtonItems = [add, sort, playAll]
 
         emptyLabel.text = "Nothing here yet.\n\nAdd files with the Add button, or in the Files app: On My iPhone, FastPlay."
         emptyLabel.numberOfLines = 0
@@ -89,19 +133,57 @@ final class FilesViewController: FastPlayTableViewController, UIDocumentPickerDe
 
     private func reload() {
         let urls = (try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+            at: directory, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles])) ?? []
         entries = urls.compactMap { url in
-            let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey])
+            let isFolder = values?.isDirectory ?? false
             guard isFolder || engine.isPlayableFile(url.path) else { return nil }
-            return Entry(url: url, isFolder: isFolder)
+            return Entry(url: url, isFolder: isFolder, modified: values?.contentModificationDate ?? .distantPast,
+                         size: values?.fileSize ?? 0)
         }
-        // Folders first, then names as a person orders them ("2" before "10")
-        entries.sort {
-            if $0.isFolder != $1.isFolder { return $0.isFolder }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        // Folders first whatever the order. Names as a person orders them ("2" before
+        // "10"), and the name decides between two of the same date, size or type.
+        // Folders have no size or type of their own, so they go by name for those.
+        let key = SortKey.current
+        let reversed = SortKey.reversed
+        entries.sort { a, b in
+            if a.isFolder != b.isFolder { return a.isFolder }
+            var order = ComparisonResult.orderedSame
+            switch key {
+            case .name:
+                break
+            case .date:
+                order = a.modified.compare(b.modified)
+            case .size:
+                if !a.isFolder { order = a.size < b.size ? .orderedAscending : (a.size > b.size ? .orderedDescending : .orderedSame) }
+            case .type:
+                if !a.isFolder { order = a.url.pathExtension.localizedCaseInsensitiveCompare(b.url.pathExtension) }
+            }
+            if order == .orderedSame { order = a.name.localizedStandardCompare(b.name) }
+            return order == (reversed ? .orderedDescending : .orderedAscending)
         }
         tableView.reloadData()
         tableView.backgroundView = entries.isEmpty ? emptyLabel : nil
+    }
+
+    private func sortChanged() {
+        reload()
+        UIAccessibility.post(notification: .announcement,
+                             argument: "Sorted by \(SortKey.current.title)" + (SortKey.reversed ? ", reversed" : ""))
+    }
+
+    /// The date or size of an entry, shown (and spoken) while the list is in that order.
+    private func detail(for entry: Entry) -> String? {
+        switch SortKey.current {
+        case .date:
+            return entry.modified == .distantPast ? nil
+                : DateFormatter.localizedString(from: entry.modified, dateStyle: .medium, timeStyle: .short)
+        case .size:
+            return entry.isFolder ? nil : ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file)
+        case .name, .type:
+            return nil
+        }
     }
 
     @objc private func pulledToRefresh() {
@@ -191,10 +273,12 @@ final class FilesViewController: FastPlayTableViewController, UIDocumentPickerDe
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         var content = UIListContentConfiguration.cell()
         content.text = entry.name
+        content.secondaryText = detail(for: entry)
         content.image = UIImage(systemName: entry.isFolder ? "folder" : "music.note")
         cell.contentConfiguration = content
         cell.accessoryType = entry.isFolder ? .disclosureIndicator : .none
-        cell.accessibilityLabel = entry.isFolder ? "\(entry.name), folder" : entry.name
+        cell.accessibilityLabel = (entry.isFolder ? "\(entry.name), folder" : entry.name)
+            + (detail(for: entry).map { ", \($0)" } ?? "")
         // The same actions as the long press menu, for VoiceOver's actions rotor
         cell.accessibilityCustomActions = actions(for: entry).map { action in
             UIAccessibilityCustomAction(name: action.title) { _ in
@@ -299,7 +383,15 @@ final class FilesViewController: FastPlayTableViewController, UIDocumentPickerDe
         if entry.isFolder {
             navigationController?.pushViewController(FilesViewController(directory: entry.url), animated: true)
         } else {
-            engine.playFile(entry.url.path)
+            // With its folder, the folder plays on in the order it is shown in here
+            let isPlaylist = ["m3u", "m3u8", "pls"].contains(entry.url.pathExtension.lowercased())
+            let files = entries.filter { !$0.isFolder }
+            if !isPlaylist, engine.number(forSetting: "loadFolder") != 0,
+               let index = files.firstIndex(where: { $0.url == entry.url }) {
+                engine.playURLs(files.map(\.url.path), names: [], startingAt: index)
+            } else {
+                engine.playFile(entry.url.path)
+            }
             openPlayer()
         }
     }
