@@ -673,7 +673,13 @@ bool Init(const std::wstring& deviceName, int bufferMs) {
     if (!g.contextReady) {
         ma_backend nullBackend = ma_backend_null;
         const bool test = getenv("FASTPLAY_NULL_AUDIO") != nullptr;
-        if (ma_context_init(test ? &nullBackend : nullptr, test ? 1 : 0, nullptr, &g.context) != MA_SUCCESS) {
+        ma_context_config contextConfig = ma_context_config_init();
+#if defined(MA_APPLE_MOBILE)
+        // The iPhone's audio session, for a player: sound with the ring switch
+        // off and the screen locked (miniaudio's default is for a phone call)
+        contextConfig.coreaudio.sessionCategory = ma_ios_session_category_playback;
+#endif
+        if (ma_context_init(test ? &nullBackend : nullptr, test ? 1 : 0, &contextConfig, &g.context) != MA_SUCCESS) {
             return false;
         }
         g.contextReady = true;

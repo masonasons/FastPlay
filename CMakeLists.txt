@@ -6,7 +6,17 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Architectures to build 
 
 project(FastPlay LANGUAGES C CXX)
 if(APPLE)
-    enable_language(OBJCXX)  # the macOS platform files are Objective-C++
+    enable_language(OBJCXX)  # the macOS and iOS platform files are Objective-C++
+endif()
+
+# The iPhone: FastPlay without its windows, as a static library (FastPlayCore) that
+# the app in ios/ links; ios/build-core.sh configures this for the device and the
+# simulator. Its windows are SwiftUI, so wxWidgets is no part of it.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(FASTPLAY_IOS ON)
+    enable_language(OBJC)  # miniaudio, which talks to the audio session there
+else()
+    set(FASTPLAY_IOS OFF)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -49,6 +59,7 @@ set(CMAKE_SKIP_INSTALL_RULES ON)
 # screen reader fixes made since 3.3.3, most of them for VoiceOver on macOS
 # (controls titled by their labels, context menus, custom list cells) and some
 # for Windows. Move to the next 3.3 release tag once it has them.
+if(NOT FASTPLAY_IOS)
 FetchContent_Declare(wxWidgets
     GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
     GIT_TAG 776a9a278791fe0d1c79be337e55ab8e53f89587
@@ -80,6 +91,7 @@ set(wxUSE_LIBJPEG OFF CACHE INTERNAL "")
 set(wxUSE_LIBTIFF OFF CACHE INTERNAL "")
 set(wxUSE_LIBWEBP OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(wxWidgets)
+endif()
 
 # --- UniversalSpeech (Windows only) ---
 # Speaks through whatever screen reader is running - NVDA, JAWS, Narrator and
@@ -229,9 +241,13 @@ endif()
 # FFmpeg is FastPlay's own audio-only build (ci/ffmpeg), in ffmpeg/: built by CI,
 # fetched for local builds by download-deps. The tempo libraries come from
 # download-deps (deps/); SQLite's amalgamation is src/sqlite3.c.
-set(FASTPLAY_FFMPEG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg)
+if(FASTPLAY_IOS)
+    set(FASTPLAY_FFMPEG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg-ios)  # ci/ffmpeg/build.sh ios ffmpeg-ios
+else()
+    set(FASTPLAY_FFMPEG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg)
+endif()
 if(NOT EXISTS ${FASTPLAY_FFMPEG_DIR}/include/libavformat/avformat.h)
-    message(FATAL_ERROR "FFmpeg is missing from ffmpeg/. Run download-deps, or build it with ci/ffmpeg/build.sh.")
+    message(FATAL_ERROR "FFmpeg is missing from ${FASTPLAY_FFMPEG_DIR}. Run download-deps, or build it with ci/ffmpeg/build.sh.")
 endif()
 
 set(FASTPLAY_SOURCES
@@ -286,29 +302,35 @@ set(FASTPLAY_SOURCES
     src/speakers/engine/reverb.cpp
     src/speakers/engine/spatial.cpp
     src/speakers/engine/voice.cpp
-    src/ui/app.cpp
-    src/ui/bookmarks_dialog.cpp
-    src/ui/file_dialogs.cpp
-    src/ui/history_dialog.cpp
-    src/ui/hotkey_dialog.cpp
-    src/ui/main_frame.cpp
-    src/ui/options_dialog.cpp
-    src/ui/playlist_dialog.cpp
-    src/ui/podcast_dialog.cpp
-    src/ui/radio_dialog.cpp
-    src/ui/scheduler_dialog.cpp
-    src/ui/small_dialogs.cpp
-    src/ui/tray_icon.cpp
-    src/ui/ui_common.cpp
-    src/ui/update_dialog.cpp
-    src/ui/youtube_dialog.cpp
-    src/ui/library_dialog.cpp
     # Speedy (Google's nonlinear speech speedup) and what it builds on
     deps/speedy/speedy.c
     deps/speedy/soniclib.c
     deps/sonic/sonic.c
     deps/kissfft/kiss_fft.c
 )
+
+# The windows (wxWidgets), everywhere but the iPhone
+if(NOT FASTPLAY_IOS)
+    list(APPEND FASTPLAY_SOURCES
+        src/ui/app.cpp
+        src/ui/bookmarks_dialog.cpp
+        src/ui/file_dialogs.cpp
+        src/ui/history_dialog.cpp
+        src/ui/hotkey_dialog.cpp
+        src/ui/main_frame.cpp
+        src/ui/options_dialog.cpp
+        src/ui/playlist_dialog.cpp
+        src/ui/podcast_dialog.cpp
+        src/ui/radio_dialog.cpp
+        src/ui/scheduler_dialog.cpp
+        src/ui/small_dialogs.cpp
+        src/ui/tray_icon.cpp
+        src/ui/ui_common.cpp
+        src/ui/update_dialog.cpp
+        src/ui/youtube_dialog.cpp
+        src/ui/library_dialog.cpp
+    )
+endif()
 
 if(WIN32)
     list(APPEND FASTPLAY_SOURCES
@@ -324,6 +346,20 @@ if(WIN32)
         src/platform/folder_watch_windows.cpp
         res/fastplay.rc
     )
+elseif(FASTPLAY_IOS)
+    # No libcurl there, no starting other programs, no updating itself (the App
+    # Store does), and no watching folders
+    list(APPEND FASTPLAY_SOURCES
+        src/platform/http_ios.mm
+        src/platform/ini_portable.cpp
+        src/platform/subprocess_none.cpp
+        src/platform/paths_ios.mm
+        src/platform/speech_ios.mm
+        src/platform/startup_ios.mm
+        src/platform/now_playing_apple.mm
+        src/platform/updater_unsupported.cpp
+        src/platform/folder_watch_none.cpp
+    )
 else()
     list(APPEND FASTPLAY_SOURCES
         src/platform/http_curl.cpp
@@ -331,10 +367,11 @@ else()
         src/platform/subprocess_posix.cpp
     )
 endif()
-if(APPLE)
+if(APPLE AND NOT FASTPLAY_IOS)
     list(APPEND FASTPLAY_SOURCES
         src/platform/file_assoc_mac.cpp
         src/platform/menu_keys_mac.mm
+        src/platform/now_playing_apple.mm
         src/platform/paths_mac.cpp
         src/platform/speech_mac.mm
         src/platform/startup_mac.cpp
@@ -342,11 +379,20 @@ if(APPLE)
         src/platform/updater_mac.cpp
         src/platform/folder_watch_mac.cpp
     )
-elseif(NOT WIN32)
+elseif(NOT WIN32 AND NOT FASTPLAY_IOS)
     list(APPEND FASTPLAY_SOURCES src/platform/updater_unsupported.cpp src/platform/folder_watch_none.cpp)
 endif()
 
-add_executable(FastPlay WIN32 MACOSX_BUNDLE ${FASTPLAY_SOURCES})
+if(FASTPLAY_IOS)
+    add_library(FastPlay STATIC ${FASTPLAY_SOURCES})
+    set_target_properties(FastPlay PROPERTIES OUTPUT_NAME FastPlayCore)
+    # miniaudio sets up the audio session there, in Objective-C
+    set_source_files_properties(src/audio/miniaudio.c PROPERTIES LANGUAGE OBJC)
+    set_source_files_properties(src/platform/http_ios.mm src/platform/paths_ios.mm src/platform/speech_ios.mm
+        src/platform/startup_ios.mm src/platform/now_playing_apple.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+else()
+    add_executable(FastPlay WIN32 MACOSX_BUNDLE ${FASTPLAY_SOURCES})
+endif()
 
 # Fraunhofer FDK AAC, for xHE-AAC (src/xheaac.cpp). Its decoder only;
 # nothing of it is installed.
@@ -391,10 +437,12 @@ if(FASTPLAY_BUILD_COMMIT)
     target_compile_definitions(FastPlay PRIVATE BUILD_COMMIT="${FASTPLAY_BUILD_COMMIT}")
 endif()
 
-target_link_libraries(FastPlay PRIVATE wx::core wx::base wx::adv wx::net)
-if(NOT WIN32)
-    find_package(CURL REQUIRED)
-    target_link_libraries(FastPlay PRIVATE CURL::libcurl)
+if(NOT FASTPLAY_IOS)
+    target_link_libraries(FastPlay PRIVATE wx::core wx::base wx::adv wx::net)
+    if(NOT WIN32)
+        find_package(CURL REQUIRED)
+        target_link_libraries(FastPlay PRIVATE CURL::libcurl)
+    endif()
 endif()
 
 if(WIN32 AND FASTPLAY_SPEECH)
@@ -455,7 +503,7 @@ if(WIN32)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
-if(APPLE)
+if(APPLE AND NOT FASTPLAY_IOS)
     # FFmpeg's static libraries (universal), with what they use of macOS (TLS through
     # Secure Transport, zlib); miniaudio plays through Core Audio.
     target_link_libraries(FastPlay PRIVATE
@@ -465,7 +513,7 @@ if(APPLE)
         "-framework AppKit" "-framework AVFoundation" "-framework Carbon"
         "-framework CoreServices" "-framework MediaPlayer")
     set_source_files_properties(src/platform/speech_mac.mm src/platform/system_keys_mac.mm
-        src/platform/menu_keys_mac.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+        src/platform/menu_keys_mac.mm src/platform/now_playing_apple.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 
     # The app bundle: Info.plist with the version from version.h and the
     # documentation in Contents/Resources/docs.

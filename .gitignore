@@ -62,3 +62,8 @@ Thumbs.db
 build/
 ci/ffmpeg/work/
 /ffmpeg/
+/ffmpeg-ios/
+
+# The iPhone app: the engine built for it, and Xcode's project (made by xcodegen)
+/ios/build/
+/ios/*.xcodeproj/
