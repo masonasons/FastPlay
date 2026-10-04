@@ -90,8 +90,9 @@ public:
         av_frame_free(&m_frame);
         av_packet_free(&m_packet);
         avcodec_free_context(&m_codec);
-        avformat_close_input(&m_format);  // not the cache's reader, which is the cache's own
+        avformat_close_input(&m_format);  // not the reader, which was opened here (or is the cache's own)
         m_cache.reset();
+        if (m_io) avio_closep(&m_io);
     }
 
     bool Open(const std::wstring& pathOrUrl, std::wstring& error) {
@@ -117,6 +118,38 @@ public:
             av_dict_set(&options, "rw_timeout", std::to_string(kNetworkTimeoutSeconds * 1000000LL).c_str(), 0);
         }
         Arm();
+        if (network) {
+            // The connection is opened here, not by the demuxer, so that a file (as
+            // against a live stream or an HLS playlist) is read through its local
+            // copy (http_cache.h) from the first byte: a seek into what has come is
+            // then at once, rather than a new request to the server every time.
+            //
+            // The copy used to be put in the demuxer's place once it had opened the
+            // file. But a demuxer may keep the reader it was opened with (MP4's does,
+            // one for each track) and go on reading the connection itself, while the
+            // copy's download thread was using it too: two threads on one connection,
+            // which crashed wherever it happened to give way.
+            const int opened = avio_open2(&m_io, url.c_str(), AVIO_FLAG_READ, &m_format->interrupt_callback, &options);
+            if (opened < 0) {
+                av_dict_free(&options);
+                avformat_free_context(m_format);
+                m_format = nullptr;
+                return Fail(error, L"Could not open the stream: " + ErrorText(opened));
+            }
+            const int64_t size = avio_size(m_io);
+            if (size > 0 && (m_io->seekable & AVIO_SEEKABLE_NORMAL) && !IsHlsPlaylist(m_io)) {
+                m_cache = HttpCache::Create(m_io, size, avio_tell(m_io), [this]() { Arm(); });
+                if (m_cache) {
+                    m_io = nullptr;  // the copy's own now
+                    // An MP3 without a seek table is otherwise sought by reading every
+                    // frame up to the time, which over the network is downloading all
+                    // of it in between; from its bitrate it goes straight there instead
+                    // (exact for a constant bitrate, close for a variable one)
+                    m_format->flags |= AVFMT_FLAG_FAST_SEEK;
+                }
+            }
+            m_format->pb = m_cache ? m_cache->Io() : m_io;
+        }
         int rc = avformat_open_input(&m_format, url.c_str(), nullptr, &options);
         av_dict_free(&options);
         if (rc < 0) {
@@ -167,25 +200,6 @@ public:
         m_live = network && (m_length <= 0 || !seekable);
         if (m_live) m_length = 0;
 
-        // A file over HTTP is read through a local copy that downloads in the
-        // background (http_cache.h): a seek into what has come is then at once,
-        // rather than a new request to the server every time
-        if (network && !m_live && m_format->pb && std::strcmp(m_format->iformat->name, "hls") != 0) {
-            const int64_t size = avio_size(m_format->pb);
-            if (size > 0) {
-                AVIOContext* source = m_format->pb;
-                m_cache = HttpCache::Create(source, size, avio_tell(source), [this]() { Arm(); });
-                if (m_cache) {
-                    m_format->pb = m_cache->Io();
-                    m_format->flags |= AVFMT_FLAG_CUSTOM_IO;
-                }
-                // An MP3 without a seek table is otherwise sought by reading every
-                // frame up to the time, which over the network is downloading all
-                // of it in between; from its bitrate it goes straight there instead
-                // (exact for a constant bitrate, close for a variable one)
-                m_format->flags |= AVFMT_FLAG_FAST_SEEK;
-            }
-        }
         if (m_format->start_time != AV_NOPTS_VALUE) m_startTime = m_format->start_time / static_cast<double>(AV_TIME_BASE);
 
         m_nominalBitrate = static_cast<int>((stream->codecpar->bit_rate > 0 ? stream->codecpar->bit_rate
@@ -350,6 +364,16 @@ private:
 
     // Starts the clock a blocking call may run for before it is given up.
     // (From the decode thread and a download or keeping thread at once: atomic.)
+    // An HLS playlist: its demuxer opens the playlist and its segments again by
+    // itself, so a local copy of the playlist would be no use to it. Looks at the
+    // first bytes and leaves the reader where it was.
+    static bool IsHlsPlaylist(AVIOContext* io) {
+        unsigned char head[7];
+        const int n = avio_read(io, head, sizeof(head));
+        avio_seek(io, 0, SEEK_SET);  // within the reader's buffer: no new request
+        return n == static_cast<int>(sizeof(head)) && std::memcmp(head, "#EXTM3U", sizeof(head)) == 0;
+    }
+
     void Arm() {
         m_deadline = (std::chrono::steady_clock::now() + std::chrono::seconds(kNetworkTimeoutSeconds * 2))
                          .time_since_epoch()
@@ -676,6 +700,7 @@ private:
     std::atomic<bool> m_abort{false};
     std::atomic<std::chrono::steady_clock::rep> m_deadline{0};
     std::unique_ptr<HttpCache> m_cache;  // a file over HTTP: its local copy
+    AVIOContext* m_io = nullptr;         // a stream's connection, when it has no local copy
 
     std::deque<std::pair<int, double>> m_window;  // recent packets: bytes, seconds
     double m_windowBytes = 0, m_windowSeconds = 0;
@@ -718,7 +743,10 @@ private:
 void SetLiveRewindSeconds(int seconds) { g_liveRewindSeconds = std::max(0, seconds); }
 
 bool IsNetworkPath(const std::wstring& path) {
-    return WStrNICmp(path.c_str(), L"http://", 7) == 0 || WStrNICmp(path.c_str(), L"https://", 8) == 0;
+    // FTP too (where FFmpeg is built with it): a file on a server, read through a
+    // local copy as one over HTTP is
+    return WStrNICmp(path.c_str(), L"http://", 7) == 0 || WStrNICmp(path.c_str(), L"https://", 8) == 0 ||
+           WStrNICmp(path.c_str(), L"ftp://", 6) == 0;
 }
 
 std::unique_ptr<Decoder> OpenFfmpegDecoder(const std::wstring& pathOrUrl, std::wstring& error) {
