@@ -19,7 +19,9 @@ Run `xcodegen` again after adding or removing files.
 ## TestFlight
 
 `ios/testflight.sh` archives the app, exports it for the App Store and uploads it to
-TestFlight, with an App Store Connect API key (`--no-upload` stops after the export).
+TestFlight, with an App Store Connect API key (`--no-upload` stops after the export). It then gives the build to the public
+testers (`ios/scripts/testflight-public.py`: the Public group, Apple's beta review,
+and the last commit's message as What to Test); `--internal` leaves that out.
 GitHub runs it for every push to master that changes the app or the engine
 (`.github/workflows/ios-testflight.yml`), with the key from the repository's secrets
 `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_B64`. The version is `APP_VERSION` in

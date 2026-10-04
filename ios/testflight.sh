@@ -3,7 +3,8 @@
 # TestFlight with an App Store Connect API key (the same key and flow as FastSMRW's
 # ios/testflight.sh). Needs an App Store Connect app record for me.masonasons.fastplay.
 #
-#   ios/testflight.sh              archive, export and upload
+#   ios/testflight.sh              archive, export, upload, and release to the public testers
+#   ios/testflight.sh --internal   upload for the internal testers only
 #   ios/testflight.sh --no-upload  stop after the export (to check that it builds and signs)
 #
 # The version is the one in include/fastplay/version.h; the build number is the
@@ -57,3 +58,14 @@ echo "==> Uploading to TestFlight"
 xcrun altool --upload-app -f "$EXPORT_DIR"/*.ipa -t ios --apiKey "$KEY_ID" --apiIssuer "$ISSUER"
 
 echo "Uploaded. Processing in App Store Connect > TestFlight may take a few minutes."
+
+# Internal testers have it once it is processed. For the public testers it is put
+# in their group and sent to beta review, with the last commit as What to Test.
+if [ "${1:-}" = "--internal" ]; then
+    exit 0
+fi
+echo "==> Releasing to the public testers"
+python3 -m venv build/asc-venv
+build/asc-venv/bin/pip install -q pyjwt cryptography
+ASC_KEY_ID="$KEY_ID" ASC_ISSUER_ID="$ISSUER" ASC_KEY_PATH="$KEY_PATH" \
+    build/asc-venv/bin/python scripts/testflight-public.py "$BUILD" "$(git log -1 --pretty=%B | grep -v -e '^Co-Authored-By:' -e '^Claude-Session:')"
