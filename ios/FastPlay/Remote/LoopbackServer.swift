@@ -39,20 +39,20 @@ final class LoopbackServer {
 
     /// Starts listening if it is not already; the port it is on.
     private func start() async throws -> UInt16 {
-        if let port = queue.sync(execute: { listener?.port?.rawValue }), port != 0 { return port }
+        if let port = queue.sync(execute: { self.listener?.port?.rawValue }), port != 0 { return port }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)  // this device only
-        let listener = try NWListener(using: parameters)
-        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+        let newListener = try NWListener(using: parameters)
+        newListener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         return try await withCheckedThrowingContinuation { continuation in
             var answered = false
-            listener.stateUpdateHandler = { [weak self] state in
+            newListener.stateUpdateHandler = { [weak self] state in
                 guard !answered else { return }
                 switch state {
                 case .ready:
                     answered = true
-                    self?.listener = listener
-                    continuation.resume(returning: listener.port?.rawValue ?? 0)
+                    self?.listener = newListener
+                    continuation.resume(returning: newListener.port?.rawValue ?? 0)
                 case let .failed(error):
                     answered = true
                     continuation.resume(throwing: error)
@@ -60,7 +60,7 @@ final class LoopbackServer {
                     break
                 }
             }
-            listener.start(queue: queue)
+            newListener.start(queue: queue)
         }
     }
 
