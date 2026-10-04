@@ -1,0 +1,91 @@
+name: iOS TestFlight
+
+# Every push that changes the iPhone app, or the engine it is built on, uploads a
+# new build to TestFlight (ios/testflight.sh). The build number is the count of
+# commits, so each is higher than the last.
+#
+# Needs three repository secrets: ASC_KEY_ID and ASC_ISSUER_ID (an App Store Connect
+# API key's id and its issuer) and ASC_KEY_P8_B64 (the key's .p8 file, base64).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'ci/ffmpeg/**'
+      - 'download-deps.sh'
+      - '.github/workflows/ios-testflight.yml'
+  workflow_dispatch:
+
+# One upload at a time, in order: build numbers only go up
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # every commit: their count is the build number
+
+      - name: Select the newest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Download dependencies
+        run: |
+          chmod +x download-deps.sh
+          ./download-deps.sh
+
+      # FastPlay's audio-only FFmpeg for the iPhone, built again only when its
+      # build or patches change
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-ios
+          key: ffmpeg-ios-${{ hashFiles('ci/ffmpeg/**') }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: JOBS="$(sysctl -n hw.ncpu)" bash ci/ffmpeg/build.sh ios ffmpeg-ios
+
+      # The engine's own build, and the libraries CMake fetches for it, kept
+      # between runs
+      - name: Cache the engine build
+        uses: actions/cache@v4
+        with:
+          path: ios/build/core-iphoneos
+          key: ios-core-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ios-core-
+
+      - name: Install the App Store Connect key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_KEY_P8_B64" | base64 -d > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Archive and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: ios/testflight.sh
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf ~/.appstoreconnect
