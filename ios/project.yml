@@ -1,0 +1,126 @@
+# FastPlay for the iPhone and iPad. The Xcode project is generated from this:
+#
+#   ios/build-core.sh        (FastPlay's engine, for the simulator and the device)
+#   cd ios && xcodegen       (writes FastPlay.xcodeproj)
+#
+# The windows are UIKit, in FastPlay/; the engine is the same C++ as on the desktop,
+# reached through FastPlay/Bridge/FPEngine.
+name: FastPlay
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+# SMB shares: a Swift face on libsmb2 (LGPL, as FFmpeg is)
+packages:
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    from: "4.0.3"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # The team FastSM is signed with; change it to sign as someone else
+    DEVELOPMENT_TEAM: 9QBYDAX396
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.7.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  FastPlay:
+    type: application
+    platform: iOS
+    sources:
+      - path: FastPlay
+    info:
+      path: FastPlay/Info.plist
+      properties:
+        CFBundleDisplayName: FastPlay
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        # Plays with the screen locked and from another app
+        UIBackgroundModes: [audio]
+        # FastPlay's folder shows in the Files app, under On My iPhone
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # FTP and SMB servers at home are on the local network
+        NSLocalNetworkUsageDescription: FastPlay connects to FTP and SMB servers on your network to play and copy your music.
+        # Internet radio is mostly plain http
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        # "Open in FastPlay" for audio files, from Files and other apps
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
+              - public.mp3
+              - public.mpeg-4-audio
+              - com.apple.m4a-audio
+              - org.xiph.flac
+              - com.microsoft.waveform-audio
+              - public.aiff-audio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.masonasons.fastplay
+        PRODUCT_NAME: FastPlay
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: FastPlay/Bridge/FastPlay-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: "c++17"
+        # The engine's headers, and its libraries: FastPlay's own (ios/build-core.sh)
+        # and FFmpeg's (ci/ffmpeg/build.sh ios ffmpeg-ios), per SDK
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../include
+          - $(SRCROOT)/../include/fastplay
+          - $(SRCROOT)/../src
+          - $(SRCROOT)/../ffmpeg-ios/include
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/build/lib/$(PLATFORM_NAME)
+          - $(SRCROOT)/../ffmpeg-ios/lib/$(PLATFORM_NAME)
+        OTHER_LDFLAGS:
+          - -lFastPlayCore
+          - -lavformat
+          - -lavcodec
+          - -lswresample
+          - -lavutil
+          - -lz
+          - -lc++
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    # The engine, brought up to date for the SDK being built for (a few seconds
+    # when nothing in it changed). In a clean environment: Xcode's own settings
+    # would otherwise reach CMake.
+    preBuildScripts:
+      - name: Build FastPlay's engine
+        basedOnDependencyAnalysis: false
+        script: |
+          env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+              IPHONEOS_DEPLOYMENT_TARGET="$IPHONEOS_DEPLOYMENT_TARGET" \
+              "$SRCROOT/build-core.sh" "$PLATFORM_NAME"
+    dependencies:
+      # A dynamic framework: it has to be copied into the app, or the app cannot start
+      - package: AMSMB2
+        embed: true
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: MediaPlayer.framework
+      - sdk: Security.framework
+      - sdk: CoreFoundation.framework
+      - sdk: UIKit.framework
