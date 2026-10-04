@@ -122,6 +122,13 @@ bool Init(const std::wstring& deviceName, int bufferMs);
 void Shutdown();
 // Moves to another device. Only while nothing is loaded.
 bool SwitchDevice(const std::wstring& deviceName, int bufferMs);
+// Starts the device again if something stopped it: on a phone, another app
+// taking the sound stops it, and nothing starts it again when the sound is given
+// back. Play() does this itself. `beforeStart`, if set, is called first when the
+// device has to be started (the phone's audio session must be active by then).
+// False if the device would not start.
+bool EnsureDeviceRunning();
+void SetBeforeDeviceStart(void (*beforeStart)());
 // The device in use ("" before Init), and whether it is the system default.
 std::wstring CurrentDeviceName();
 bool UsingDefaultDevice();

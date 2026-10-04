@@ -231,6 +231,12 @@ void MoveSettingsToThisContainer() {
                    name:AVAudioSessionInterruptionNotification object:nil];
     [center addObserver:self selector:@selector(audioRouteChanged:)
                    name:AVAudioSessionRouteChangeNotification object:nil];
+    // Another app taking the sound stops the output device, and nothing starts
+    // it again: Play does, with the session made active first. Coming back to
+    // the app does too, so the device is there before anything is pressed.
+    audio::SetBeforeDeviceStart([]() { [AVAudioSession.sharedInstance setActive:YES error:nil]; });
+    [center addObserver:self selector:@selector(appBecameActive:)
+                   name:UIApplicationDidBecomeActiveNotification object:nil];
 
     // What was playing last time, where it was
     if (g_playlist.empty()) LoadPlaybackState();
@@ -261,6 +267,12 @@ void MoveSettingsToThisContainer() {
         if (_interruptedWhilePlaying && (options & AVAudioSessionInterruptionOptionShouldResume)) Play();
         _interruptedWhilePlaying = NO;
     }
+}
+
+// Back in the app. Only while nothing else is sounding: starting the device
+// takes the sound, which is for Play to do, not for a look at the app.
+- (void)appBecameActive:(NSNotification*)note {
+    if (!AVAudioSession.sharedInstance.isOtherAudioPlaying) audio::EnsureDeviceRunning();
 }
 
 // Headphones unplugged or a speaker switched off: pause, rather than carry on aloud.

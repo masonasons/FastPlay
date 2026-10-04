@@ -779,8 +779,22 @@ void Unload() {
 bool IsLoaded() { return g.loaded; }
 const Decoder* Current() { return g.loaded ? g.decoder.get() : nullptr; }
 
+namespace {
+void (*g_beforeDeviceStart)() = nullptr;
+}
+
+void SetBeforeDeviceStart(void (*beforeStart)()) { g_beforeDeviceStart = beforeStart; }
+
+bool EnsureDeviceRunning() {
+    if (!g.deviceReady) return false;
+    if (ma_device_get_state(&g.device) == ma_device_state_started) return true;
+    if (g_beforeDeviceStart) g_beforeDeviceStart();
+    return ma_device_start(&g.device) == MA_SUCCESS;
+}
+
 void Play() {
     if (!g.loaded) return;
+    EnsureDeviceRunning();  // an interruption may have stopped it while paused
     g.state = State::Playing;
 }
 
