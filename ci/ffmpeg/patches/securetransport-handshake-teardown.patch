@@ -1,0 +1,39 @@
+diff --git a/libavformat/tls_securetransport.c b/libavformat/tls_securetransport.c
+index f52fc97..f2dff05 100644
+--- a/libavformat/tls_securetransport.c
++++ b/libavformat/tls_securetransport.c
+@@ -47,6 +47,7 @@ typedef struct TLSContext {
+     SSLContextRef ssl_context;
+     CFArrayRef ca_array;
+     int lastErr;
++    int handshake_done;
+ } TLSContext;
+ 
+ static int print_tls_error(URLContext *h, int ret)
+@@ -246,8 +247,16 @@ static int tls_close(URLContext *h)
+ {
+     TLSContext *c = h->priv_data;
+     if (c->ssl_context) {
+-        SSLClose(c->ssl_context);
+-        CFRelease(c->ssl_context);
++        /* FastPlay: no SSLClose(), which only sends the peer a close alert, and a
++         * context whose handshake did not finish is left alone rather than
++         * destroyed. On iOS both have crashed inside Secure Transport when a
++         * connection was given up part way through its handshake: a null pointer
++         * in SSLSendAlert, and a free of memory never allocated in
++         * SSLContextDestroy. A few kilobytes lost on a failed connection is the
++         * better trade. */
++        if (c->handshake_done)
++            CFRelease(c->ssl_context);
++        c->ssl_context = NULL;
+     }
+     if (c->ca_array)
+         CFRelease(c->ca_array);
+@@ -338,6 +347,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
+         }
+     }
+ 
++    c->handshake_done = 1;
+     return 0;
+ fail:
+     tls_close(h);

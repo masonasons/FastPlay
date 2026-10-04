@@ -1,0 +1,22 @@
+diff --git a/libavformat/ftp.c b/libavformat/ftp.c
+index 3865177..93bb5e5 100644
+--- a/libavformat/ftp.c
++++ b/libavformat/ftp.c
+@@ -513,9 +513,14 @@ static int ftp_set_dir(FTPContext *s)
+ static int ftp_list_mlsd(FTPContext *s)
+ {
+     static const char *command = "MLSD\r\n";
+-    static const int mlsd_codes[] = {150, 500, 0}; /* 500 is incorrect code */
+-
+-    if (ftp_send_command(s, command, mlsd_codes, NULL) != 150)
++    /* FastPlay: 125 as well as 150. A server that already has the data
++     * connection open (it was made just before, in passive mode) may answer
++     * 125 "transfer starting", as IIS and pyftpdlib do; without it the listing
++     * waited out its timeout and failed. RETR has always taken both. */
++    static const int mlsd_codes[] = {150, 125, 500, 0}; /* 500 is incorrect code */
++    int code = ftp_send_command(s, command, mlsd_codes, NULL);
++
++    if (code != 150 && code != 125)
+         return AVERROR(ENOSYS);
+     s->listing_method = MLSD;
+     return 0;

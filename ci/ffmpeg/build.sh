@@ -6,9 +6,11 @@
 #
 #   ci/ffmpeg/build.sh windows <out-dir>   (in MSYS2, with the MSVC tools on PATH)
 #   ci/ffmpeg/build.sh macos <out-dir>     (a universal arm64 + x86_64 build)
+#   ci/ffmpeg/build.sh ios <out-dir>       (iPhone arm64, and the simulator for both Macs)
 #
 # <out-dir> receives include/, lib/ and BUILDINFO.txt. The version to build is in
-# ci/ffmpeg/VERSION (an FFmpeg tag).
+# ci/ffmpeg/VERSION (an FFmpeg tag). The iOS build's libraries are in lib/iphoneos
+# and lib/iphonesimulator, as Xcode names the two.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -52,19 +54,26 @@ fetch() {
     if [ ! -d "$work/src" ]; then
         git clone --depth 1 --branch "$version" https://github.com/FFmpeg/FFmpeg.git "$work/src"
     fi
-    # FastPlay's changes to FFmpeg (ci/ffmpeg/patches), applied once
-    if [ ! -f "$work/src/.fastplay-patched" ]; then
+    # FastPlay's changes to FFmpeg (ci/ffmpeg/patches), each applied once: the
+    # ones already applied are listed in .fastplay-patched, so a patch added
+    # later reaches a source tree that has the earlier ones.
+    applied="$work/src/.fastplay-patched"
+    # (A list left empty is from before it named them, when there was one patch.)
+    [ -f "$applied" ] && [ ! -s "$applied" ] && echo "schannel-tls12-windows7.patch" > "$applied"
+    touch "$applied"
+    {
         for p in "$here"/patches/*.patch; do
             [ -e "$p" ] || continue
+            grep -qxF "$(basename "$p")" "$applied" && continue
             # The files it changes with LF line endings, as the patch has them,
             # whichever git checked them out
             for t in $(sed -n 's|^+++ b/\([^[:space:]]*\).*|\1|p' "$p"); do
                 tr -d '\r' < "$work/src/$t" > "$work/src/$t.lf" && mv "$work/src/$t.lf" "$work/src/$t"
             done
             git -C "$work/src" apply "$p"
+            basename "$p" >> "$applied"
         done
-        touch "$work/src/.fastplay-patched"
-    fi
+    }
 }
 
 # Configure and build one architecture into $2, from a copy of the source.
@@ -124,8 +133,35 @@ case "$platform" in
             lipo -create "$f" "$work/install-x86_64/lib/$base" -output "$out/lib/$base"
         done
         ;;
+    ios)
+        # The iPhone, and the simulator on Apple silicon and Intel Macs. FTP as
+        # well, for playing from a server (the desktop builds have no use for it).
+        ios_min=17.0
+        ios_slice() {
+            local name="$1" sdk="$2" arch="$3" minflag="$4"
+            shift 4
+            build_one "$name" "$work/install-$name" \
+                --enable-cross-compile --target-os=darwin --arch="$arch" \
+                --cc="xcrun -sdk $sdk clang -arch $arch" \
+                --sysroot="$(xcrun --sdk "$sdk" --show-sdk-path)" \
+                --extra-cflags="$minflag" --extra-ldflags="$minflag -arch $arch" \
+                --enable-securetransport --enable-zlib --enable-protocol=ftp \
+                "$@"
+        }
+        ios_slice ios-arm64 iphoneos arm64 "-miphoneos-version-min=$ios_min"
+        ios_slice sim-arm64 iphonesimulator arm64 "-mios-simulator-version-min=$ios_min"
+        ios_slice sim-x86_64 iphonesimulator x86_64 "-mios-simulator-version-min=$ios_min" --disable-x86asm
+        cp -r "$work/install-ios-arm64/include" "$out/include"
+        mkdir -p "$out/lib/iphoneos" "$out/lib/iphonesimulator"
+        for f in "$work/install-ios-arm64/lib"/*.a; do
+            base="$(basename "$f")"
+            cp "$f" "$out/lib/iphoneos/$base"
+            lipo -create "$work/install-sim-arm64/lib/$base" "$work/install-sim-x86_64/lib/$base" \
+                -output "$out/lib/iphonesimulator/$base"
+        done
+        ;;
     *)
-        echo "usage: $0 windows|macos <out-dir>" >&2
+        echo "usage: $0 windows|macos|ios <out-dir>" >&2
         exit 2
         ;;
 esac
