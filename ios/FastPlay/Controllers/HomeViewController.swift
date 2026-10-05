@@ -107,7 +107,7 @@ final class HomeViewController: FastPlayTableViewController {
         guard let source = FileSources.source(id: favorite.sourceID) else {
             return tell(favorite.name, "The server it was on has been deleted.")
         }
-        let browse = { [weak self] in
+        let browse: () -> Void = { [weak self] in
             self?.show(BrowserViewController(source: source, folder: favorite.folder, isTop: false))
         }
         if source.id == DropboxClient.shared.id { withDropbox(browse) } else { browse() }

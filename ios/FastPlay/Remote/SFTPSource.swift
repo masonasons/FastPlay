@@ -69,7 +69,7 @@ final class SFTPSource: FileSource {
     func list(path: String) async throws -> [FileEntry] {
         let folder = try await resolved(path)
         let names = try await connection().listDirectory(atPath: folder)
-        return names.flatMap(\.components).compactMap { item in
+        return names.flatMap(\.components).compactMap { item -> FileEntry? in
             guard item.filename != ".", item.filename != ".." else { return nil }
             let attributes = item.attributes
             // The kind is in the permissions; failing those, ls's long form

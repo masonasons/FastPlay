@@ -999,7 +999,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
             } catch {
                 outcome = Self.describe(error)
             }
-            let show = { [weak self] in self?.tell(entry.name, outcome) }
+            let show: () -> Void = { [weak self] in self?.tell(entry.name, outcome) }
             if progress.presentingViewController != nil { progress.dismiss(animated: true, completion: show) } else { show() }
         }
         progress.addAction(UIAlertAction(title: "Stop", style: .cancel) { _ in task.cancel() })
