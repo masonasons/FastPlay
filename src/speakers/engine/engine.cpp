@@ -12,6 +12,11 @@ namespace {
 // How often the geometry is recomputed. Short enough that walking and turning
 // track smoothly, long enough that the trigonometry costs nothing.
 constexpr int kGeometryBlock = 128;
+// Which is also the HRTF's block, so that each geometry block is one HRTF block.
+static_assert(kGeometryBlock == fastplay::audio::kHrtfBlock, "the HRTF needs whole blocks");
+// Below this a measured cabin's response is its pressure gain, which the
+// character knob leaves alone; above it, the colour the knob is for.
+constexpr float kCabinPressureHz = 150.0f;
 
 // What an ear does with a system this loud, put back.
 //
@@ -185,6 +190,18 @@ void Engine::Init(float sampleRate, int maxBlockFrames) {
     m_bassLimit.Init(ahead, 1.0f - std::exp(-1.0f / (kBassReleaseSeconds * sampleRate)));
     m_limit.Init(ahead, 1.0f - std::exp(-1.0f / (kLimitReleaseSeconds * sampleRate)));
     m_room.Derive();
+    m_hrtfRenderer.init();
+    const size_t block = fastplay::audio::kHrtfBlock;
+    m_blockInL.assign(block, 0.0f);
+    m_blockInR.assign(block, 0.0f);
+    m_blockOutL.assign(block, 0.0f);
+    m_blockOutR.assign(block, 0.0f);
+    m_blockFill = 0;
+}
+
+void Engine::SetHrtf(const fastplay::audio::HrtfDatabase *db) {
+    m_hrtf = db && db->ready() ? db : nullptr;
+    for (auto &v : m_voices) v.SetHrtf(m_hrtf, &m_hrtfRenderer);
 }
 
 void Engine::Limiter::Init(int aheadSamples, float releasePerSample) {
@@ -228,6 +245,7 @@ void Engine::Prepare(const SpeakerSystem &system) {
         m_voices.resize(speakers.size());
         for (auto &v : m_voices) v.Init(m_sampleRate);
     }
+    for (auto &v : m_voices) v.SetHrtf(m_hrtf, &m_hrtfRenderer);
     m_voiceLabels.resize(speakers.size());
     for (size_t i = 0; i < speakers.size(); ++i) {
         m_voices[i].Configure(speakers[i], m_settings, hasSub);
@@ -268,9 +286,9 @@ void Engine::Prepare(const SpeakerSystem &system) {
     m_shape.clear();
     float character = dsp::Clampf(m_settings.cabinCharacter, 0.0f, 1.5f);
     for (const auto &band : m_room.cabinShape) {
-        if (band.db * character == 0.0f || band.hz <= 1.0f) continue;
+        if (band.hz <= 1.0f || (band.hz >= kCabinPressureHz && band.db * character == 0.0f)) continue;
         ShapeStage stage;
-        float db = band.db * character;
+        float db = band.hz < kCabinPressureHz ? band.db : band.db * character;
         if (band.peak) {
             stage.l.SetPeaking(m_sampleRate, band.hz, band.q, db);
             stage.r.SetPeaking(m_sampleRate, band.hz, band.q, db);
@@ -313,6 +331,9 @@ void Engine::Reset() {
     m_highPos = 0;
     m_bassLimit.Reset();
     m_limit.Reset();
+    std::fill(m_blockOutL.begin(), m_blockOutL.end(), 0.0f);
+    std::fill(m_blockOutR.begin(), m_blockOutR.end(), 0.0f);
+    m_blockFill = 0;
     m_feelBlend = -1.0f;
     for (int i = 0; i < kFeelStages; ++i) {
         m_feelL[i].Reset();
@@ -345,6 +366,8 @@ void Engine::Render(const float *inL, const float *inR, int frames, float *outL,
         int n = std::min(frames - done, std::min(kGeometryBlock, m_maxBlock));
 
         std::fill(m_reverbSend.begin(), m_reverbSend.begin() + n, 0.0f);
+        const bool hrtf = m_hrtf && n == fastplay::audio::kHrtfBlock;
+        if (hrtf) m_hrtfRenderer.begin_block();
 
         // ---- speakers ----------------------------------------------------
         for (size_t vi = 0; vi < m_voices.size(); ++vi) {
@@ -355,6 +378,8 @@ void Engine::Render(const float *inL, const float *inR, int frames, float *outL,
             float send = roomOn ? m_reverb.SendFor(v.Distance()) : 0.0f;
             for (int i = 0; i < n; ++i) m_reverbSend[(size_t)i] += m_voiceMono[(size_t)i] * send;
         }
+        // What the speakers and their reflections sound like at your ears
+        if (hrtf) m_hrtfRenderer.end_block(outL + done, outR + done);
 
         // ---- the room's own tail ------------------------------------------
         if (roomOn && !outside) m_reverb.Process(m_reverbSend.data(), n, outL + done, outR + done);
@@ -500,6 +525,32 @@ void Engine::Render(const float *inL, const float *inR, int frames, float *outL,
 }
 
 void Engine::RenderInterleaved(const float *in, float *out, int frames) {
+    if (m_hrtf) {
+        // A block at a time, as the HRTF works: what comes in fills the next
+        // block while the last one's result goes out, a block late. `in` and
+        // `out` may be the same buffer, so each piece is read before it is written.
+        const int block = fastplay::audio::kHrtfBlock;
+        int done = 0;
+        while (done < frames) {
+            int take = std::min(frames - done, block - m_blockFill);
+            for (int i = 0; i < take; ++i) {
+                const size_t at = (size_t)(done + i) * 2;
+                const size_t slot = (size_t)(m_blockFill + i);
+                const float l = in[at], r = in[at + 1];
+                m_blockInL[slot] = l;
+                m_blockInR[slot] = r;
+                out[at] = m_blockOutL[slot];
+                out[at + 1] = m_blockOutR[slot];
+            }
+            m_blockFill += take;
+            done += take;
+            if (m_blockFill == block) {
+                Render(m_blockInL.data(), m_blockInR.data(), block, m_blockOutL.data(), m_blockOutR.data());
+                m_blockFill = 0;
+            }
+        }
+        return;
+    }
     // In pieces through the scratch set up in Init(), so nothing is allocated
     // and any length can be rendered. `in` and `out` may be the same buffer.
     int done = 0;

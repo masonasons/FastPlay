@@ -97,8 +97,12 @@ struct SystemSettings {
     // fourteen decibel hump from 170 to 280 Hz. That is real -- it is most of
     // why a car sounds like a car -- but it is also the loudest colour in the
     // whole simulation, and whether it reads as "a car" or as "a peak" is a
-    // judgement no measurement settles. This is the knob for it.
-    float cabinCharacter = 1.0f;
+    // judgement no measurement settles. This is the knob for it. It leaves the
+    // cabin's pressure gain, below that, alone: that is physics, not colour.
+    //
+    // Half by default. At the full fourteen decibels the low mids sat on top of
+    // everything, and every car preset sounded boxed in rather than in a car.
+    float cabinCharacter = 0.5f;
 
     // How hard the subwoofer bus is squeezed, 0 to 1. A little of this is what
     // every real installation has, whether the amplifier admits to it or not.

@@ -9,6 +9,7 @@
 #include "reverb.h"
 #include "voice.h"
 #include "../model/system.h"
+#include "spatial/hrtf.h"
 
 namespace speakers {
 
@@ -35,6 +36,12 @@ namespace speakers {
 class Engine {
 public:
     void Init(float sampleRate, int maxBlockFrames = 2048);
+
+    // Hear the speakers and their reflections through this measured head (the
+    // HRTF Binaural mode uses) rather than the ear model. Before Prepare(); the
+    // database must outlive the engine. With it the engine works in blocks of
+    // fastplay::audio::kHrtfBlock, so RenderInterleaved() is that many frames late.
+    void SetHrtf(const fastplay::audio::HrtfDatabase *db);
 
     // Rebuilds the voices and room tuning from the system. Call it
     // when SpeakerSystem::Revision() has moved.
@@ -192,6 +199,13 @@ private:
 
     float m_peak = 0.0f;
     std::string m_emptyLabel;
+
+    // Through the HRTF: the renderer the voices mix into each block, and the
+    // block being gathered (in) and the one being given out (a block behind)
+    const fastplay::audio::HrtfDatabase *m_hrtf = nullptr;
+    fastplay::audio::HrtfRenderer m_hrtfRenderer;
+    std::vector<float> m_blockInL, m_blockInR, m_blockOutL, m_blockOutR;
+    int m_blockFill = 0;
 };
 
 }  // namespace speakers

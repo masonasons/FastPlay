@@ -30,6 +30,11 @@ namespace speakers {
 class Voice {
 public:
     void Init(float sampleRate);
+    // Hears through a measured head (see Spatializer::SetHrtf); null for the ear model.
+    void SetHrtf(const fastplay::audio::HrtfDatabase *db, fastplay::audio::HrtfRenderer *renderer) {
+        m_spatial.SetHrtf(db, renderer);
+        m_spatialTweeter.SetHrtf(db, renderer);
+    }
 
     // Rebuilds every filter for this speaker. Control thread only.
     void Configure(const PlacedSpeaker &speaker, const SystemSettings &settings,

@@ -3,6 +3,7 @@
 #include "../core/vec3.h"
 #include "../model/room.h"
 #include "../model/system.h"
+#include "spatial/hrtf.h"
 
 namespace speakers {
 
@@ -52,11 +53,22 @@ public:
     // Distance from the listener as of the last Update(), in metres.
     float Distance() const { return m_distance; }
 
+    // Hears through a measured head (an HRTF, the one Binaural mode uses) rather
+    // than the ear model: the direct sound and each of the six reflections from
+    // the direction it arrives from, timing, level and colouring between the ears
+    // as a real head has them -- which is what puts a speaker out in the room
+    // rather than inside your head. Null for the ear model. With it, Process()
+    // takes blocks of fastplay::audio::kHrtfBlock, and the engine's renderer
+    // mixes what it adds once each block's voices are in.
+    void SetHrtf(const fastplay::audio::HrtfDatabase *db, fastplay::audio::HrtfRenderer *renderer);
+
 private:
     static constexpr int kReflections = 6; // four walls, floor, ceiling
 
     struct Tap {
         dsp::Smoother delay;  // in samples
+        dsp::Smoother gain;   // through the HRTF: one level, the direction does the rest
+        dsp::OnePole tone;    // and its own surface colouring
         dsp::Smoother gainL;
         dsp::Smoother gainR;
     };
@@ -102,6 +114,17 @@ private:
     // rather than gliding up from nothing, which would be a pitch bend.
     bool m_settle = false;
     float m_distance = 1.0f;
+
+    // Through the HRTF
+    const fastplay::audio::HrtfDatabase *m_hrtf = nullptr;
+    fastplay::audio::HrtfRenderer *m_renderer = nullptr;
+    fastplay::audio::HrtfVoiceState m_hrtfDirect;
+    fastplay::audio::HrtfVoiceState m_hrtfTaps[kReflections];
+    fastplay::audio::HrtfDatabase::Lookup m_lookDirect;
+    fastplay::audio::HrtfDatabase::Lookup m_lookTaps[kReflections];
+    dsp::Smoother m_delayC, m_gainC;  // the direct sound, to the middle of the head
+    float m_blockDirect[fastplay::audio::kHrtfBlock] = {};
+    float m_blockTaps[kReflections][fastplay::audio::kHrtfBlock] = {};
 };
 
 }  // namespace speakers

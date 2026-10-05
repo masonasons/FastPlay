@@ -85,6 +85,7 @@ bool SpatialAudio::Initialize(int sampleRate) {
     ResetVoices();
 
     m_engine->Init(static_cast<float>(sampleRate), SPEAKER_CHUNK);
+    m_engine->SetHrtf(&m_hrtf);
     RebuildSpeakers(false);
     // A new track: nothing of the last one may ring on into it.
     m_engine->Reset();
@@ -384,6 +385,7 @@ void SpatialAudio::RebuildSpeakers(bool crossfade) {
         // change during a fade lets the oldest go at once: by then it is quiet.)
         auto fresh = std::make_unique<speakers::Engine>();
         fresh->Init(static_cast<float>(m_sampleRate), SPEAKER_CHUNK);
+        fresh->SetHrtf(&m_hrtf);
         fresh->Prepare(*m_system);
         m_retiredEngine = std::move(m_oldEngine);
         m_oldEngine = std::move(m_engine);

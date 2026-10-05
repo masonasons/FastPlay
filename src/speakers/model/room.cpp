@@ -164,29 +164,33 @@ RoomSpec MakeSuv() {
 // Rooms
 // ---------------------------------------------------------------------------
 
+// Yaw 0 faces the front wall (+y), 180 the back. The front speakers sit ahead of
+// the seat, so they face back into the room, toed in towards it: 180 less the
+// toe in. (They faced the front wall, the listener 126 to 137 degrees off their
+// axis, which took ten decibels and more off everything above the low midrange.)
 void AddStereoRoomMounts(RoomSpec &r, float spread, float frontY, float rearY, float standZ,
                          float surroundZ) {
     float hw = r.width * 0.5f;
-    r.mounts.push_back(Mount("main_left", "front left", {-spread, frontY, standZ}, 20.0f, 0.0f,
+    r.mounts.push_back(Mount("main_left", "front left", {-spread, frontY, standZ}, 160.0f, 0.0f,
                              MountSide::Left, "main_right", 0.0f));
-    r.mounts.push_back(Mount("main_right", "front right", {spread, frontY, standZ}, -20.0f, 0.0f,
+    r.mounts.push_back(Mount("main_right", "front right", {spread, frontY, standZ}, -160.0f, 0.0f,
                              MountSide::Right, "main_left", 0.0f));
-    r.mounts.push_back(Mount("center_front", "front centre", {0.0f, frontY, standZ * 0.55f}, 0.0f,
+    r.mounts.push_back(Mount("center_front", "front centre", {0.0f, frontY, standZ * 0.55f}, 180.0f,
                              0.0f, MountSide::Center, "", 0.0f));
     r.mounts.push_back(Mount("shelf_left", "left shelf", {-hw + 0.25f, frontY - 0.6f, standZ + 0.6f},
-                             35.0f, -15.0f, MountSide::Left, "shelf_right", 8.0f));
+                             145.0f, -15.0f, MountSide::Left, "shelf_right", 8.0f));
     r.mounts.push_back(Mount("shelf_right", "right shelf", {hw - 0.25f, frontY - 0.6f, standZ + 0.6f},
-                             -35.0f, -15.0f, MountSide::Right, "shelf_left", 8.0f));
+                             -145.0f, -15.0f, MountSide::Right, "shelf_left", 8.0f));
     r.mounts.push_back(Mount("surround_left", "left surround", {-hw + 0.2f, rearY, surroundZ},
                              75.0f, -20.0f, MountSide::Left, "surround_right", 0.0f));
     r.mounts.push_back(Mount("surround_right", "right surround", {hw - 0.2f, rearY, surroundZ},
                              -75.0f, -20.0f, MountSide::Right, "surround_left", 0.0f));
     r.mounts.push_back(Mount("sub_front_left", "front left corner", {-hw + 0.3f, frontY + 0.3f, 0.25f},
-                             0.0f, 0.0f, MountSide::Left, "sub_front_right", 0.0f, true));
+                             180.0f, 0.0f, MountSide::Left, "sub_front_right", 0.0f, true));
     r.mounts.push_back(Mount("sub_front_right", "front right corner", {hw - 0.3f, frontY + 0.3f, 0.25f},
-                             0.0f, 0.0f, MountSide::Right, "sub_front_left", 0.0f, true));
+                             180.0f, 0.0f, MountSide::Right, "sub_front_left", 0.0f, true));
     r.mounts.push_back(Mount("sub_rear_center", "back wall, centred", {0.0f, rearY - 0.2f, 0.25f},
-                             180.0f, 0.0f, MountSide::Center, "", 0.0f, true));
+                             0.0f, 0.0f, MountSide::Center, "", 0.0f, true));
 }
 
 RoomSpec MakeLivingRoom() {

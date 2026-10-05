@@ -70,7 +70,10 @@ void Spatializer::Init(float sampleRate) {
     m_shelfR.SetTime(sampleRate, 15.0f);
     m_splitL.SetCutoff(sampleRate, kHeadShadowHz);
     m_splitR.SetCutoff(sampleRate, kHeadShadowHz);
+    m_delayC.SetTime(sampleRate, 20.0f);
+    m_gainC.SetTime(sampleRate, 15.0f);
     for (auto &t : m_taps) {
+        t.gain.SetTime(sampleRate, 30.0f);
         t.delay.SetTime(sampleRate, 40.0f);
         t.gainL.SetTime(sampleRate, 30.0f);
         t.gainR.SetTime(sampleRate, 30.0f);
@@ -97,7 +100,15 @@ void Spatializer::Reset() {
     m_delayR.Snap(0.0f);
     m_gainL.Snap(0.0f);
     m_gainR.Snap(0.0f);
+    m_delayC.Snap(0.0f);
+    m_gainC.Snap(0.0f);
+    if (m_hrtf) {
+        m_hrtfDirect.reset();
+        for (auto &state : m_hrtfTaps) state.reset();
+    }
     for (auto &t : m_taps) {
+        t.gain.Snap(0.0f);
+        t.tone.Reset();
         t.delay.Snap(0.0f);
         t.gainL.Snap(0.0f);
         t.gainR.Snap(0.0f);
@@ -143,6 +154,12 @@ void Spatializer::UpdateReflection(int index, Vec3 imagePos, const Listener &lis
     tap.delay.target = (dist / kSpeedOfSound) * m_sampleRate;
     tap.gainL.target = gL * gain;
     tap.gainR.target = gR * gain;
+    // Through the HRTF: the level, and where it comes from
+    tap.gain.target = gain;
+    if (m_hrtf) {
+        float elevation = std::asin(dsp::Clampf(rel.z / dist, -1.0f, 1.0f));
+        m_lookTaps[index] = m_hrtf->lookup(azimuth / kDegToRad, elevation / kDegToRad);
+    }
 }
 
 void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 sourcePos, Vec3 aim,
@@ -156,6 +173,15 @@ void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 so
     float z = rel.z;
 
     float elevation = std::asin(dsp::Clampf(z / dist, -1.0f, 1.0f));
+
+    // Through the HRTF: one path to the middle of the head, the measured head
+    // supplying the difference between the ears, from this direction
+    m_delayC.target = std::max(0.0f, (dist / kSpeedOfSound + extraDelayMs * 0.001f) * m_sampleRate);
+    m_gainC.target = kRefDistance / dist;
+    if (m_hrtf) {
+        float y = Dot(rel, head.forward);
+        m_lookDirect = m_hrtf->lookup(std::atan2(x, y) / kDegToRad, elevation / kDegToRad);
+    }
 
     // ---- how far it is from each ear, separately -------------------------
     //
@@ -248,6 +274,10 @@ void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 so
     m_bassHoldActive = room.kind != RoomKind::Outdoor;
     if (m_bassHoldActive) {
         float restore = dsp::Clampf(20.0f * std::log10(dist / kRefDistance), -8.0f, 14.0f);
+        // In a room the reflections and the modes carry half of this already:
+        // they are how the pressure holds up, and the full amount on top of
+        // them left every home preset ten decibels heavy below 250 Hz.
+        if (room.kind != RoomKind::Vehicle) restore *= 0.5f;
         float corner = dsp::Clampf(room.cabinGainHz * 2.5f, 70.0f, 320.0f);
         m_bassHold.SetLowShelf(m_sampleRate, corner, 0.7f, restore);
     }
@@ -260,6 +290,7 @@ void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 so
         float toneHz = dsp::Clampf(11000.0f * (1.0f - room.absorption * 1.6f), 1200.0f, 11000.0f);
         m_reflectionToneL.SetCutoff(m_sampleRate, toneHz);
         m_reflectionToneR.SetCutoff(m_sampleRate, toneHz);
+        for (auto &t : m_taps) t.tone.SetCutoff(m_sampleRate, toneHz);
         float hx = room.width * 0.5f, hy = room.depth * 0.5f;
         Vec3 p = sourcePos;
         // Mirror the source through each surface in turn.
@@ -273,6 +304,7 @@ void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 so
         for (auto &t : m_taps) {
             t.gainL.target = 0.0f;
             t.gainR.target = 0.0f;
+            t.gain.target = 0.0f;
         }
     }
 
@@ -284,11 +316,55 @@ void Spatializer::Update(const RoomSpec &room, const Listener &listener, Vec3 so
         m_settle = false;
         m_delayL.Snap(m_delayL.target);
         m_delayR.Snap(m_delayR.target);
+        m_delayC.Snap(m_delayC.target);
         for (auto &t : m_taps) t.delay.Snap(t.delay.target);
     }
 }
 
+void Spatializer::SetHrtf(const fastplay::audio::HrtfDatabase *db, fastplay::audio::HrtfRenderer *renderer) {
+    if (db && db != m_hrtf) {
+        // Made ready here, off the audio thread
+        m_hrtfDirect.init();
+        for (auto &state : m_hrtfTaps) state.init();
+    }
+    m_hrtf = db;
+    m_renderer = renderer;
+}
+
 void Spatializer::Process(const float *mono, int frames, float *outL, float *outR) {
+    if (m_hrtf && m_renderer && frames == fastplay::audio::kHrtfBlock) {
+        for (int i = 0; i < frames; ++i) {
+            float x = mono[i];
+            if (m_directivityActive) x = m_directivity.Process(x);
+            x = m_air.Process(x);
+            if (m_bassHoldActive) x = m_bassHold.Process(x);
+            m_line.Write(x);
+            m_blockDirect[i] = m_line.Read(m_delayC.Next()) * m_gainC.Next();
+            // The ear model's own, kept moving so that leaving the HRTF does not jump
+            m_delayL.Next();
+            m_delayR.Next();
+            m_gainL.Next();
+            m_gainR.Next();
+            m_shelfL.Next();
+            m_shelfR.Next();
+            for (int k = 0; k < kReflections; ++k) {
+                Tap &t = m_taps[k];
+                float e = m_line.Read(t.delay.Next()) * t.gain.Next();
+                t.gainL.Next();
+                t.gainR.Next();
+                m_blockTaps[k][i] = t.tone.Process(e);
+            }
+        }
+        m_renderer->render_voice(m_hrtfDirect, m_blockDirect, *m_hrtf, nullptr, m_lookDirect);
+        if (m_reflectionsOn) {
+            for (int k = 0; k < kReflections; ++k) {
+                m_renderer->render_voice(m_hrtfTaps[k], m_blockTaps[k], *m_hrtf, nullptr, m_lookTaps[k]);
+            }
+        }
+        (void)outL;
+        (void)outR;
+        return;
+    }
     for (int i = 0; i < frames; ++i) {
         float x = mono[i];
         if (m_directivityActive) x = m_directivity.Process(x);

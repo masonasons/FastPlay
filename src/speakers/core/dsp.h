@@ -128,6 +128,8 @@ public:
         if (pos < 0.0f) pos += (float)m_buf.size();
         int i0 = (int)pos;
         float frac = pos - (float)i0;
+        // A hair below zero plus the size rounds to the size itself in a float.
+        if (i0 >= (int)m_buf.size()) i0 -= (int)m_buf.size();
         int i1 = i0 + 1;
         if (i1 >= (int)m_buf.size()) i1 = 0;
         return m_buf[i0] + (m_buf[i1] - m_buf[i0]) * frac;
