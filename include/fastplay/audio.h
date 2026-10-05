@@ -116,16 +116,16 @@ struct Device {
 // The playback devices, in the system's order.
 std::vector<Device> ListDevices();
 
-// Opens the named device (empty, or not found: the system default). The output
+// Opens the named device (empty, or not found: the system default). On iOS the
+// device stays idle until Play(), and pauses with playback. The output
 // buffer holds `bufferMs` of audio: what effects and tempo changes lag behind.
 bool Init(const std::wstring& deviceName, int bufferMs);
 void Shutdown();
 // Moves to another device. Only while nothing is loaded.
 bool SwitchDevice(const std::wstring& deviceName, int bufferMs);
-// Starts the device again if something stopped it: on a phone, another app
-// taking the sound stops it, and nothing starts it again when the sound is given
-// back. Play() does this itself. `beforeStart`, if set, is called first when the
-// device has to be started (the phone's audio session must be active by then).
+// Starts the device again if something stopped it: on iOS, pausing playback or
+// another app taking the sound. Play() does this itself. `beforeStart`, if set,
+// is called first (the phone's audio session must be active by then).
 // False if the device would not start.
 bool EnsureDeviceRunning();
 void SetBeforeDeviceStart(void (*beforeStart)());
