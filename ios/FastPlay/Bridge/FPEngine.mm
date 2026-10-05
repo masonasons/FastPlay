@@ -71,6 +71,14 @@ std::wstring ToWide(NSString* text) {
 
 bool g_stateChangePending = false;
 
+void PublishNowPlaying() {
+	if (!audio::IsLoaded()) {
+		ClearNowPlaying();
+		return;
+	}
+	UpdateNowPlaying(ToWide(FPEngine.shared.title), audio::Length(), audio::Position(), IsPlaying());
+}
+
 // Tell the app that something changed, once however many times it is asked for
 // before the main thread gets to it.
 void PostStateChange() {
@@ -78,6 +86,9 @@ void PostStateChange() {
     g_stateChangePending = true;
     dispatch_async(dispatch_get_main_queue(), ^{
         g_stateChangePending = false;
+		// Publish transport changes without waiting for the position timer, which
+		// may stop running once a paused app is suspended in the background.
+		PublishNowPlaying();
         [NSNotificationCenter.defaultCenter postNotificationName:FPEngineStateDidChangeNotification object:nil];
     });
 }
@@ -252,8 +263,8 @@ void MoveSettingsToThisContainer() {
 }
 
 - (void)tick {
-    if (!audio::IsLoaded()) return;
-    UpdateNowPlaying(ToWide(self.title), audio::Length(), audio::Position(), IsPlaying());
+	if (!audio::IsLoaded()) return;
+	PublishNowPlaying();
 }
 
 // A phone call or an alarm takes the sound: paused until it is given back.
@@ -272,7 +283,7 @@ void MoveSettingsToThisContainer() {
 // Back in the app. Only while nothing else is sounding: starting the device
 // takes the sound, which is for Play to do, not for a look at the app.
 - (void)appBecameActive:(NSNotification*)note {
-    if (!AVAudioSession.sharedInstance.isOtherAudioPlaying) audio::EnsureDeviceRunning();
+	if (IsPlaying() && !AVAudioSession.sharedInstance.isOtherAudioPlaying) audio::EnsureDeviceRunning();
 }
 
 // Headphones unplugged or a speaker switched off: pause, rather than carry on aloud.

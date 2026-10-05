@@ -23,6 +23,10 @@
 
 #include "miniaudio.h"
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -584,6 +588,17 @@ void CloseDevice() {
     }
 }
 
+void StopIdleDevice() {
+#if TARGET_OS_IOS
+	// iOS determines Now Playing's state from the audio output. Sending silence
+	// still counts as playing, so pause the device as well as the source.
+	if (g.deviceReady && ma_device_stop(&g.device) == MA_SUCCESS) {
+		g.fadeLevel = 0.0f;
+		g.outputLevel = 0.0f;
+	}
+#endif
+}
+
 bool OpenDevice(const std::wstring& name, int bufferMs) {
     ma_device_id id;
     bool found = FindDevice(name, id);
@@ -624,7 +639,12 @@ bool OpenDevice(const std::wstring& name, int bufferMs) {
         }
         g.ringReady = true;
     }
-    return ma_device_start(&g.device) == MA_SUCCESS;
+#if TARGET_OS_IOS
+	// Play() starts it when there is audio to play.
+	return true;
+#else
+	return ma_device_start(&g.device) == MA_SUCCESS;
+#endif
 }
 
 // Empties the output ring and starts counting played frames again. The mix
@@ -681,7 +701,7 @@ bool Init(const std::wstring& deviceName, int bufferMs) {
         ma_backend nullBackend = ma_backend_null;
         const bool test = getenv("FASTPLAY_NULL_AUDIO") != nullptr;
         ma_context_config contextConfig = ma_context_config_init();
-#if defined(MA_APPLE_MOBILE)
+#if TARGET_OS_IOS
         // The iPhone's audio session, for a player: sound with the ring switch
         // off and the screen locked (miniaudio's default is for a phone call)
         contextConfig.coreaudio.sessionCategory = ma_ios_session_category_playback;
@@ -764,6 +784,7 @@ void Unload() {
     FadeOut(true);
     g.state = State::Empty;
     g.fadeOut = false;
+	StopIdleDevice();
     // A decoder blocked on the network is asked to give up, then the threads are
     // held while it goes.
     if (g.decoder) g.decoder->Abort();
@@ -801,7 +822,7 @@ bool EnsureDeviceRunning() {
 
 void Play() {
     if (!g.loaded) return;
-    EnsureDeviceRunning();  // an interruption may have stopped it while paused
+	EnsureDeviceRunning();  // a pause or interruption may have stopped it
     g.state = State::Playing;
 }
 
@@ -810,6 +831,7 @@ void Pause() {
     FadeOut(true);
     g.state = State::Paused;
     g.fadeOut = false;
+	StopIdleDevice();
 }
 
 void Stop() {
@@ -817,6 +839,7 @@ void Stop() {
     FadeOut(true);
     g.state = State::Stopped;
     g.fadeOut = false;
+	StopIdleDevice();
 }
 
 State GetState() { return g.state.load(); }
