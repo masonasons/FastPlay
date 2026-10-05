@@ -74,7 +74,7 @@ final class SFTPSource: FileSource {
             let attributes = item.attributes
             // The kind is in the permissions; failing those, ls's long form
             let isFolder = attributes.permissions.map { $0 & 0o170000 == 0o040000 } ?? item.longname.hasPrefix("d")
-            let full = path(of: item.filename, in: folder)
+            let full = self.path(of: item.filename, in: folder)
             return FileEntry(name: item.filename, path: full, displayPath: full, isFolder: isFolder,
                              size: Int64(attributes.size ?? 0),
                              modified: attributes.accessModificationTime?.modificationTime)

@@ -92,8 +92,8 @@ extension FileSource {
 
     /// The entry for a path just made here (a folder made, a file uploaded).
     func entry(named name: String, in folder: String, isFolder: Bool, size: Int64 = 0) -> FileEntry {
-        let path = path(of: name, in: folder)
-        return FileEntry(name: name, path: path, displayPath: path, isFolder: isFolder, size: size, modified: Date())
+        let full = self.path(of: name, in: folder)
+        return FileEntry(name: name, path: full, displayPath: full, isFolder: isFolder, size: size, modified: Date())
     }
 
     /// Deletes a folder's contents, deepest first, then the folder: for a source
