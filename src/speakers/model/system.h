@@ -80,8 +80,10 @@ struct SystemSettings {
     // yours): set per preset so the subs sit where a system like it is
     // usually tuned, above the midrange.
     float subTrimDb = 0.0f;
-    // A bass control, as on the amplifier: a shelf on the signal before it
-    // reaches any of the speakers, so turning it up drives them harder.
+    // How much bass, in dB. With subwoofers playing it is their level, on top
+    // of subGainDb; without, a bass control as on the amplifier: a shelf on the
+    // signal before it reaches any of the speakers, so turning it up drives
+    // them harder.
     float bassDb = 0.0f;
     // How much of the bass you would feel in a system this loud is put back.
     //

@@ -142,22 +142,34 @@ float FeelDuckExtra(const SystemSettings &settings) {
     return dsp::Clampf(over * kFeelDuckPerDb, 0.0f, kFeelDuckExtraMax);
 }
 
-// Turning the bass or the subs up makes room for it, as an equaliser's preamp
-// does. Music sits at full scale, and with a system's bass already near the
-// ceiling, a boost on top had nowhere to go but into the limiter, which took
-// most of it straight back: +10 dB of bass came out as three. Taking part of
-// the boost off everything lets the bass actually rise against the rest.
+bool HasAudibleSub(const SpeakerSystem &system) {
+    for (const auto &s : system.Speakers())
+        if (s.IsSub() && system.IsAudible(s)) return true;
+    return false;
+}
+
+// The settings the engine works to: the bass setting made into the subs'
+// level where there are subs (the shelf then stays flat), and room made for a
+// boost. Turning the bass up takes part of it off everything else, as an
+// equaliser's preamp does. Music sits at full scale, and with a system's bass
+// already near the ceiling, a boost on top had nowhere to go but into the
+// limiter, which took most of it straight back: +10 dB of bass came out as
+// three. Taking part of the boost off everything lets the bass actually rise
+// against the rest.
 constexpr float kBassBoostHeadroom = 0.6f;
 constexpr float kSubBoostHeadroom = 0.4f;
 
-float BoostHeadroomDb(const SpeakerSystem &system) {
-    const SystemSettings &settings = system.Settings();
-    float db = kBassBoostHeadroom * std::max(0.0f, settings.bassDb);
-    bool hasSub = false;
-    for (const auto &s : system.Speakers())
-        if (s.IsSub() && system.IsAudible(s)) hasSub = true;
-    if (hasSub) db += kSubBoostHeadroom * std::max(0.0f, settings.subGainDb);
-    return db;
+SystemSettings EngineSettings(const SpeakerSystem &system) {
+    SystemSettings settings = system.Settings();
+    float boost = std::max(0.0f, settings.bassDb);
+    if (HasAudibleSub(system)) {
+        settings.subGainDb += settings.bassDb;
+        settings.bassDb = 0.0f;
+        settings.masterGainDb -= kSubBoostHeadroom * boost;
+    } else {
+        settings.masterGainDb -= kBassBoostHeadroom * boost;
+    }
+    return settings;
 }
 
 float BassAuthority(const SpeakerSystem &system) {
@@ -251,13 +263,10 @@ void Engine::Limiter::Reset() {
 
 void Engine::Prepare(const SpeakerSystem &system) {
     m_room = system.Room();
-    m_settings = system.Settings();
-    m_settings.masterGainDb -= BoostHeadroomDb(system);
+    m_settings = EngineSettings(system);
     m_listener = system.GetListener();
 
-    bool hasSub = false;
-    for (const auto &s : system.Speakers())
-        if (s.IsSub() && system.IsAudible(s)) hasSub = true;
+    bool hasSub = HasAudibleSub(system);
 
     m_bassAuthority = BassAuthority(system);
     m_feelDuckExtra = FeelDuckExtra(m_settings);
@@ -332,8 +341,7 @@ void Engine::UpdateLevels(const SpeakerSystem &system) {
     // longer line up with the system, and only a rebuild can fix that.
     if (speakers.size() != m_voices.size()) return;
 
-    m_settings = system.Settings();
-    m_settings.masterGainDb -= BoostHeadroomDb(system);
+    m_settings = EngineSettings(system);
     m_bassAuthority = BassAuthority(system);
     m_feelDuckExtra = FeelDuckExtra(m_settings);
     for (size_t i = 0; i < speakers.size(); ++i) {

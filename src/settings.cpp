@@ -399,14 +399,14 @@ void LoadDSPSettings() {
     SetParamValue(ParamId::SpatialZ, IniGetFloat(L"DSPParams", L"SpatialZ", def->defaultValue, g_configPath.c_str()));
     def = GetParamDef(ParamId::SpatialSub);
     SetParamValue(ParamId::SpatialSub, IniGetFloat(L"DSPParams", L"SpatialSub", def->defaultValue, g_configPath.c_str()));
-    def = GetParamDef(ParamId::SpatialSubLevel);
-    SetParamValue(ParamId::SpatialSubLevel, IniGetFloat(L"DSPParams", L"SpatialSubLevel", def->defaultValue, g_configPath.c_str()));
     def = GetParamDef(ParamId::SpatialCrossover);
     SetParamValue(ParamId::SpatialCrossover, IniGetFloat(L"DSPParams", L"SpatialCrossover", def->defaultValue, g_configPath.c_str()));
-    def = GetParamDef(ParamId::SpatialBassFeel);
-    SetParamValue(ParamId::SpatialBassFeel, IniGetFloat(L"DSPParams", L"SpatialBassFeel", def->defaultValue, g_configPath.c_str()));
     def = GetParamDef(ParamId::SpatialBass);
-    SetParamValue(ParamId::SpatialBass, IniGetFloat(L"DSPParams", L"SpatialBass", def->defaultValue, g_configPath.c_str()));
+    {
+        // 3D Bass took over from 3D Sub Level, so a sub level set before it carries over
+        float subLevel = IniGetFloat(L"DSPParams", L"SpatialSubLevel", def->defaultValue, g_configPath.c_str());
+        SetParamValue(ParamId::SpatialBass, IniGetFloat(L"DSPParams", L"SpatialBass", subLevel, g_configPath.c_str()));
+    }
     def = GetParamDef(ParamId::SpatialConeNoise);
     SetParamValue(ParamId::SpatialConeNoise, IniGetFloat(L"DSPParams", L"SpatialConeNoise", def->defaultValue, g_configPath.c_str()));
 
@@ -708,12 +708,8 @@ void SaveSettings() {
     IniWriteString(L"DSPParams", L"SpatialZ", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialSub));
     IniWriteString(L"DSPParams", L"SpatialSub", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialSubLevel));
-    IniWriteString(L"DSPParams", L"SpatialSubLevel", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialCrossover));
     IniWriteString(L"DSPParams", L"SpatialCrossover", buf, g_configPath.c_str());
-    swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialBassFeel));
-    IniWriteString(L"DSPParams", L"SpatialBassFeel", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialBass));
     IniWriteString(L"DSPParams", L"SpatialBass", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%.2f", GetParamValue(ParamId::SpatialConeNoise));

@@ -86,9 +86,7 @@ static const ParamDef g_paramDefs[] = {
     {ParamId::SpatialY,          "3D Listener Y",  "",    -50.0f,  50.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
     {ParamId::SpatialZ,          "3D Listener Z",  "",    -50.0f,  50.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
     {ParamId::SpatialSub,        "3D Subwoofer",   "",     0.0f,   1.0f,    1.0f,  1.0f,   DSPEffectType::SpatialAudio},
-    {ParamId::SpatialSubLevel,   "3D Sub Level",   " dB", -15.0f,  15.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
     {ParamId::SpatialCrossover,  "3D Crossover",   " Hz",  40.0f,  160.0f,  10.0f, 80.0f,  DSPEffectType::SpatialAudio},
-    {ParamId::SpatialBassFeel,   "3D Bass Feel",   "%",    0.0f,   200.0f,  10.0f, 100.0f, DSPEffectType::SpatialAudio},
     {ParamId::SpatialConeNoise,  "3D Cone Noise",  "%",    0.0f,   1000.0f, 25.0f, 100.0f, DSPEffectType::SpatialAudio},
     {ParamId::SpatialBass,       "3D Bass",        " dB", -15.0f,  15.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
     // Normalizer parameters
@@ -407,12 +405,10 @@ static bool IsSpatialParamInUse(ParamId id) {
         case ParamId::SpatialWidth:
         case ParamId::SpatialRearCenter:
             return preset < 0;
-        case ParamId::SpatialBassFeel:
         case ParamId::SpatialConeNoise:
         case ParamId::SpatialBass:
             return preset >= 0;
         case ParamId::SpatialSub:
-        case ParamId::SpatialSubLevel:
         case ParamId::SpatialCrossover:
             return preset >= 0 && speakers::RoomPresetHasSub(preset);
         default:
@@ -898,14 +894,8 @@ void SetParamValue(ParamId id, float value) {
         case ParamId::SpatialSub:
             if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetSubwoofer(value >= 0.5f);
             break;
-        case ParamId::SpatialSubLevel:
-            if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetSubLevel(value);
-            break;
         case ParamId::SpatialCrossover:
             if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetCrossover(value);
-            break;
-        case ParamId::SpatialBassFeel:
-            if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetBassFeel(value / 100.0f);
             break;
         case ParamId::SpatialConeNoise:
             if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetConeNoise(value / 100.0f);
@@ -1147,7 +1137,7 @@ std::string DescribeParam(ParamId id) {
         snprintf(buf, sizeof(buf), "3D Rear Speaker: %s", val >= 0.5f ? "On" : "Off");
     } else if (id == ParamId::SpatialSub) {
         snprintf(buf, sizeof(buf), "3D Subwoofer: %s", val >= 0.5f ? "On" : "Off");
-    } else if (id == ParamId::SpatialSubLevel || id == ParamId::SpatialBass) {
+    } else if (id == ParamId::SpatialBass) {
         snprintf(buf, sizeof(buf), "%s %+.0f%s", def->name, val, def->unit);
     } else if ((id == ParamId::SpatialX || id == ParamId::SpatialY || id == ParamId::SpatialZ) &&
                CurrentRoomPreset() >= 0) {

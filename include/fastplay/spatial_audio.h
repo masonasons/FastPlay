@@ -43,14 +43,13 @@ public:
     void SetRearCenter(bool enabled) { m_rearCenter = enabled; }
     bool GetRearCenter() const { return m_rearCenter; }
 
-    // Room presets: which one (an index into speakers/presets.h), and its
-    // subwoofers, crossover and bass feel (0 to 2, 1 being the ear's due).
+    // Room presets: which one (an index into speakers/presets.h), its
+    // subwoofers and crossover.
     void SetRoomPreset(int preset);
     void SetSubwoofer(bool on);
-    void SetSubLevel(float db);
     void SetCrossover(float hz);
-    void SetBassFeel(float amount);
-    // The bass control on the amplifier, in dB (room presets).
+    // How much bass, in dB: the subs' level where there are subs, the bass
+    // control on the amplifier where there are not.
     void SetBass(float db);
     void SetConeNoise(float amount);  // 0 to 10, 1 being as measured
 
@@ -124,9 +123,7 @@ private:
     std::unique_ptr<speakers::SpeakerSystem> m_system;
     int m_preset = 0;
     bool m_subOn = true;
-    float m_subDb = 0.0f;
     float m_crossoverHz = 80.0f;
-    float m_bassFeel = 1.0f;
     float m_bassDb = 0.0f;
     float m_coneNoise = 1.0f;
     std::vector<float> m_speakerDry;  // one chunk, for blending

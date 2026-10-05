@@ -166,9 +166,7 @@ enum class ParamId {
     AdvReverbLateDelay,     // ms
     // 3D audio room presets (listed with the other 3D parameters)
     SpatialSub,         // 0=Off, 1=On (presets with subwoofers)
-    SpatialSubLevel,    // dB
     SpatialCrossover,   // Hz
-    SpatialBassFeel,    // %
     SpatialConeNoise,   // %
     SpatialBass,        // dB
     // Normalizer parameters
