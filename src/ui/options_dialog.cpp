@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cwchar>
+#include <wx/display.h>
 #include <wx/notebook.h>
 #include <wx/filedlg.h>
 #include <wx/dirdlg.h>
@@ -45,6 +46,14 @@ const wchar_t* const kSeekLabels[] = {
 
 const int kVolumeSteps[] = {1, 2, 5, 10, 15, 20, 25};
 const int kBitrates[] = {128, 160, 192, 224, 256, 320};
+
+// A tab's page: it scrolls, so a tall one (or a small screen) hides nothing.
+// A control focused below what shows is scrolled to.
+wxScrolledWindow* NewPage(wxWindow* book) {
+    auto* page = new wxScrolledWindow(book);
+    page->SetScrollRate(0, 10);
+    return page;
+}
 
 std::wstring FileNameOnly(const std::wstring& path) {
     size_t pos = path.find_last_of(L"\\/");
@@ -280,6 +289,9 @@ OptionsDialog::OptionsDialog(wxWindow* parent)
     Bind(wxEVT_BUTTON, &OptionsDialog::OnOK, this, wxID_OK);
 
     SetSizerAndFit(sizer);
+    // No taller than the screen: the tabs scroll instead
+    wxRect area = wxDisplay(this).GetClientArea();
+    if (GetSize().y > area.height) SetSize(wxSize(GetSize().x, area.height));
     CentreOnParent();
 
     // Show the Playback tab first
@@ -328,7 +340,7 @@ wxBoxSizer* OptionsDialog::AddRow(wxSizer* sizer) {
 }
 
 void OptionsDialog::BuildPlaybackPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     // Populate sound card combo box
@@ -406,11 +418,12 @@ void OptionsDialog::BuildPlaybackPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Playback");
 }
 
 void OptionsDialog::BuildRecordingPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     // Set default recording path to user's Music folder if not set
@@ -464,11 +477,12 @@ void OptionsDialog::BuildRecordingPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Recording");
 }
 
 void OptionsDialog::BuildDownloadsPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Configure podcast episode download settings.");
@@ -486,11 +500,12 @@ void OptionsDialog::BuildDownloadsPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Downloads");
 }
 
 void OptionsDialog::BuildSpeechPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Configure speech feedback for various events.");
@@ -500,11 +515,12 @@ void OptionsDialog::BuildSpeechPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Speech");
 }
 
 void OptionsDialog::BuildMovementPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Seek amounts (use , and . to cycle):");
@@ -519,11 +535,12 @@ void OptionsDialog::BuildMovementPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Movement");
 }
 
 void OptionsDialog::BuildHotkeysPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     // Populate hotkey list and set enabled checkbox
@@ -550,11 +567,12 @@ void OptionsDialog::BuildHotkeysPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Hotkeys");
 }
 
 void OptionsDialog::BuildEffectsPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     // Set effect checkboxes
@@ -605,11 +623,12 @@ void OptionsDialog::BuildEffectsPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Effects");
 }
 
 void OptionsDialog::BuildAdvancedPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Audio buffer settings (changes apply on next file load):");
@@ -672,6 +691,7 @@ void OptionsDialog::BuildAdvancedPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Advanced");
 }
 
@@ -773,7 +793,7 @@ void OptionsDialog::BuildYouTubePage(wxNotebook* book) {
 }
 
 void OptionsDialog::BuildYouTubeDownloadsPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     const YouTubeDownloadSettings& s = g_ytDownload;
 
@@ -823,6 +843,7 @@ void OptionsDialog::BuildYouTubeDownloadsPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "YouTube Downloads");
 }
 
@@ -845,7 +866,7 @@ void OptionsDialog::OnYtFolderBrowse(wxCommandEvent&) {
 }
 
 void OptionsDialog::BuildSpeedyPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Google Speedy algorithm settings:");
@@ -855,11 +876,12 @@ void OptionsDialog::BuildSpeedyPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Speedy");
 }
 
 void OptionsDialog::BuildSignalsmithPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "Signalsmith Stretch settings (changes apply on next file load):");
@@ -878,11 +900,12 @@ void OptionsDialog::BuildSignalsmithPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Signalsmith");
 }
 
 void OptionsDialog::BuildMidiPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "MIDI playback settings:");
@@ -903,11 +926,12 @@ void OptionsDialog::BuildMidiPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "MIDI");
 }
 
 void OptionsDialog::BuildLibraryPage(wxNotebook* book) {
-    auto* page = new wxPanel(book);
+    auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     m_libraryFolders = g_libraryFolders;
 
@@ -963,6 +987,7 @@ void OptionsDialog::BuildLibraryPage(wxNotebook* book) {
 
     page->SetSizer(new wxBoxSizer(wxVERTICAL));
     page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
     book->AddPage(page, "Library");
 }
 
