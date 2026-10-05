@@ -8,9 +8,11 @@
 //
 // Its input is the decoded audio in the order it is to be heard: forward, or for
 // scrubbing backward, the source reversed (the decode thread reads it backward).
-// Tape: resampled, so pitch rises with speed, spinning up over a moment. Spring:
-// time-stretched (Signalsmith Stretch), so pitch stays, and it winds up the longer
-// it is held, doubling in speed every half second up to the top speed.
+// Tape: resampled, so pitch rises with speed, spinning up over a moment; let go,
+// it winds back down (to normal speed going forward, to a stop going back). A tape
+// stop is tape slowing from normal speed to a standstill. Spring: time-stretched
+// (Signalsmith Stretch), so pitch stays, and it winds up the longer it is held,
+// doubling in speed every half second up to the top speed.
 
 #include "audio.h"
 #include "tempo_processor.h"
@@ -25,8 +27,13 @@ namespace audio {
 
 class Scrubber {
 public:
+    // How it starts: held (spinning up), winding down from `fromSpeed` (a tape
+    // let go of), or a tape stop (forward from normal speed to a standstill).
+    enum class Begin { Held, WindDown, TapeStop };
+
     // `speed`: tape's speed, or spring's top speed (times normal).
-    Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start);
+    Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start,
+             Begin begin = Begin::Held, double fromSpeed = 1.0);
     ~Scrubber();
 
     // Fills `frames` of stereo output at the output rate: fewer if the source is
@@ -35,10 +42,27 @@ public:
     // Source seconds at output frame `played` (counted from the start of scrubbing)
     double PositionAt(uint64_t played);
     void SetSpeed(float speed) { m_topSpeed = speed; }
+    ScrubStyle Style() const { return m_style; }
+    int Direction() const { return m_direction; }
+    float TopSpeed() const { return m_topSpeed; }
+    // The speed of what is heard at output frame `played`, while held
+    double HeardSpeed(uint64_t played) const;
+    // Wound down (to normal speed, or to a standstill) and heard to the end of it,
+    // `played` being the output frames heard: true once
+    bool TakeFinished(uint64_t played);
+    // Winding down rather than held
+    bool Releasing() const { return m_phase != Phase::Held; }
 
 private:
     struct Stretch;
 
+    enum class Phase { Held, Release, TapeStop };
+    Phase m_phase = Phase::Held;
+    uint64_t m_phaseStart = 0;   // output frame the phase began at
+    double m_phaseFrom = 1.0;    // and the speed it began from
+    double m_speed = 1.0;        // the speed now
+    bool m_finished = false, m_finishTaken = false;
+    uint64_t m_finishedAt = 0;   // the output frame it was wound down by
     ScrubStyle m_style;
     const int m_direction;
     std::atomic<float> m_topSpeed;

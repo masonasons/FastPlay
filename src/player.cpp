@@ -151,6 +151,9 @@ static void OnTrackEnd() {
     }
 }
 
+// Tape seeking's wind down done (defined with the seek modes, below)
+static void ScrubWoundDown();
+
 // Start the audio engine on the saved device (or the default)
 bool InitAudio() {
     audio::SetEndHandler(OnTrackEnd);
@@ -158,6 +161,7 @@ bool InitAudio() {
         AnnounceStreamMetadata();
         UpdateWindowTitle();
     });
+    audio::SetScrubEndHandler(ScrubWoundDown);
     if (!audio::Init(g_selectedDeviceName, g_bufferSize)) {
         ShowMessage(L"FastPlay could not open an audio device.", APP_NAME, MessageIcon::Error);
         return false;
@@ -421,6 +425,14 @@ void Play() {
 }
 
 // Pause playback
+// In tape seeking, pausing and stopping slow the tape to a standstill first
+// (defined with the seek modes, below)
+static bool TapeStopFirst(bool stopping);
+static bool TapeStopping();
+static void TapeStopNow();
+static void StopNow();
+static void ScrubWoundDown();
+
 void Pause() {
     if (!audio::IsLoaded()) return;
     // Don't allow pausing live streams (unless kept for rewinding)
@@ -428,6 +440,9 @@ void Pause() {
         Speak("Cannot pause live stream");
         return;
     }
+    // Asked again while the tape is still slowing: at once
+    if (TapeStopping()) return TapeStopNow();
+    if (TapeStopFirst(false)) return;
     audio::Pause();
 
     if (g_rewindOnPauseMs > 0) {
@@ -440,6 +455,12 @@ void Pause() {
 
 // Stop playback
 void Stop() {
+    if (TapeStopping()) return TapeStopNow();
+    if (audio::IsLoaded() && TapeStopFirst(true)) return;
+    StopNow();
+}
+
+static void StopNow() {
     if (audio::IsLoaded()) {
         // A live stream is disconnected entirely (otherwise it would buffer on and
         // stop/play would act like pause/resume)
@@ -522,6 +543,13 @@ static const char* const kSeekModeNames[] = {"Jump seeking", "Spring seeking", "
 // Paused (or stopped) before scrubbing: paused again after
 static bool g_pausedBeforeScrub = false;
 
+// What is waiting for tape to wind down: a seek key let go of, or a pause or stop
+// with the tape stop effect
+enum class ScrubEnding { None, Release, Pause, Stop };
+static ScrubEnding g_scrubEnding = ScrubEnding::None;
+static void FinishScrubbing();
+static void StopNow();
+
 static std::string SpeedText(int speed) { return std::to_string(speed) + " times"; }
 
 void CycleSeekMode() {
@@ -552,7 +580,51 @@ void SpeakSeekMode() {
           SpeedText(g_seekMode == SEEK_MODE_TAPE ? g_tapeSpeed : g_springSpeed));
 }
 
+// The tape has wound down: carry on with what it was winding down for
+static void ScrubWoundDown() {
+    const ScrubEnding ending = g_scrubEnding;
+    g_scrubEnding = ScrubEnding::None;
+    if (!audio::IsScrubbing()) return;  // something else happened meanwhile
+    switch (ending) {
+        case ScrubEnding::Release:
+            FinishScrubbing();
+            break;
+        case ScrubEnding::Pause:
+            audio::Pause();
+            audio::StopScrub();  // ready to play on from where the tape stopped
+            if (g_rewindOnPauseMs > 0) Seek(-g_rewindOnPauseMs / 1000.0);
+            UpdateWindowTitle();
+            UpdateStatusBar();
+            break;
+        case ScrubEnding::Stop:
+            audio::StopScrub();
+            StopNow();
+            break;
+        case ScrubEnding::None:
+            break;
+    }
+}
+
+// In tape seeking, pausing and stopping slow the tape to a standstill first.
+// True if that has begun (the pause or stop follows when it is done).
+static bool TapeStopFirst(bool stopping) {
+    if (g_seekMode != SEEK_MODE_TAPE || !IsPlaying() || audio::IsScrubbing()) return false;
+    if (!audio::TapeStop()) return false;
+    g_scrubEnding = stopping ? ScrubEnding::Stop : ScrubEnding::Pause;
+    return true;
+}
+
+static bool TapeStopping() {
+    // (Still the same tape: a new track since ends it)
+    return (g_scrubEnding == ScrubEnding::Pause || g_scrubEnding == ScrubEnding::Stop) && audio::IsScrubbing();
+}
+
+static void TapeStopNow() {
+    ScrubWoundDown();
+}
+
 void StartScrubbing(int direction) {
+    g_scrubEnding = ScrubEnding::None;  // a wind down caught: scrubbing again
     if (!audio::IsLoaded() || g_isBusy || g_isLoading) return;
     if (g_isLiveStream ? !IsRewindable() : audio::Length() <= 0) return;
     if (!audio::IsScrubbing()) g_pausedBeforeScrub = !IsPlaying();
@@ -566,7 +638,17 @@ void StartScrubbing(int direction) {
 }
 
 void StopScrubbing() {
-    if (!audio::IsScrubbing()) return;
+    if (!audio::IsScrubbing() || g_scrubEnding != ScrubEnding::None) return;
+    // Tape winds back down first
+    if (g_seekMode == SEEK_MODE_TAPE && audio::ReleaseScrub()) {
+        g_scrubEnding = ScrubEnding::Release;
+        return;
+    }
+    FinishScrubbing();
+}
+
+// Back to playing normally from where scrubbing got to (paused again if it was)
+static void FinishScrubbing() {
     audio::StopScrub();
     if (!g_smoothSeek) {
         if (SpatialAudio* spatial = GetSpatialAudio()) spatial->ClearTails();

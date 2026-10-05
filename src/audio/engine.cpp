@@ -237,6 +237,7 @@ struct Engine {
     // UI handlers
     std::function<void()> endHandler;
     std::function<void()> titleHandler;
+    std::function<void()> scrubEndHandler;
 };
 
 Engine g;
@@ -535,6 +536,12 @@ void MixLoop() {
                         g.mixWaiting = true;  // ran dry: buffer again
                     }
                 }
+            }
+            // Tape wound down, and heard to the end of it: the player carries on
+            if (g.scrub && g.scrub->TakeFinished(g.played.load())) {
+                RunOnUiThread([]() {
+                    if (g.scrubEndHandler) g.scrubEndHandler();
+                });
             }
         }
         g.decodeWake.notify_one();
@@ -910,6 +917,48 @@ bool StopScrub() {
 }
 
 bool IsScrubbing() { return g.loaded && g.scrub != nullptr; }
+
+bool ReleaseScrub() {
+    if (!g.loaded) return false;
+    int direction;
+    float top;
+    double speed;
+    {
+        std::lock_guard<std::mutex> mix(g.mixMutex);
+        if (!g.scrub || g.scrub->Style() != ScrubStyle::Tape) return false;
+        if (g.scrub->Releasing()) return true;
+        direction = g.scrub->Direction();
+        top = g.scrub->TopSpeed();
+        speed = g.scrub->HeardSpeed(g.played.load());
+    }
+    // From what is heard now, not from what was made ahead of it: the wind down
+    // starts at once, at the speed being heard
+    double floor = 0, live = 0;
+    if (g.live) {
+        if (!LiveRange(floor, live)) return false;
+        floor += 1.0;
+    }
+    double from = Position();
+    auto scrub = std::make_unique<Scrubber>(ScrubStyle::Tape, direction, top, g.sourceRate, g.outputRate, from,
+                                            Scrubber::Begin::WindDown, speed);
+    int chunk = 0;
+    if (direction < 0) chunk = static_cast<int>(g.sourceRate * std::clamp(speed * 0.125, 0.25, 2.0));
+    return Reposition(from, std::move(scrub), chunk, floor);
+}
+
+bool TapeStop() {
+    if (!g.loaded) return false;
+    if (g.live) {
+        double start, live;
+        if (!LiveRange(start, live)) return false;
+    }
+    double from = Position();
+    auto scrub = std::make_unique<Scrubber>(ScrubStyle::Tape, 1, 1.0f, g.sourceRate, g.outputRate, from,
+                                            Scrubber::Begin::TapeStop);
+    return Reposition(from, std::move(scrub), 0);
+}
+
+void SetScrubEndHandler(std::function<void()> handler) { g.scrubEndHandler = std::move(handler); }
 
 void SetTempo(float percent) {
     g.tempo = percent;

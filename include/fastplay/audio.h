@@ -176,6 +176,16 @@ bool StartScrub(ScrubStyle style, int direction, float speed);
 void SetScrubSpeed(float speed);
 bool StopScrub();
 bool IsScrubbing();
+// Tape let go of: it winds back down (to normal speed going forward, to a stop
+// going back), then the scrub end handler is called. False for spring, which
+// stops at once (call StopScrub()).
+bool ReleaseScrub();
+// The tape stop effect: from normal speed down to a standstill, then the scrub
+// end handler is called (to pause or stop for real). False if it cannot be done
+// here (a live stream not kept for rewinding).
+bool TapeStop();
+// Called on the UI thread when a release or tape stop has wound down.
+void SetScrubEndHandler(std::function<void()> handler);
 
 // Tempo in percent (0 = normal), pitch in semitones, rate as a multiplier that
 // changes speed and pitch together.

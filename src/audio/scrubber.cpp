@@ -15,8 +15,15 @@ namespace {
 const int kChannels = 2;
 // Spring: seconds held for the speed to double (from normal speed)
 const double kSpringDoubling = 0.5;
-// Tape: seconds to spin up to speed
+// Tape: seconds to spin up to speed, and let go of, back down
 const double kTapeSpinUp = 0.25;
+const double kTapeSpinDown = 0.4;
+// A tape stop: seconds from normal speed to a standstill
+const double kTapeStopSeconds = 0.6;
+// Slower than this is a standstill: silence. Below kQuietSpeed it fades, so the
+// last rumble does not end in a thump.
+const double kStopped = 0.01;
+const double kQuietSpeed = 0.15;
 // Output frames worked out at one speed; the speed changes between them
 const int kSpeedStep = 64;
 // Stretched frames made at a time (spring)
@@ -44,8 +51,9 @@ struct Scrubber::Stretch {
     }
 };
 
-Scrubber::Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start)
-    : m_style(style),
+Scrubber::Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start,
+                   Begin begin, double fromSpeed)
+    : m_style(begin == Begin::Held ? style : ScrubStyle::Tape),
       m_direction(direction < 0 ? -1 : 1),
       m_topSpeed(speed),
       m_sourceRate(sourceRate),
@@ -59,16 +67,52 @@ Scrubber::Scrubber(ScrubStyle style, int direction, float speed, int sourceRate,
 #else
     m_style = ScrubStyle::Tape;  // nothing to stretch with
 #endif
+    if (begin == Begin::WindDown) {
+        m_phase = Phase::Release;
+        m_phaseFrom = fromSpeed;
+    } else if (begin == Begin::TapeStop) {
+        m_phase = Phase::TapeStop;
+        m_phaseFrom = 1.0;
+    }
     m_points.push_back({0, start});
 }
 
 Scrubber::~Scrubber() = default;
 
-double Scrubber::Speed() const {
-    const double held = static_cast<double>(m_produced) / m_outputRate;
+double Scrubber::HeardSpeed(uint64_t played) const {
     const double top = std::max(1.0, static_cast<double>(m_topSpeed.load()));
+    const double held = static_cast<double>(played) / m_outputRate;
     if (m_style == ScrubStyle::Spring) return std::min(top, std::pow(2.0, held / kSpringDoubling));
     return std::pow(top, std::min(1.0, held / kTapeSpinUp));
+}
+
+bool Scrubber::TakeFinished(uint64_t played) {
+    // The output is made ahead of what is heard: not until it has been heard
+    if (!m_finished || m_finishTaken || played < m_finishedAt) return false;
+    m_finishTaken = true;
+    return true;
+}
+
+double Scrubber::Speed() const {
+    const double top = std::max(1.0, static_cast<double>(m_topSpeed.load()));
+    const double since = static_cast<double>(m_produced - m_phaseStart) / m_outputRate;
+    switch (m_phase) {
+        case Phase::Held:
+            (void)top;
+            return HeardSpeed(m_produced);
+        case Phase::Release: {
+            const double t = std::min(1.0, since / kTapeSpinDown);
+            // Forward, back down to normal speed (evenly in pitch); backward, slowing
+            // to a stop before it plays on forward
+            if (m_direction > 0) return std::pow(std::max(1.0, m_phaseFrom), 1.0 - t);
+            return m_phaseFrom * (1.0 - t);
+        }
+        case Phase::TapeStop:
+        default: {
+            const double t = std::min(1.0, since / kTapeStopSeconds);
+            return m_phaseFrom * (1.0 - t);
+        }
+    }
 }
 
 int Scrubber::Fill(PcmSource& source, float* out, int frames) {
@@ -76,6 +120,26 @@ int Scrubber::Fill(PcmSource& source, float* out, int frames) {
     while (done < frames) {
         const int n = std::min(kSpeedStep, frames - done);
         const double speed = Speed();
+        m_speed = speed;
+        if (m_phase != Phase::Held) {
+            // Wound down: to normal speed (and on at it), or to a standstill
+            const bool atNormal = m_phase == Phase::Release && m_direction > 0 && speed <= 1.0001;
+            if ((atNormal || speed < kStopped) && !m_finished) {
+                m_finished = true;
+                m_finishedAt = m_produced;
+            }
+            if (speed < kStopped) {
+                for (int i = done; i < frames; i++) {
+                    m_last[0] *= 0.99f;
+                    m_last[1] *= 0.99f;
+                    out[static_cast<size_t>(i) * kChannels] = m_last[0];
+                    out[static_cast<size_t>(i) * kChannels + 1] = m_last[1];
+                }
+                m_produced += static_cast<uint64_t>(frames - done);
+                done = frames;
+                break;
+            }
+        }
         // Tape plays the source faster; spring's stretcher has already done that
         const double step = (m_stretch ? 1.0 : speed) * m_sourceRate / m_outputRate;
         const size_t need = static_cast<size_t>(m_pos + n * step) + 2;
@@ -94,6 +158,10 @@ int Scrubber::Fill(PcmSource& source, float* out, int frames) {
             break;
         }
         Resample(out + static_cast<size_t>(done) * kChannels, n, step);
+        if (m_phase != Phase::Held && speed < kQuietSpeed) {
+            const float level = static_cast<float>(speed / kQuietSpeed);
+            for (int i = 0; i < n * kChannels; i++) out[static_cast<size_t>(done) * kChannels + i] *= level;
+        }
         m_last[0] = out[static_cast<size_t>(done + n - 1) * kChannels];
         m_last[1] = out[static_cast<size_t>(done + n - 1) * kChannels + 1];
         done += n;
