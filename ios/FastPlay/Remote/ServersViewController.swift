@@ -1,6 +1,6 @@
 import UIKit
 
-/// The FTP and SMB servers added: choose one to browse it. Edit and Delete are
+/// The FTP, SFTP and SMB servers added: choose one to browse it. Edit and Delete are
 /// VoiceOver actions on each, in the long press menu, and swipes.
 final class ServersViewController: FastPlayTableViewController {
     private var servers: [RemoteServer] = []
@@ -21,7 +21,7 @@ final class ServersViewController: FastPlayTableViewController {
         add.accessibilityLabel = "Add server"
         navigationItem.rightBarButtonItem = add
 
-        emptyLabel.text = "No servers yet.\n\nAdd an FTP or SMB server with the Add button."
+        emptyLabel.text = "No servers yet.\n\nAdd an FTP, SFTP or SMB server with the Add button."
         emptyLabel.numberOfLines = 0
         emptyLabel.textAlignment = .center
         emptyLabel.textColor = .secondaryLabel
@@ -95,7 +95,7 @@ final class ServersViewController: FastPlayTableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         let server = servers[indexPath.row]
         navigationController?.pushViewController(
-            RemoteBrowserViewController(source: server.makeSource(), name: server.displayName, path: server.startPath),
+            BrowserViewController(source: server.makeSource(), path: server.startPath, name: server.displayName),
             animated: true)
     }
 
@@ -150,9 +150,19 @@ final class ServerEditViewController: UITableViewController, UITextFieldDelegate
             switch self {
             case .name: return "What to call it"
             case .host: return "nas.local or 192.168.1.10"
-            case .port: return kind == .ftp ? "21" : "445"
+            case .port:
+                switch kind {
+                case .ftp: return "21"
+                case .sftp: return "22"
+                case .smb: return "445"
+                }
             case .share: return "Leave empty to choose from a list"
-            case .user: return kind == .ftp ? "Leave empty for anonymous" : "Leave empty for guest"
+            case .user:
+                switch kind {
+                case .ftp: return "Leave empty for anonymous"
+                case .sftp: return "Your user name on it"
+                case .smb: return "Leave empty for guest"
+                }
             case .password: return ""
             case .folder: return "A folder to start in (optional)"
             }
@@ -209,7 +219,9 @@ final class ServerEditViewController: UITableViewController, UITextFieldDelegate
         }
         var host = value(.host)
         // An address pasted with its scheme is still an address
-        for scheme in ["ftp://", "smb://"] where host.lowercased().hasPrefix(scheme) { host.removeFirst(scheme.count) }
+        for scheme in ["ftp://", "sftp://", "smb://"] where host.lowercased().hasPrefix(scheme) {
+            host.removeFirst(scheme.count)
+        }
         host = host.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !host.isEmpty else {
             let alert = UIAlertController(title: "Address Needed", message: "Enter the server's name or address.",
@@ -238,8 +250,15 @@ final class ServerEditViewController: UITableViewController, UITextFieldDelegate
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         guard section == 1 else { return nil }
-        return kind == .ftp ? "Plain FTP. The password is kept in this device's keychain."
-                            : "A Windows share, a NAS or a Mac's file sharing. The password is kept in this device's keychain."
+        switch kind {
+        case .ftp:
+            return "Plain FTP. The password is kept in this device's keychain."
+        case .sftp:
+            return "Files over SSH. The server's key is remembered the first time FastPlay connects, and a server "
+                + "showing another one later is refused. The password is kept in this device's keychain."
+        case .smb:
+            return "A Windows share, a NAS or a Mac's file sharing. The password is kept in this device's keychain."
+        }
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

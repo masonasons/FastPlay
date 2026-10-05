@@ -1,11 +1,17 @@
 import Foundation
 
-/// An FTP or SMB server the user has added.
+/// An FTP, SFTP or SMB server the user has added.
 struct RemoteServer: Codable, Equatable {
     enum Kind: String, Codable, CaseIterable {
-        case ftp, smb
+        case ftp, sftp, smb
 
-        var title: String { self == .ftp ? "FTP" : "SMB" }
+        var title: String {
+            switch self {
+            case .ftp: return "FTP"
+            case .sftp: return "SFTP"
+            case .smb: return "SMB"
+            }
+        }
     }
 
     var id = UUID()
@@ -14,11 +20,11 @@ struct RemoteServer: Codable, Equatable {
     var host = ""
     /// Nil: the protocol's usual port.
     var port: Int?
-    /// Empty: anonymous (FTP) or guest (SMB).
+    /// Empty: anonymous (FTP) or guest (SMB). SFTP needs one.
     var user = ""
     /// SMB: the share to open. Empty: the server's shares are listed to choose from.
     var share = ""
-    /// A folder to start in, below the top (FTP) or the share (SMB).
+    /// A folder to start in, below the top (FTP), the home folder (SFTP) or the share (SMB).
     var folder = ""
 
     var displayName: String { name.isEmpty ? host : name }
@@ -32,8 +38,12 @@ struct RemoteServer: Codable, Equatable {
     }
 
     /// What browses it.
-    func makeSource(password: String? = nil) -> RemoteFileSource {
-        kind == .ftp ? FTPSource(server: self, password: password) : SMBSource(server: self, password: password)
+    func makeSource(password: String? = nil) -> FileSource {
+        switch kind {
+        case .ftp: return FTPSource(server: self, password: password)
+        case .sftp: return SFTPSource(server: self, password: password)
+        case .smb: return SMBSource(server: self, password: password)
+        }
     }
 
     /// Where browsing starts, as its source writes paths.
@@ -42,6 +52,10 @@ struct RemoteServer: Codable, Equatable {
         switch kind {
         case .ftp:
             return below.isEmpty ? "" : "/" + below
+        case .sftp:
+            // Below the home folder, unless it starts at the top
+            let trimmed = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+            return trimmed.hasPrefix("/") ? trimmed : below
         case .smb:
             let top = share.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if top.isEmpty { return "" }
@@ -67,6 +81,10 @@ enum ServerStore {
     static func save(_ server: RemoteServer, password: String) {
         var servers = all
         if let index = servers.firstIndex(where: { $0.id == server.id }) {
+            // Somewhere else now: the key of the server that was there is no guide
+            if servers[index].host != server.host || servers[index].port != server.port {
+                SFTPSource.forgetHostKey(server)
+            }
             servers[index] = server
         } else {
             servers.append(server)
@@ -77,6 +95,8 @@ enum ServerStore {
 
     static func remove(_ server: RemoteServer) {
         server.password = ""
+        SFTPSource.forgetHostKey(server)
+        FavoritesStore.removeAll(sourceID: "server-\(server.id.uuidString)")
         all = all.filter { $0.id != server.id }
     }
 }

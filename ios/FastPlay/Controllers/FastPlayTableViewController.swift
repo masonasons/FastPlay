@@ -28,7 +28,18 @@ class FastPlayTableViewController: UITableViewController {
         if viewIfLoaded?.window != nil { updateMiniPlayer(animated: true) }
     }
 
+    /// A screen's own toolbar (the browser's, while selecting), shown instead of the
+    /// small player while it is set.
+    var ownToolbarItems: [UIBarButtonItem]? {
+        didSet { updateMiniPlayer(animated: true) }
+    }
+
     private func updateMiniPlayer(animated: Bool) {
+        if let own = ownToolbarItems {
+            toolbarItems = own
+            navigationController?.setToolbarHidden(false, animated: animated)
+            return
+        }
         guard engine.loaded else {
             navigationController?.setToolbarHidden(true, animated: animated)
             return

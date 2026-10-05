@@ -40,9 +40,16 @@ artwork (1024 pixels square, no transparency) whenever there is some.
   takes swipes for the same four things, which VoiceOver passes straight through.
 - `src/platform/*_ios.mm`: the engine's iOS side: paths (the Documents folder is
   the one the Files app shows), speech through VoiceOver, HTTP through NSURLSession.
-- `FastPlay/Remote`: Dropbox, FTP and SMB servers behind one browser
-  (`RemoteFileSource`): streaming, Download and Sync. FTP is FFmpeg's; SMB is
-  AMSMB2 (libsmb2), served to the engine by a loopback HTTP server so it can seek.
+- `FastPlay/Files`: the file browser, the same wherever the files are: this
+  device (`LocalSource`), Dropbox, FTP, SFTP and SMB servers, each a `FileSource`.
+  Cut, copy and paste between any of them (`FileOperations`, asking about names
+  already taken), rename, share, delete, select several, favorites (on the Home
+  screen), properties and free space; from elsewhere, streaming, Download and Sync.
+- `FastPlay/Remote`, `FastPlay/Dropbox`: the sources. FTP is read by FFmpeg and
+  changed by a small FTP client of its own (`FTPClient`); SFTP is Citadel (SSH in
+  Swift, pinned to 0.12.0), with the server's key remembered on first use; SMB is
+  AMSMB2 (libsmb2). SMB and SFTP files are served to the engine by a loopback HTTP
+  server so it can seek.
 
 A Debug build takes launch arguments for trying things from a script:
 `-FPPlay <path in FastPlay's folder>`, `-FPPlayURL <address>`,

@@ -51,7 +51,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>FastPlay connects to FTP and SMB servers on your network to play and copy your music.</string>
+	<string>FastPlay connects to FTP, SFTP and SMB servers on your network to play and manage your music.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

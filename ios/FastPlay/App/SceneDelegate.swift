@@ -95,14 +95,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
             }
         }
-        // "-FPServer ftp|smb,host,port,user,password,share": browses a server without
+        // "-FPServer ftp|sftp|smb,host,port,user,password,share": browses a server without
         // saving it; with "-FPServerPlay <path>" plays that file from it, and with
         // "-FPServerDownload <path>" copies it here, logging how each went
         if let index = arguments.firstIndex(of: "-FPServer"), index + 1 < arguments.count {
             let parts = arguments[index + 1].components(separatedBy: ",")
             if parts.count >= 6 {
                 var server = RemoteServer()
-                server.kind = parts[0] == "smb" ? .smb : .ftp
+                server.kind = RemoteServer.Kind(rawValue: parts[0]) ?? .ftp
                 server.host = parts[1]
                 server.port = Int(parts[2])
                 server.user = parts[3]
@@ -111,7 +111,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 let source = server.makeSource(password: parts[4])
                 if !arguments.contains("-FPServerQuiet") {
                     navigation.pushViewController(
-                        RemoteBrowserViewController(source: source, name: server.displayName, path: server.startPath),
+                        BrowserViewController(source: source, path: server.startPath, name: server.displayName),
                         animated: false)
                 }
                 func argument(_ name: String) -> String? {
@@ -246,7 +246,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let screen: UIViewController?
             switch arguments[index + 1] {
             case "player": screen = PlayerViewController()
-            case "files": screen = FilesViewController(directory: URL(fileURLWithPath: FPEngine.shared.documentsPath))
+            case "files": screen = BrowserViewController(source: LocalSource.shared)
             case "settings": screen = SettingsViewController()
             case "playlist": screen = PlaylistViewController()
             case "radio": screen = RadioViewController()

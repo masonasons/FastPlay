@@ -20,8 +20,12 @@ enum DropboxError: LocalizedError {
 /// FastPlay's connection to Dropbox: signing in (OAuth with PKCE, which needs the
 /// app's key and no secret), listing folders, and getting an address a file can be
 /// streamed from. What lasts between runs, the refresh token, is in the keychain.
-final class DropboxClient: NSObject, ASWebAuthenticationPresentationContextProviding, RemoteFileSource {
+final class DropboxClient: NSObject, ASWebAuthenticationPresentationContextProviding, FileSource {
     static let shared = DropboxClient()
+
+    let id = "dropbox"
+    let title = "Dropbox"
+    var canWrite: Bool { true }
 
     private let appKey = "4f6qjnm23npa6wk"
     private var redirectScheme: String { "db-\(appKey)" }
@@ -107,22 +111,22 @@ final class DropboxClient: NSObject, ASWebAuthenticationPresentationContextProvi
         presentingWindow ?? ASPresentationAnchor()
     }
 
-    // MARK: As a place to browse (RemoteFileSource)
+    // MARK: As a place to browse (FileSource)
 
-    func list(path: String) async throws -> [RemoteEntry] {
+    func list(path: String) async throws -> [FileEntry] {
         try await list(path: path, recursive: false)
     }
 
     /// Dropbox lists a folder and all below it in one request.
-    func listAll(path: String) async throws -> [RemoteEntry] {
+    func listAll(path: String) async throws -> [FileEntry] {
         try await list(path: path, recursive: true).filter { !$0.isFolder }
     }
 
-    func streamURL(for entry: RemoteEntry) async throws -> String {
+    func streamURL(for entry: FileEntry) async throws -> String {
         try await temporaryLink(path: entry.path)
     }
 
-    func download(_ entry: RemoteEntry, to destination: URL) async throws {
+    func download(_ entry: FileEntry, to destination: URL) async throws {
         try await download(path: entry.path, to: destination)
     }
 
@@ -140,17 +144,106 @@ final class DropboxClient: NSObject, ASWebAuthenticationPresentationContextProvi
         })
     }
 
+    // MARK: Changing things
+
+    func createFolder(named name: String, in folder: String) async throws {
+        _ = try await call("files/create_folder_v2", ["path": path(of: name, in: folder), "autorename": false])
+    }
+
+    func rename(_ entry: FileEntry, to name: String) async throws {
+        _ = try await call("files/move_v2", ["from_path": entry.path,
+                                             "to_path": path(of: name, in: FileOperations.parent(of: entry.path)),
+                                             "autorename": false])
+    }
+
+    func move(_ entry: FileEntry, to folder: String) async throws -> Bool {
+        _ = try await call("files/move_v2", ["from_path": entry.path, "to_path": path(of: entry.name, in: folder),
+                                             "autorename": false])
+        return true
+    }
+
+    func delete(_ entry: FileEntry) async throws {
+        _ = try await call("files/delete_v2", ["path": entry.path])
+    }
+
+    /// Up to 150 MB in one request; beyond that, in pieces through an upload session.
+    func upload(_ file: URL, named name: String, to folder: String) async throws {
+        let target = path(of: name, in: folder)
+        let size = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value ?? 0
+        let commit: [String: Any] = ["path": target, "mode": "overwrite", "autorename": false, "mute": true]
+        let piece = 64 * 1024 * 1024
+        if size <= 150 * 1024 * 1024 {
+            _ = try await content("files/upload", commit, body: .file(file))
+            return
+        }
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        var data = try handle.read(upToCount: piece) ?? Data()
+        let started = try await content("files/upload_session/start", ["close": false], body: .data(data))
+        guard let session = started["session_id"] as? String else {
+            throw DropboxError.failed("Dropbox did not start the upload of \(name).")
+        }
+        var offset = Int64(data.count)
+        while true {
+            try Task.checkCancellation()
+            data = try handle.read(upToCount: piece) ?? Data()
+            let cursor: [String: Any] = ["session_id": session, "offset": offset]
+            if data.isEmpty || offset + Int64(data.count) >= size {
+                _ = try await content("files/upload_session/finish", ["cursor": cursor, "commit": commit],
+                                      body: .data(data))
+                return
+            }
+            _ = try await content("files/upload_session/append_v2", ["cursor": cursor, "close": false], body: .data(data))
+            offset += Int64(data.count)
+        }
+    }
+
+    func storageSpace() async throws -> (free: Int64, total: Int64)? {
+        let usage = try await call("users/get_space_usage", nil)
+        guard let used = (usage["used"] as? NSNumber)?.int64Value,
+              let allocation = usage["allocation"] as? [String: Any],
+              let allocated = (allocation["allocated"] as? NSNumber)?.int64Value, allocated > 0 else { return nil }
+        return (max(0, allocated - used), allocated)
+    }
+
+    private enum Body {
+        case file(URL)
+        case data(Data)
+    }
+
+    /// A request to Dropbox's content endpoint: the arguments in a header, the bytes as the body.
+    private func content(_ endpoint: String, _ arguments: [String: Any], body: Body,
+                         retried: Bool = false) async throws -> [String: Any] {
+        let token = try await validAccessToken()
+        var request = URLRequest(url: URL(string: "https://content.dropboxapi.com/2/\(endpoint)")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.headerJSON(arguments), forHTTPHeaderField: "Dropbox-API-Arg")
+        let (data, response): (Data, URLResponse)
+        switch body {
+        case let .file(url): (data, response) = try await URLSession.shared.upload(for: request, fromFile: url)
+        case let .data(bytes): (data, response) = try await URLSession.shared.upload(for: request, from: bytes)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401, !retried {
+            accessToken = nil
+            return try await content(endpoint, arguments, body: body, retried: true)
+        }
+        return try Self.result(status, data)
+    }
+
     // MARK: Files
 
     /// What is in a folder, or with `recursive` in it and every folder below it.
-    func list(path: String, recursive: Bool) async throws -> [RemoteEntry] {
-        var entries: [RemoteEntry] = []
+    func list(path: String, recursive: Bool) async throws -> [FileEntry] {
+        var entries: [FileEntry] = []
         var page = try await call("files/list_folder", ["path": path, "limit": 2000, "recursive": recursive])
         while true {
             for item in page["entries"] as? [[String: Any]] ?? [] {
                 guard let name = item["name"] as? String, let tag = item[".tag"] as? String,
                       let itemPath = (item["path_lower"] as? String) ?? (item["path_display"] as? String) else { continue }
-                entries.append(RemoteEntry(name: name, path: itemPath,
+                entries.append(FileEntry(name: name, path: itemPath,
                                             displayPath: item["path_display"] as? String ?? itemPath,
                                             isFolder: tag == "folder",
                                             size: (item["size"] as? NSNumber)?.int64Value ?? 0,
@@ -207,22 +300,35 @@ final class DropboxClient: NSObject, ASWebAuthenticationPresentationContextProvi
 
     private static let refreshTokenKey = "dropbox-refresh-token"
 
-    private func call(_ endpoint: String, _ arguments: [String: Any], retried: Bool = false) async throws -> [String: Any] {
+    /// An API call. Nil arguments: an endpoint that takes none.
+    private func call(_ endpoint: String, _ arguments: [String: Any]?, retried: Bool = false) async throws -> [String: Any] {
         let token = try await validAccessToken()
         var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/\(endpoint)")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: arguments)
+        request.httpBody = try arguments.map { try JSONSerialization.data(withJSONObject: $0) } ?? Data("null".utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401, !retried {
             accessToken = nil  // it ran out early: a new one, once
             return try await call(endpoint, arguments, retried: true)
         }
+        return try Self.result(status, data)
+    }
+
+    /// A response's JSON, or what went wrong said plainly where it is a common case.
+    private static func result(_ status: Int, _ data: Data) throws -> [String: Any] {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard status == 200 else {
             let summary = object["error_summary"] as? String ?? String(data: data, encoding: .utf8) ?? ""
+            if summary.contains("missing_scope") {
+                throw DropboxError.failed("FastPlay's connection to Dropbox is not allowed to do this. Sign out of "
+                                          + "Dropbox (in the Dropbox folder's menu) and sign in again to allow it.")
+            }
+            if summary.contains("insufficient_space") { throw DropboxError.failed("Your Dropbox is full.") }
+            if summary.contains("conflict") { throw DropboxError.failed("Something of that name is already there.") }
+            if summary.contains("not_found") { throw DropboxError.failed("It is no longer in your Dropbox.") }
             throw DropboxError.failed("Dropbox answered \(status). \(summary)")
         }
         return object
