@@ -283,9 +283,22 @@ std::vector<SpeakerSpec> BuildCatalog() {
     c.push_back(Make("home_monitor_8", "8 inch studio monitor pair",
                      "Nearfield monitors. Flat and unforgiving.", 8.0f, Enclosure::Ported,
                      SpeakerKind::Component, ChannelFeed::Left));
-    c.push_back(Make("home_tower_65", "6.5 inch floorstanding tower pair",
-                     "Three way towers. Full range on their own.", 6.5f, Enclosure::Ported,
-                     SpeakerKind::Component, ChannelFeed::Left));
+    {
+        // Derived from the cone size alone, a tower is the bookshelf's single
+        // 6.5 inch woofer in a box tuned to 50 Hz, made to play full range on
+        // its own: it ran out of travel on any bass at all and distorted by
+        // twenty per cent. A real three way tower has two woofers (twice the
+        // cone area, three decibels more efficient) and a big box tuned low.
+        SpeakerSpec tower = Make("home_tower_65", "6.5 inch floorstanding tower pair",
+                                 "Three way towers. Full range on their own.", 6.5f,
+                                 Enclosure::Ported, SpeakerKind::Component, ChannelFeed::Left);
+        tower.sdCm2 *= 2.0f;
+        tower.sensitivityDb += 3.0f;
+        tower.portTuningHz = 36.0f;
+        tower.lowCornerHz = 36.0f;
+        tower.Derive();
+        c.push_back(tower);
+    }
     c.push_back(Make("home_center_525", "5.25 inch center channel",
                      "Horizontal centre for dialogue. Fed the mono sum.", 5.25f, Enclosure::Sealed,
                      SpeakerKind::Center, ChannelFeed::Mono));

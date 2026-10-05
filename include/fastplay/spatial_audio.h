@@ -50,6 +50,8 @@ public:
     void SetSubLevel(float db);
     void SetCrossover(float hz);
     void SetBassFeel(float amount);
+    // The bass control on the amplifier, in dB (room presets).
+    void SetBass(float db);
     void SetConeNoise(float amount);  // 0 to 10, 1 being as measured
 
     // The music jumped (a seek): drop what the rooms were still sounding of the
@@ -125,6 +127,7 @@ private:
     float m_subDb = 0.0f;
     float m_crossoverHz = 80.0f;
     float m_bassFeel = 1.0f;
+    float m_bassDb = 0.0f;
     float m_coneNoise = 1.0f;
     std::vector<float> m_speakerDry;  // one chunk, for blending
     std::atomic<bool> m_clearTails{false};

@@ -17,6 +17,11 @@ static_assert(kGeometryBlock == fastplay::audio::kHrtfBlock, "the HRTF needs who
 // Below this a measured cabin's response is its pressure gain, which the
 // character knob leaves alone; above it, the colour the knob is for.
 constexpr float kCabinPressureHz = 150.0f;
+// The bass control: a shelf below about where a kick drum's weight is, moved
+// at most this far each block (128 frames, so 15 dB takes about a fifth of a
+// second) so that turning it is smooth.
+constexpr float kBassHz = 100.0f;
+constexpr float kBassStepDb = 0.25f;
 
 // What an ear does with a system this loud, put back.
 //
@@ -137,6 +142,24 @@ float FeelDuckExtra(const SystemSettings &settings) {
     return dsp::Clampf(over * kFeelDuckPerDb, 0.0f, kFeelDuckExtraMax);
 }
 
+// Turning the bass or the subs up makes room for it, as an equaliser's preamp
+// does. Music sits at full scale, and with a system's bass already near the
+// ceiling, a boost on top had nowhere to go but into the limiter, which took
+// most of it straight back: +10 dB of bass came out as three. Taking part of
+// the boost off everything lets the bass actually rise against the rest.
+constexpr float kBassBoostHeadroom = 0.6f;
+constexpr float kSubBoostHeadroom = 0.4f;
+
+float BoostHeadroomDb(const SpeakerSystem &system) {
+    const SystemSettings &settings = system.Settings();
+    float db = kBassBoostHeadroom * std::max(0.0f, settings.bassDb);
+    bool hasSub = false;
+    for (const auto &s : system.Speakers())
+        if (s.IsSub() && system.IsAudible(s)) hasSub = true;
+    if (hasSub) db += kSubBoostHeadroom * std::max(0.0f, settings.subGainDb);
+    return db;
+}
+
 float BassAuthority(const SpeakerSystem &system) {
     float best = 0.0f;
     for (const auto &s : system.Speakers()) {
@@ -190,6 +213,8 @@ void Engine::Init(float sampleRate, int maxBlockFrames) {
     m_bassLimit.Init(ahead, 1.0f - std::exp(-1.0f / (kBassReleaseSeconds * sampleRate)));
     m_limit.Init(ahead, 1.0f - std::exp(-1.0f / (kLimitReleaseSeconds * sampleRate)));
     m_room.Derive();
+    m_toneL.assign((size_t)m_maxBlock, 0.0f);
+    m_toneR.assign((size_t)m_maxBlock, 0.0f);
     m_hrtfRenderer.init();
     const size_t block = fastplay::audio::kHrtfBlock;
     m_blockInL.assign(block, 0.0f);
@@ -227,6 +252,7 @@ void Engine::Limiter::Reset() {
 void Engine::Prepare(const SpeakerSystem &system) {
     m_room = system.Room();
     m_settings = system.Settings();
+    m_settings.masterGainDb -= BoostHeadroomDb(system);
     m_listener = system.GetListener();
 
     bool hasSub = false;
@@ -307,6 +333,7 @@ void Engine::UpdateLevels(const SpeakerSystem &system) {
     if (speakers.size() != m_voices.size()) return;
 
     m_settings = system.Settings();
+    m_settings.masterGainDb -= BoostHeadroomDb(system);
     m_bassAuthority = BassAuthority(system);
     m_feelDuckExtra = FeelDuckExtra(m_settings);
     for (size_t i = 0; i < speakers.size(); ++i) {
@@ -331,6 +358,8 @@ void Engine::Reset() {
     m_highPos = 0;
     m_bassLimit.Reset();
     m_limit.Reset();
+    m_bassL.Reset();
+    m_bassR.Reset();
     std::fill(m_blockOutL.begin(), m_blockOutL.end(), 0.0f);
     std::fill(m_blockOutR.begin(), m_blockOutR.end(), 0.0f);
     m_blockFill = 0;
@@ -366,6 +395,23 @@ void Engine::Render(const float *inL, const float *inR, int frames, float *outL,
         int n = std::min(frames - done, std::min(kGeometryBlock, m_maxBlock));
 
         std::fill(m_reverbSend.begin(), m_reverbSend.begin() + n, 0.0f);
+
+        // ---- the bass control, before any of the speakers ------------------
+        const float *blockL = inL + done, *blockR = inR + done;
+        const float bassTarget = dsp::Clampf(m_settings.bassDb, -15.0f, 15.0f);
+        if (m_bassDb != bassTarget) {
+            m_bassDb += dsp::Clampf(bassTarget - m_bassDb, -kBassStepDb, kBassStepDb);
+            m_bassL.SetLowShelf(m_sampleRate, kBassHz, 0.7f, m_bassDb);
+            m_bassR.SetLowShelf(m_sampleRate, kBassHz, 0.7f, m_bassDb);
+        }
+        if (m_bassDb != 0.0f) {
+            for (int i = 0; i < n; ++i) {
+                m_toneL[(size_t)i] = m_bassL.Process(blockL[i]);
+                m_toneR[(size_t)i] = m_bassR.Process(blockR[i]);
+            }
+            blockL = m_toneL.data();
+            blockR = m_toneR.data();
+        }
         const bool hrtf = m_hrtf && n == fastplay::audio::kHrtfBlock;
         if (hrtf) m_hrtfRenderer.begin_block();
 
@@ -373,7 +419,7 @@ void Engine::Render(const float *inL, const float *inR, int frames, float *outL,
         for (size_t vi = 0; vi < m_voices.size(); ++vi) {
             Voice &v = m_voices[vi];
             v.Update(m_room, m_listener, roomOn);
-            v.Process(inL + done, inR + done, n, outL + done, outR + done, m_voiceMono.data());
+            v.Process(blockL, blockR, n, outL + done, outR + done, m_voiceMono.data());
 
             float send = roomOn ? m_reverb.SendFor(v.Distance()) : 0.0f;
             for (int i = 0; i < n; ++i) m_reverbSend[(size_t)i] += m_voiceMono[(size_t)i] * send;

@@ -185,9 +185,14 @@ void AddStereoRoomMounts(RoomSpec &r, float spread, float frontY, float rearY, f
                              75.0f, -20.0f, MountSide::Left, "surround_right", 0.0f));
     r.mounts.push_back(Mount("surround_right", "right surround", {hw - 0.2f, rearY, surroundZ},
                              -75.0f, -20.0f, MountSide::Right, "surround_left", 0.0f));
-    r.mounts.push_back(Mount("sub_front_left", "front left corner", {-hw + 0.3f, frontY + 0.3f, 0.25f},
+    // The front subs go beside the mains, out towards the corners: in a home
+    // that is the corner, but in a hall or a field "the corner" was thirty
+    // metres off to one side, and the subs arrived late and sixteen decibels
+    // down. A PA stacks them under the tops.
+    float subX = std::min(hw - 0.3f, spread + 0.6f);
+    r.mounts.push_back(Mount("sub_front_left", "front left corner", {-subX, frontY + 0.3f, 0.25f},
                              180.0f, 0.0f, MountSide::Left, "sub_front_right", 0.0f, true));
-    r.mounts.push_back(Mount("sub_front_right", "front right corner", {hw - 0.3f, frontY + 0.3f, 0.25f},
+    r.mounts.push_back(Mount("sub_front_right", "front right corner", {subX, frontY + 0.3f, 0.25f},
                              180.0f, 0.0f, MountSide::Right, "sub_front_left", 0.0f, true));
     r.mounts.push_back(Mount("sub_rear_center", "back wall, centred", {0.0f, rearY - 0.2f, 0.25f},
                              0.0f, 0.0f, MountSide::Center, "", 0.0f, true));

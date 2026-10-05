@@ -170,6 +170,7 @@ enum class ParamId {
     SpatialCrossover,   // Hz
     SpatialBassFeel,    // %
     SpatialConeNoise,   // %
+    SpatialBass,        // dB
     // Normalizer parameters
     NormTarget,         // dBFS
     NormLookahead,      // ms

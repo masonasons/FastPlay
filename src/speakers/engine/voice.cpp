@@ -281,7 +281,7 @@ void Voice::SetLevels(const PlacedSpeaker &speaker, const SystemSettings &settin
     // into the drive meant asking for more bass also asked for more clipping,
     // so the bottom end got dirtier exactly as you tried to make it bigger. A
     // real system gives the subs their own clean amplifier.
-    float busGain = speaker.IsSub() ? settings.subGainDb : 0.0f;
+    float busGain = speaker.IsSub() ? settings.subGainDb + settings.subTrimDb : 0.0f;
     m_postGain.target = dsp::DbToGain(settings.masterGainDb + settings.levelTrimDb + busGain);
     // Only a level, so it can change without rebuilding anything.
     m_coneLevel = kConeLevel * dsp::Clampf(settings.coneNoise, 0.0f, 10.0f);

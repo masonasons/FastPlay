@@ -70,7 +70,19 @@ struct SystemSettings {
     float levelTrimDb = 0.0f;
     // How hard the amplifiers are driven. Past about 0 dB of headroom the
     // clipping model starts to bite, which is audible and deliberate.
-    float driveDb = 0.0f;
+    //
+    // Six decibels short of it by default. Music is mastered to sit at full
+    // scale, so at 0 every speaker spent every song at the very limit of what
+    // it can do -- which no one plays a system at -- and the studio monitors and
+    // towers audibly broke up. The level trim makes the loudness back up.
+    float driveDb = -6.0f;
+    // The subwoofer level the installer set, on top of subGainDb (which is
+    // yours): set per preset so the subs sit where a system like it is
+    // usually tuned, above the midrange.
+    float subTrimDb = 0.0f;
+    // A bass control, as on the amplifier: a shelf on the signal before it
+    // reaches any of the speakers, so turning it up drives them harder.
+    float bassDb = 0.0f;
     // How much of the bass you would feel in a system this loud is put back.
     //
     // A car playing hard is up around 110 dB, and at that level an ear hears

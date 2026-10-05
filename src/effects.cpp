@@ -90,6 +90,7 @@ static const ParamDef g_paramDefs[] = {
     {ParamId::SpatialCrossover,  "3D Crossover",   " Hz",  40.0f,  160.0f,  10.0f, 80.0f,  DSPEffectType::SpatialAudio},
     {ParamId::SpatialBassFeel,   "3D Bass Feel",   "%",    0.0f,   200.0f,  10.0f, 100.0f, DSPEffectType::SpatialAudio},
     {ParamId::SpatialConeNoise,  "3D Cone Noise",  "%",    0.0f,   1000.0f, 25.0f, 100.0f, DSPEffectType::SpatialAudio},
+    {ParamId::SpatialBass,       "3D Bass",        " dB", -15.0f,  15.0f,   1.0f,  0.0f,   DSPEffectType::SpatialAudio},
     // Normalizer parameters
     {ParamId::NormTarget,    "Normalizer Target",    " dB", -40.0f, 0.0f,    1.0f,  -3.0f,   DSPEffectType::Normalizer},
     {ParamId::NormLookahead, "Normalizer Lookahead", " ms", 0.0f,   200.0f,  10.0f, 50.0f,   DSPEffectType::Normalizer},
@@ -408,6 +409,7 @@ static bool IsSpatialParamInUse(ParamId id) {
             return preset < 0;
         case ParamId::SpatialBassFeel:
         case ParamId::SpatialConeNoise:
+        case ParamId::SpatialBass:
             return preset >= 0;
         case ParamId::SpatialSub:
         case ParamId::SpatialSubLevel:
@@ -908,6 +910,9 @@ void SetParamValue(ParamId id, float value) {
         case ParamId::SpatialConeNoise:
             if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetConeNoise(value / 100.0f);
             break;
+        case ParamId::SpatialBass:
+            if (SpatialAudio* spatial = GetSpatialAudio()) spatial->SetBass(value);
+            break;
         case ParamId::SpatialRearCenter: {
             SpatialAudio* spatial = GetSpatialAudio();
             if (spatial) spatial->SetRearCenter(value >= 0.5f);
@@ -1142,7 +1147,7 @@ std::string DescribeParam(ParamId id) {
         snprintf(buf, sizeof(buf), "3D Rear Speaker: %s", val >= 0.5f ? "On" : "Off");
     } else if (id == ParamId::SpatialSub) {
         snprintf(buf, sizeof(buf), "3D Subwoofer: %s", val >= 0.5f ? "On" : "Off");
-    } else if (id == ParamId::SpatialSubLevel) {
+    } else if (id == ParamId::SpatialSubLevel || id == ParamId::SpatialBass) {
         snprintf(buf, sizeof(buf), "%s %+.0f%s", def->name, val, def->unit);
     } else if ((id == ParamId::SpatialX || id == ParamId::SpatialY || id == ParamId::SpatialZ) &&
                CurrentRoomPreset() >= 0) {

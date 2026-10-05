@@ -362,6 +362,12 @@ void SpatialAudio::SetBassFeel(float amount) {
     ApplySpeakerLevels();
 }
 
+void SpatialAudio::SetBass(float db) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_bassDb = db;
+    ApplySpeakerLevels();
+}
+
 void SpatialAudio::SetConeNoise(float amount) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_coneNoise = amount;
@@ -375,6 +381,7 @@ void SpatialAudio::RebuildSpeakers(bool crossfade) {
     settings.crossoverHz = m_crossoverHz;
     settings.subGainDb = m_subDb;
     settings.bassFeel = m_bassFeel;
+    settings.bassDb = m_bassDb;
     settings.coneNoise = m_coneNoise;
     for (auto& speaker : m_system->Speakers()) {
         if (speaker.IsSub()) speaker.muted = !m_subOn;
@@ -401,6 +408,7 @@ void SpatialAudio::ApplySpeakerLevels() {
     speakers::SystemSettings& settings = m_system->Settings();
     settings.subGainDb = m_subDb;
     settings.bassFeel = m_bassFeel;
+    settings.bassDb = m_bassDb;
     settings.coneNoise = m_coneNoise;
     if (m_sampleRate > 0) m_engine->UpdateLevels(*m_system);
 }

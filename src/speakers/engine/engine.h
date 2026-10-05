@@ -114,6 +114,11 @@ private:
     std::vector<float> m_reverbSend;
     std::vector<float> m_voiceMono;   // what one speaker put into the room
     std::vector<float> m_inL, m_inR, m_outL, m_outR; // for RenderInterleaved
+    // The bass control, and the signal through it; moved a little each block
+    // towards what it is set to, so turning it does not click
+    dsp::Biquad m_bassL, m_bassR;
+    std::vector<float> m_toneL, m_toneR;
+    float m_bassDb = 0.0f;
 
     // Cabin gain: a low shelf on what you hear.
     dsp::Biquad m_cabinL, m_cabinR;
