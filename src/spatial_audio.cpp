@@ -1,5 +1,4 @@
 #include "spatial_audio.h"
-#include "effects.h"
 #include "speakers/engine/engine.h"
 #include "speakers/model/system.h"
 #include "speakers/presets.h"
@@ -141,11 +140,11 @@ void SpatialAudio::RenderSpeaker(int speaker, const float* signal, float gain, f
 
 // Process a single FRAME_SIZE chunk in binaural (2-speaker) mode
 void SpatialAudio::ProcessBinauralFrame(float* frameL, float* frameR) {
-    float width = GetParamValue(ParamId::SpatialWidth);
-    float rotation = GetParamValue(ParamId::SpatialRotation);
-    float lx = GetParamValue(ParamId::SpatialX);
-    float ly = GetParamValue(ParamId::SpatialY);
-    float lz = GetParamValue(ParamId::SpatialZ);
+    float width = m_width.load();
+    float rotation = m_rotation.load();
+    float lx = m_listenerX.load();
+    float ly = m_listenerY.load();
+    float lz = m_listenerZ.load();
 
     // Left and right channels as two speakers, summed at equal power
     m_renderer.begin_block();
@@ -161,11 +160,11 @@ void SpatialAudio::ProcessBinauralFrame(float* frameL, float* frameR) {
 
 // Process a single FRAME_SIZE chunk in virtual surround mode
 void SpatialAudio::ProcessSurroundFrame(float* frameL, float* frameR) {
-    float width = GetParamValue(ParamId::SpatialWidth);
-    float rotation = GetParamValue(ParamId::SpatialRotation);
-    float lx = GetParamValue(ParamId::SpatialX);
-    float ly = GetParamValue(ParamId::SpatialY);
-    float lz = GetParamValue(ParamId::SpatialZ);
+    float width = m_width.load();
+    float rotation = m_rotation.load();
+    float lx = m_listenerX.load();
+    float ly = m_listenerY.load();
+    float lz = m_listenerZ.load();
 
     // Width controls the front speaker angle; surround placement depends on RC
     float frontAngle = width;
@@ -404,13 +403,13 @@ void SpatialAudio::UpdateListener() {
     speakers::Listener listener;
     float halfWidth = std::max(0.0f, room.width * 0.5f - room.wallMargin);
     float halfDepth = std::max(0.0f, room.depth * 0.5f - room.wallMargin);
-    listener.position.x = std::clamp(room.defaultListener.x + GetParamValue(ParamId::SpatialX) * 0.1f,
+    listener.position.x = std::clamp(room.defaultListener.x + m_listenerX.load() * 0.1f,
                                      -halfWidth, halfWidth);
-    listener.position.y = std::clamp(room.defaultListener.y + GetParamValue(ParamId::SpatialY) * 0.1f,
+    listener.position.y = std::clamp(room.defaultListener.y + m_listenerY.load() * 0.1f,
                                      -halfDepth, halfDepth);
-    listener.position.z = std::clamp(room.listenerHeight + GetParamValue(ParamId::SpatialZ) * 0.1f, 0.3f,
+    listener.position.z = std::clamp(room.listenerHeight + m_listenerZ.load() * 0.1f, 0.3f,
                                      std::max(0.3f, room.height - 0.1f));
-    listener.yawDeg = room.defaultYawDeg + GetParamValue(ParamId::SpatialRotation);
+    listener.yawDeg = room.defaultYawDeg + m_rotation.load();
     m_engine->SetListener(listener);
 }
 

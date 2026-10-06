@@ -275,6 +275,7 @@ set(FASTPLAY_SOURCES
     src/convolution.cpp
     src/database.cpp
     src/download_manager.cpp
+    src/effect_chain.cpp
     src/effects.cpp
     src/globals.cpp
     src/hotkeys.cpp

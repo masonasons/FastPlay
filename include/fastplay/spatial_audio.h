@@ -53,6 +53,17 @@ public:
     void SetBass(float db);
     void SetConeNoise(float amount);  // 0 to 10, 1 being as measured
 
+    // Where you are: Binaural and 5.1's speaker spread (degrees from the front),
+    // which way you face (degrees), and where you sit (in a room, tenths of a
+    // metre from the seat). Read as each block is rendered.
+    void SetWidth(float degrees) { m_width = degrees; }
+    void SetRotation(float degrees) { m_rotation = degrees; }
+    void SetListenerOffset(float x, float y, float z) {
+        m_listenerX = x;
+        m_listenerY = y;
+        m_listenerZ = z;
+    }
+
     // The music jumped (a seek): drop what the rooms were still sounding of the
     // old position -- reverberation, delay lines -- rather than play it over
     // the new one. Safe from any thread; the audio thread acts on it.
@@ -128,6 +139,9 @@ private:
     float m_coneNoise = 1.0f;
     std::vector<float> m_speakerDry;  // one chunk, for blending
     std::atomic<bool> m_clearTails{false};
+    std::atomic<float> m_width{45.0f};
+    std::atomic<float> m_rotation{0.0f};
+    std::atomic<float> m_listenerX{0.0f}, m_listenerY{0.0f}, m_listenerZ{0.0f};
 };
 
 SpatialAudio* GetSpatialAudio();

@@ -14,6 +14,8 @@
 #include "fastplay_engine/fastplay_engine.h"
 
 #include "audio.h"
+#include "effect_chain.h"
+#include "recorder.h"
 #include "http.h"
 #include "support.h"
 #include "utils.h"
@@ -53,6 +55,13 @@ struct PlayerState {
     std::string title;
     float gain = 1.0f;
     float tempo = 0.0f, pitch = 0.0f, rate = 1.0f;
+    TempoAlgorithm algorithm = TempoAlgorithm::Signalsmith;
+    bool smooth = true;
+
+    // After the engine, so they go first: the effects come out of its chain, and
+    // the recording off its tap, while it is still there
+    audio::EffectChain effects;
+    std::unique_ptr<audio::Recorder> recorder;
 };
 
 std::mutex g_libraryMutex;
@@ -104,7 +113,7 @@ bool EnsureEngine(const std::shared_ptr<PlayerState>& p) {
     if (p->engineReady) return true;
     if (!p->alive) return false;
     if (!p->engine.Init(p->device, p->bufferMs)) return false;
-    p->engine.SetSmoothTransitions(true);
+    p->engine.SetSmoothTransitions(p->smooth);
     p->engine.SetGain(p->gain);
     std::weak_ptr<PlayerState> weak = p;
     p->engine.SetEndHandler([weak]() {
@@ -118,6 +127,17 @@ bool EnsureEngine(const std::shared_ptr<PlayerState>& p) {
             request = p->request;
         }
         Emit(p, request, FPE_EVENT_ENDED, std::string());
+    });
+    p->engine.SetScrubEndHandler([weak]() {
+        std::shared_ptr<PlayerState> p = weak.lock();
+        if (!p) return;
+        int request;
+        {
+            std::lock_guard<std::recursive_mutex> lock(p->mutex);
+            if (!p->alive) return;
+            request = p->request;
+        }
+        Emit(p, request, FPE_EVENT_SCRUB_ENDED, std::string());
     });
     p->engine.SetStreamTitleHandler([weak]() {
         std::shared_ptr<PlayerState> p = weak.lock();
@@ -271,10 +291,15 @@ void OpenWorker(std::shared_ptr<PlayerState> p, int request, std::string source,
         p->engine.SetPitch(p->pitch);
         p->engine.SetRate(p->rate);
         p->engine.SetGain(p->gain);
-        if (!p->engine.Load(std::move(decoder), TempoAlgorithm::Signalsmith)) {
+        if (!p->engine.Load(std::move(decoder), p->algorithm)) {
             p->state = FPE_STATE_EMPTY;
             Emit(p, request, FPE_EVENT_FAILED, "The output device could not play it.");
             return;
+        }
+        // The effects, fresh for it
+        std::wstring effectError;
+        if (!p->effects.Apply(&effectError) && !effectError.empty()) {
+            Emit(p, request, FPE_EVENT_STATUS, "3D audio could not start: " + WideToUtf8(effectError));
         }
         p->title = title;
         if (autoplay) {
@@ -328,6 +353,7 @@ int Seek(PlayerState& p, double seconds) {
     seconds = std::max(0.0, seconds);
     if (length > 0) seconds = std::min(seconds, length);
     if (!p.engine.Seek(seconds)) return 0;
+    if (!p.smooth) p.effects.ClearTails();
     // Back from the end: it can play again
     if (p.state == FPE_STATE_ENDED && (length <= 0 || seconds < length)) {
         p.engine.Play();
@@ -407,6 +433,7 @@ FPE_API fpe_player* fpe_player_create(const fpe_player_config* config) {
     player->state = std::make_shared<PlayerState>();
     PlayerState& p = *player->state;
     p.handle = player;
+    p.effects.Attach(&p.engine);
     if (config) {
         p.device = config->device ? Utf8ToWide(config->device) : std::wstring();
         if (config->buffer_ms > 0) p.bufferMs = config->buffer_ms;
@@ -423,6 +450,11 @@ FPE_API void fpe_player_destroy(fpe_player* player) {
         if (p) {
             p->alive = false;  // whatever is opening is no longer wanted, and nothing more is said
             p->request++;
+            if (p->recorder) {
+                p->engine.SetTap(nullptr, nullptr);
+                p->recorder.reset();  // the file finished
+            }
+            p->effects.Remove();
             if (p->engineReady) {
                 p->engine.Shutdown();
                 p->engineReady = false;
@@ -441,6 +473,7 @@ FPE_API int fpe_set_device(fpe_player* player, const char* name) {
     p->device = name ? Utf8ToWide(name) : std::wstring();
     if (!p->engineReady) return 1;  // used when its engine starts
     p->request++;
+    p->effects.Remove();
     p->engine.Unload();
     p->state = FPE_STATE_EMPTY;
     return p->engine.SwitchDevice(p->device, p->bufferMs) ? 1 : 0;
@@ -455,6 +488,7 @@ FPE_API int fpe_open(fpe_player* player, const char* url_or_path, int autoplay) 
         Emit(p.p, request, FPE_EVENT_FAILED, "The output device could not be opened.");
         return request;
     }
+    p->effects.Remove();
     p->engine.Unload();
     p->state = FPE_STATE_OPENING;
     p->title.clear();
@@ -466,7 +500,10 @@ FPE_API void fpe_close(fpe_player* player) {
     Locked p(player);
     if (!p) return;
     p->request++;
-    if (p->engineReady) p->engine.Unload();
+    if (p->engineReady) {
+        p->effects.Remove();
+        p->engine.Unload();
+    }
     p->state = FPE_STATE_EMPTY;
     p->title.clear();
 }
@@ -554,6 +591,253 @@ FPE_API void fpe_set_rate(fpe_player* player, float rate) {
 FPE_API int fpe_title(fpe_player* player, char* buffer, int size) {
     Locked p(player);
     return CopyOut(p ? p->title : std::string(), buffer, size);
+}
+
+FPE_API int fpe_tag(fpe_player* player, const char* name, char* buffer, int size) {
+    Locked p(player);
+    std::string value;
+    if (p && name && p->engineReady) {
+        if (const audio::Decoder* d = p->engine.Current()) value = d->Tag(name);
+    }
+    return CopyOut(value, buffer, size);
+}
+
+FPE_API int fpe_get_stream_info(fpe_player* player, fpe_stream_info* info) {
+    if (!info) return 0;
+    *info = fpe_stream_info{};
+    Locked p(player);
+    if (!p || !p->engineReady) return 0;
+    const audio::Decoder* d = p->engine.Current();
+    if (!d) return 0;
+    CopyOut(d->CodecName(), info->codec, static_cast<int>(sizeof info->codec));
+    info->bitrate_kbps = d->Bitrate();
+    info->vbr = d->IsVbr() ? 1 : 0;
+    info->channels = d->SourceChannels();
+    info->sample_rate = d->SourceSampleRate();
+    info->bits = d->SourceBits();
+    return 1;
+}
+
+FPE_API int fpe_chapter_count(fpe_player* player) {
+    Locked p(player);
+    if (!p || !p->engineReady) return 0;
+    const audio::Decoder* d = p->engine.Current();
+    return d ? static_cast<int>(d->Chapters().size()) : 0;
+}
+
+FPE_API int fpe_chapter(fpe_player* player, int index, double* start, char* title, int size) {
+    Locked p(player);
+    if (!p || !p->engineReady) return -1;
+    const audio::Decoder* d = p->engine.Current();
+    if (!d) return -1;
+    std::vector<Chapter> chapters = d->Chapters();
+    if (index < 0 || index >= static_cast<int>(chapters.size())) return -1;
+    const Chapter& c = chapters[static_cast<size_t>(index)];
+    if (start) *start = c.position;
+    return CopyOut(WideToUtf8(c.name), title, size);
+}
+
+FPE_API void fpe_set_tempo_algorithm(fpe_player* player, int algorithm) {
+    Locked p(player);
+    if (p && (algorithm == 1 || algorithm == 2)) p->algorithm = static_cast<TempoAlgorithm>(algorithm);
+}
+
+FPE_API void fpe_set_smooth_transitions(fpe_player* player, int on) {
+    Locked p(player);
+    if (!p) return;
+    p->smooth = on != 0;
+    if (p->engineReady) p->engine.SetSmoothTransitions(p->smooth);
+}
+
+// ---- live streams ----
+
+FPE_API void fpe_set_live_rewind(int seconds) { audio::SetLiveRewindSeconds(seconds); }
+
+FPE_API int fpe_live_range(fpe_player* player, double* oldest, double* live) {
+    Locked p(player);
+    if (!p || !p->engineReady) return 0;
+    double a = 0, b = 0;
+    if (!p->engine.LiveRange(a, b)) return 0;
+    if (oldest) *oldest = a;
+    if (live) *live = b;
+    return 1;
+}
+
+// ---- scrubbing ----
+
+FPE_API int fpe_scrub_start(fpe_player* player, int style, int direction, float speed) {
+    Locked p(player);
+    if (!p || !p->engineReady || !p->engine.IsLoaded()) return 0;
+    audio::ScrubStyle s = style == FPE_SCRUB_SPRING ? audio::ScrubStyle::Spring : audio::ScrubStyle::Tape;
+    if (!p->engine.StartScrub(s, direction < 0 ? -1 : 1, speed)) return 0;
+    // It is heard, paused or not
+    if (p->state == FPE_STATE_PAUSED || p->state == FPE_STATE_ENDED) {
+        p->engine.Play();
+        p->state = FPE_STATE_PLAYING;
+    }
+    return 1;
+}
+
+FPE_API void fpe_scrub_speed(fpe_player* player, float speed) {
+    Locked p(player);
+    if (p && p->engineReady) p->engine.SetScrubSpeed(speed);
+}
+
+FPE_API int fpe_scrub_stop(fpe_player* player) {
+    Locked p(player);
+    return p && p->engineReady && p->engine.StopScrub() ? 1 : 0;
+}
+
+FPE_API int fpe_scrub_release(fpe_player* player) {
+    Locked p(player);
+    return p && p->engineReady && p->engine.ReleaseScrub() ? 1 : 0;
+}
+
+FPE_API int fpe_tape_stop(fpe_player* player) {
+    Locked p(player);
+    return p && p->engineReady && p->state == FPE_STATE_PLAYING && p->engine.TapeStop() ? 1 : 0;
+}
+
+// ---- effects ----
+
+FPE_API int fpe_effect_count(void) { return static_cast<int>(DSPEffectType::COUNT); }
+
+FPE_API const char* fpe_effect_key(int index) {
+    if (index < 0 || index >= static_cast<int>(DSPEffectType::COUNT)) return nullptr;
+    return audio::EffectKey(static_cast<DSPEffectType>(index));
+}
+
+FPE_API int fpe_set_effect(fpe_player* player, const char* effect, int on) {
+    DSPEffectType type;
+    if (!effect || !audio::EffectFromKey(effect, type)) return 0;
+    Locked p(player);
+    if (!p) return 0;
+    p->effects.Enable(type, on != 0);
+    return p->effects.Enabled(type) == (on != 0) ? 1 : 0;  // 3D audio may not start
+}
+
+FPE_API int fpe_effect_enabled(fpe_player* player, const char* effect) {
+    DSPEffectType type;
+    if (!effect || !audio::EffectFromKey(effect, type)) return 0;
+    Locked p(player);
+    return p && p->effects.Enabled(type) ? 1 : 0;
+}
+
+FPE_API int fpe_set_reverb_type(fpe_player* player, int type) {
+    Locked p(player);
+    if (!p || type < 0 || type > 2) return 0;
+    p->effects.SetReverbAlgorithm(type);
+    return 1;
+}
+
+FPE_API int fpe_param_count(void) { return static_cast<int>(audio::ParamDefs().size()); }
+
+FPE_API int fpe_param_at(int index, fpe_param_info* info) {
+    const std::vector<ParamDef>& defs = audio::ParamDefs();
+    if (!info || index < 0 || index >= static_cast<int>(defs.size())) return 0;
+    const ParamDef& d = defs[static_cast<size_t>(index)];
+    info->key = audio::ParamKey(d.id);
+    info->name = d.name;
+    info->unit = d.unit;
+    info->effect = static_cast<int>(d.dspEffect) < 0 ? "" : audio::EffectKey(d.dspEffect);
+    info->min_value = d.minValue;
+    info->max_value = d.maxValue;
+    info->step = d.step;
+    info->default_value = d.defaultValue;
+    info->choices = static_cast<int>(audio::ParamChoices(d.id).size());
+    return 1;
+}
+
+FPE_API int fpe_param_choice(const char* key, int value, char* buffer, int size) {
+    ParamId id;
+    if (!key || !audio::ParamFromKey(key, id)) return -1;
+    std::vector<std::string> names = audio::ParamChoices(id);
+    // Values count from the parameter's minimum (0 for all of them)
+    const ParamDef* def = audio::FindParamDef(id);
+    int i = value - (def ? static_cast<int>(def->minValue) : 0);
+    if (i < 0 || i >= static_cast<int>(names.size())) return -1;
+    return CopyOut(names[static_cast<size_t>(i)], buffer, size);
+}
+
+FPE_API int fpe_set_param(fpe_player* player, const char* key, float value) {
+    ParamId id;
+    if (!key || !audio::ParamFromKey(key, id)) return 0;
+    switch (id) {
+        case ParamId::Volume: fpe_set_volume(player, value); return 1;
+        case ParamId::Tempo: fpe_set_tempo(player, value); return 1;
+        case ParamId::Pitch: fpe_set_pitch(player, value); return 1;
+        case ParamId::Rate: fpe_set_rate(player, value); return 1;
+        default: break;
+    }
+    Locked p(player);
+    if (!p) return 0;
+    p->effects.Set(id, value);
+    return 1;
+}
+
+FPE_API float fpe_get_param(fpe_player* player, const char* key) {
+    ParamId id;
+    if (!key || !audio::ParamFromKey(key, id)) return 0.0f;
+    Locked p(player);
+    if (!p) return 0.0f;
+    switch (id) {
+        case ParamId::Volume: return p->gain;
+        case ParamId::Tempo: return p->tempo;
+        case ParamId::Pitch: return p->pitch;
+        case ParamId::Rate: return p->rate;
+        default: return p->effects.Get(id);
+    }
+}
+
+FPE_API void fpe_set_eq_frequencies(fpe_player* player, float bass, float mid, float treble) {
+    Locked p(player);
+    if (p) p->effects.SetEqFrequencies(bass, mid, treble);
+}
+
+FPE_API int fpe_load_impulse_response(fpe_player* player, const char* path) {
+    Locked p(player);
+    if (!p || !path) return 0;
+    std::wstring error;
+    return p->effects.LoadImpulseResponse(Utf8ToWide(path), error) ? 1 : 0;
+}
+
+// ---- recording ----
+
+namespace {
+void RecordingTap(const float* samples, int frames, int, int, void* user) {
+    static_cast<audio::Recorder*>(user)->Write(samples, frames);
+}
+}  // namespace
+
+FPE_API int fpe_record_start(fpe_player* player, const char* path, int format, int bitrate_kbps,
+                             int before_effects) {
+    Locked p(player);
+    if (!p || !path || !*path || format < 0 || format > 3) return 0;
+    if (!p->engineReady || !p->engine.IsLoaded()) return 0;  // its rate is the device's
+    if (p->recorder) {
+        p->engine.SetTap(nullptr, nullptr);
+        p->recorder.reset();
+    }
+    std::wstring error;
+    p->recorder = audio::Recorder::Start(Utf8ToWide(path), static_cast<audio::RecordFormat>(format),
+                                         bitrate_kbps > 0 ? bitrate_kbps : 192, p->engine.MixSampleRate(), error);
+    if (!p->recorder) return 0;
+    p->engine.SetTapBeforeEffects(before_effects != 0);
+    p->engine.SetTap(RecordingTap, p->recorder.get());
+    return 1;
+}
+
+FPE_API void fpe_record_stop(fpe_player* player) {
+    Locked p(player);
+    if (!p || !p->recorder) return;
+    // No more blocks after this; then the file is finished
+    p->engine.SetTap(nullptr, nullptr);
+    p->recorder.reset();
+}
+
+FPE_API int fpe_recording(fpe_player* player) {
+    Locked p(player);
+    return p && p->recorder ? 1 : 0;
 }
 
 }  // extern "C"

@@ -19,6 +19,10 @@ set(FPE_SOURCES
     src/audio/miniaudio.c
     src/audio/scrubber.cpp
     src/audio/tempo_processor.cpp
+    src/audio/recorder.cpp
+    src/center_cancel.cpp
+    src/convolution.cpp
+    src/effect_chain.cpp
     src/http_common.cpp
     src/mp4_index.cpp
     src/mp4_remux.cpp
@@ -26,6 +30,22 @@ set(FPE_SOURCES
     src/xheaac.cpp
     src/youtube.cpp
     src/youtube_tools.cpp
+    src/reverb/reverb.cpp
+    src/reverb/efx_reverb.cpp
+    src/spatial_audio.cpp
+    src/spatial/hrtf.cpp
+    src/spatial/hrtf_data.cpp
+    src/spatial/pffft/pffft.c
+    src/speakers/presets.cpp
+    src/speakers/core/dsp.cpp
+    src/speakers/model/room.cpp
+    src/speakers/model/speaker.cpp
+    src/speakers/model/system.cpp
+    src/speakers/engine/engine.cpp
+    src/speakers/engine/modes.cpp
+    src/speakers/engine/reverb.cpp
+    src/speakers/engine/spatial.cpp
+    src/speakers/engine/voice.cpp
     deps/speedy/speedy.c
     deps/speedy/soniclib.c
     deps/sonic/sonic.c
@@ -66,10 +86,11 @@ set(FDK_AAC_INSTALL_PKGCONFIG_MODULE OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/fdk-aac EXCLUDE_FROM_ALL)
 target_compile_options(fdk-aac PRIVATE ${FASTPLAY_NO_WARNINGS})
 # Static libraries going into a shared one
-set_target_properties(fdk-aac spessasynth openmpt vorbis ogg PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(fastplay_engine PRIVATE fdk-aac spessasynth openmpt vorbis)
+set_target_properties(fdk-aac spessasynth openmpt mp3lame vorbis ogg PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(fastplay_engine PRIVATE fdk-aac spessasynth openmpt mp3lame vorbis)
 
 set_source_files_properties(deps/speedy/speedy.c deps/speedy/soniclib.c deps/sonic/sonic.c deps/kissfft/kiss_fft.c
+    src/spatial/pffft/pffft.c
     PROPERTIES COMPILE_OPTIONS ${FASTPLAY_NO_WARNINGS})
 target_include_directories(fastplay_engine
     PUBLIC include

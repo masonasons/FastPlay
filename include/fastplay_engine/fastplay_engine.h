@@ -95,7 +95,10 @@ enum fpe_event {
     /* It played to its end. */
     FPE_EVENT_ENDED = 4,
     /* A stream's title changed (internet radio). text: the new one. */
-    FPE_EVENT_TITLE = 5
+    FPE_EVENT_TITLE = 5,
+    /* A tape release or tape stop has wound down (fpe_scrub_release(),
+       fpe_tape_stop()). */
+    FPE_EVENT_SCRUB_ENDED = 6
 };
 
 /* request: the id fpe_open() returned for what the event is about. */
@@ -162,6 +165,124 @@ FPE_API void fpe_set_rate(fpe_player* player, float rate);
    the tags' artist and title, or the file's name. Returns the length of the
    whole title (as fpe_device_name()). */
 FPE_API int fpe_title(fpe_player* player, char* buffer, int size);
+
+/* A tag of what is loaded by its common name (TITLE, ARTIST, ALBUM, DATE,
+   TRACK, GENRE, COMMENT...) or a stream header (icy-name, icy-genre), into
+   `buffer`; returns its whole length, 0 if there is none. */
+FPE_API int fpe_tag(fpe_player* player, const char* name, char* buffer, int size);
+
+typedef struct fpe_stream_info {
+    char codec[32];       /* "mp3", "aac", "flac"... */
+    int bitrate_kbps;     /* the recent average for VBR, else the nominal one */
+    int vbr;
+    int channels;         /* the source's own, before it became stereo float */
+    int sample_rate;
+    int bits;             /* 0 for a lossy format */
+} fpe_stream_info;
+FPE_API int fpe_get_stream_info(fpe_player* player, fpe_stream_info* info);
+
+/* Chapters (M4B, MKV, MP3 with chapter frames...): how many, and chapter
+   `index`'s start in seconds and its title. */
+FPE_API int fpe_chapter_count(fpe_player* player);
+FPE_API int fpe_chapter(fpe_player* player, int index, double* start, char* title, int size);
+
+/* The engine's time stretcher for tempo changes, from the next fpe_open():
+   1 Speedy (speech: speeds up the gaps more than the words), 2 Signalsmith
+   (music; the default). */
+FPE_API void fpe_set_tempo_algorithm(fpe_player* player, int algorithm);
+
+/* Short fades (8 ms) around seeks, pauses and track changes, so none clicks.
+   On by default. */
+FPE_API void fpe_set_smooth_transitions(fpe_player* player, int on);
+
+/* ---- live streams ---- */
+
+/* Live streams opened from now on keep their last `seconds` (by any player),
+   so they can be paused and rewound; 0 (the default) keeps none. */
+FPE_API void fpe_set_live_rewind(int seconds);
+/* A live stream kept for rewinding: where it can be played from, as positions
+   (fpe_position()): the oldest kept, and the live edge. 0 for anything else. */
+FPE_API int fpe_live_range(fpe_player* player, double* oldest, double* live);
+
+/* ---- scrubbing: playing through the audio at speed while a key is held ---- */
+
+enum fpe_scrub_style {
+    /* Faster, pitch and all, like a tape; winds up and down. */
+    FPE_SCRUB_TAPE = 0,
+    /* Keeps the pitch, and speeds up the longer it goes. */
+    FPE_SCRUB_SPRING = 1
+};
+/* From what is heard now, forward (direction 1) or back (-1), up to `speed`
+   times normal. Not for a live stream unless it is kept for rewinding. */
+FPE_API int fpe_scrub_start(fpe_player* player, int style, int direction, float speed);
+FPE_API void fpe_scrub_speed(fpe_player* player, float speed);
+/* Carries on playing normally from wherever it got to. */
+FPE_API int fpe_scrub_stop(fpe_player* player);
+/* Tape let go of: winds back down (to normal speed forward, to a stop going
+   back), then FPE_EVENT_SCRUB_ENDED. 0 for spring (use fpe_scrub_stop()). */
+FPE_API int fpe_scrub_release(fpe_player* player);
+/* The tape stop: from normal speed to a standstill, then FPE_EVENT_SCRUB_ENDED
+   (pause or stop for real then). */
+FPE_API int fpe_tape_stop(fpe_player* player);
+
+/* ---- effects ---- */
+
+/* The effects, by key: "reverb", "echo", "eq", "compressor", "stereo_width",
+   "center_cancel", "convolution", "3d_audio", "normalizer". */
+FPE_API int fpe_effect_count(void);
+FPE_API const char* fpe_effect_key(int index);
+
+/* Each player's effects are its own, off until turned on. */
+FPE_API int fpe_set_effect(fpe_player* player, const char* effect, int on);
+FPE_API int fpe_effect_enabled(fpe_player* player, const char* effect);
+/* The reverb's kind: 0 off, 1 simple (a room you size), 2 advanced (the EFX
+   environments). Turning "reverb" on with fpe_set_effect() chooses simple. */
+FPE_API int fpe_set_reverb_type(fpe_player* player, int type);
+
+/* Every parameter there is, the same for every player. */
+typedef struct fpe_param_info {
+    const char* key;       /* "eq_bass", for fpe_set_param() */
+    const char* name;      /* "EQ Bass" */
+    const char* unit;      /* "dB" */
+    const char* effect;    /* the effect's key; "" for volume, pitch, tempo and rate */
+    float min_value, max_value, step, default_value;
+    /* How many named values it takes (fpe_param_choice()): a reverb room, an
+       environment, a 3D mode. 0 for a plain number. */
+    int choices;
+} fpe_param_info;
+FPE_API int fpe_param_count(void);
+FPE_API int fpe_param_at(int index, fpe_param_info* info);
+/* The name of value `value` of a choice parameter ("Cathedral"). */
+FPE_API int fpe_param_choice(const char* key, int value, char* buffer, int size);
+
+/* A parameter's value (clamped to its range), heard at once. "volume",
+   "pitch", "tempo" and "rate" are the same as fpe_set_volume() and the rest
+   (volume is a linear gain here too). 0 for a key there is no such parameter. */
+FPE_API int fpe_set_param(fpe_player* player, const char* key, float value);
+FPE_API float fpe_get_param(fpe_player* player, const char* key);
+
+/* The EQ's three band centres, in Hz (50, 1000 and 12000 to begin with). */
+FPE_API void fpe_set_eq_frequencies(fpe_player* player, float bass, float mid, float treble);
+/* The convolution reverb's impulse response, a WAV file. */
+FPE_API int fpe_load_impulse_response(fpe_player* player, const char* path);
+
+/* ---- recording what plays ---- */
+
+enum fpe_record_format {
+    FPE_RECORD_WAV = 0,
+    FPE_RECORD_MP3 = 1,
+    FPE_RECORD_OGG = 2,
+    FPE_RECORD_FLAC = 3
+};
+/* Records what the player plays, into `path`, until fpe_record_stop(): after
+   its effects (or before them, `before_effects`), before its volume. Encoded on
+   a thread of its own. `bitrate_kbps` for MP3 and OGG. Something must be
+   playing (its device's rate is the recording's). 1 if it started. */
+FPE_API int fpe_record_start(fpe_player* player, const char* path, int format, int bitrate_kbps,
+                             int before_effects);
+/* Finishes the file. */
+FPE_API void fpe_record_stop(fpe_player* player);
+FPE_API int fpe_recording(fpe_player* player);
 
 #ifdef __cplusplus
 }
