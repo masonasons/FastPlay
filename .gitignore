@@ -60,6 +60,7 @@ Thumbs.db
 
 # CMake build tree (dependencies are fetched into it)
 build/
+build-engine*/
 ci/ffmpeg/work/
 /ffmpeg/
 /ffmpeg-ios/

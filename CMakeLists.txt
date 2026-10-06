@@ -12,6 +12,10 @@ endif()
 # The iPhone: FastPlay without its windows, as a static library (FastPlayCore) that
 # the app in ios/ links; ios/build-core.sh configures this for the device and the
 # simulator. Its windows are SwiftUI, so wxWidgets is no part of it.
+# The engine on its own, as a shared library with a C interface
+# (include/fastplay_engine), for other apps: cmake/engine_library.cmake.
+option(FASTPLAY_ENGINE_LIBRARY "Build the FastPlay Engine library instead of FastPlay" OFF)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(FASTPLAY_IOS ON)
     enable_language(OBJC)  # miniaudio, which talks to the audio session there
@@ -59,7 +63,7 @@ set(CMAKE_SKIP_INSTALL_RULES ON)
 # screen reader fixes made since 3.3.3, most of them for VoiceOver on macOS
 # (controls titled by their labels, context menus, custom list cells) and some
 # for Windows. Move to the next 3.3 release tag once it has them.
-if(NOT FASTPLAY_IOS)
+if(NOT FASTPLAY_IOS AND NOT FASTPLAY_ENGINE_LIBRARY)
 FetchContent_Declare(wxWidgets
     GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
     GIT_TAG 776a9a278791fe0d1c79be337e55ab8e53f89587
@@ -96,7 +100,7 @@ endif()
 # --- UniversalSpeech (Windows only) ---
 # Speaks through whatever screen reader is running - NVDA, JAWS, Narrator and
 # others. Distributed as source and compiled straight in.
-if(WIN32)
+if(WIN32 AND NOT FASTPLAY_ENGINE_LIBRARY)
     FetchContent_Declare(universalspeech
         GIT_REPOSITORY https://github.com/samtupy/UniversalSpeechMSVCStatic.git
         GIT_TAG master
@@ -248,6 +252,11 @@ else()
 endif()
 if(NOT EXISTS ${FASTPLAY_FFMPEG_DIR}/include/libavformat/avformat.h)
     message(FATAL_ERROR "FFmpeg is missing from ${FASTPLAY_FFMPEG_DIR}. Run download-deps, or build it with ci/ffmpeg/build.sh.")
+endif()
+
+if(FASTPLAY_ENGINE_LIBRARY)
+    include(cmake/engine_library.cmake)
+    return()
 endif()
 
 set(FASTPLAY_SOURCES

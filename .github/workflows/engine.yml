@@ -1,0 +1,211 @@
+name: FastPlay Engine
+
+# The engine as a library (cmake/engine_library.cmake) for other apps, built for
+# Windows, macOS and iOS on every push that could change it, and published to the
+# engine-latest release: one zip per platform, each with the header
+# (include/fastplay_engine/fastplay_engine.h) and the library.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'ci/ffmpeg/**'
+      - 'download-deps.*'
+      - '.github/workflows/engine.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: engine
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download dependencies
+        run: .\download-deps.bat
+
+      # The same FFmpeg, and cache, as the app's build
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg
+          key: ffmpeg-windows-${{ hashFiles('ci/ffmpeg/**') }}
+
+      - name: Set up MSYS2 for the FFmpeg build
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          path-type: inherit
+          install: make diffutils nasm pkgconf
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          # MSYS2's coreutils link.exe would shadow the MSVC linker
+          rm -f /usr/bin/link.exe
+          JOBS=4 bash ci/ffmpeg/build.sh windows ffmpeg
+
+      - name: Build the library
+        run: |
+          cmake -S . -B build-engine -DFASTPLAY_ENGINE_LIBRARY=ON
+          cmake --build build-engine --config Release --parallel
+
+      # It runs inside apps that run on Windows 7
+      - name: Check it still loads on Windows 7
+        shell: pwsh
+        run: |
+          $win8Only = 'CreateFile2|CopyFile2|GetSystemTimePreciseAsFileTime|WaitOnAddress|WakeByAddress|SetThreadDescription|GetThreadDescription|GetCurrentThreadStackLimits|FromApp|PrefetchVirtualMemory|GetOverlappedResultEx|api-ms-win-'
+          $found = dumpbin /imports build-engine\out\fastplay_engine.dll | Select-String -Pattern $win8Only
+          if ($found) {
+            $found | ForEach-Object { Write-Host $_.Line.Trim() }
+            exit 1
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg/include/fastplay_engine, pkg/lib | Out-Null
+          Copy-Item include/fastplay_engine/fastplay_engine.h pkg/include/fastplay_engine/
+          Copy-Item build-engine/out/fastplay_engine.dll, build-engine/out/fastplay_engine.lib pkg/lib/
+          Compress-Archive -Path pkg/* -DestinationPath fastplay-engine-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-windows
+          path: fastplay-engine-windows-x64.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dependencies
+        run: |
+          chmod +x download-deps.sh
+          ./download-deps.sh
+
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg
+          key: ffmpeg-macos-${{ hashFiles('ci/ffmpeg/**') }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: JOBS="$(sysctl -n hw.ncpu)" bash ci/ffmpeg/build.sh macos ffmpeg
+
+      - name: Build the library
+        run: |
+          cmake -S . -B build-engine -DFASTPLAY_ENGINE_LIBRARY=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-engine --parallel "$(sysctl -n hw.ncpu)"
+          lipo -info build-engine/out/libfastplay_engine.dylib
+          nm -gU build-engine/out/libfastplay_engine.dylib | grep -v " _fpe_" && exit 1 || true
+
+      - name: Package
+        run: |
+          mkdir -p pkg/include/fastplay_engine pkg/lib
+          cp include/fastplay_engine/fastplay_engine.h pkg/include/fastplay_engine/
+          cp build-engine/out/libfastplay_engine.dylib pkg/lib/
+          codesign --force --sign - pkg/lib/libfastplay_engine.dylib
+          (cd pkg && zip -r ../fastplay-engine-macos.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-macos
+          path: fastplay-engine-macos.zip
+
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Download dependencies
+        run: |
+          chmod +x download-deps.sh
+          ./download-deps.sh
+
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-ios
+          key: ffmpeg-ios-${{ hashFiles('ci/ffmpeg/**') }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: JOBS="$(sysctl -n hw.ncpu)" bash ci/ffmpeg/build.sh ios ffmpeg-ios
+
+      # A framework for the device and one for the simulator, as one xcframework
+      - name: Build the library
+        run: |
+          for sdk in iphoneos iphonesimulator; do
+            archs=arm64
+            [ "$sdk" = iphonesimulator ] && archs="arm64;x86_64"
+            cmake -S . -B "build-engine-$sdk" -DFASTPLAY_ENGINE_LIBRARY=ON \
+              -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$sdk -DCMAKE_OSX_ARCHITECTURES="$archs" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DCMAKE_BUILD_TYPE=Release
+            cmake --build "build-engine-$sdk" --parallel "$(sysctl -n hw.ncpu)"
+          done
+          xcodebuild -create-xcframework \
+            -framework build-engine-iphoneos/out/FastPlayEngine.framework \
+            -framework build-engine-iphonesimulator/out/FastPlayEngine.framework \
+            -output FastPlayEngine.xcframework
+
+      - name: Package
+        run: |
+          mkdir -p pkg/include/fastplay_engine
+          cp include/fastplay_engine/fastplay_engine.h pkg/include/fastplay_engine/
+          cp -R FastPlayEngine.xcframework pkg/
+          (cd pkg && zip -ry ../fastplay-engine-ios.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-ios
+          path: fastplay-engine-ios.zip
+
+  release:
+    needs: [windows, macos, ios]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Replace the engine-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete engine-latest --yes --cleanup-tag || true
+          gh release create engine-latest artifacts/*.zip \
+            --title "FastPlay Engine (latest)" \
+            --notes "FastPlay's audio engine as a library, from commit ${{ github.sha }}. The C interface is include/fastplay_engine/fastplay_engine.h in each zip. Rebuilt on every change." \
+            --prerelease --target ${{ github.sha }}

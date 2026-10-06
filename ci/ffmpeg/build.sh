@@ -136,7 +136,7 @@ case "$platform" in
     ios)
         # The iPhone, and the simulator on Apple silicon and Intel Macs. FTP as
         # well, for playing from a server (the desktop builds have no use for it).
-        ios_min=17.0
+        ios_min=16.0  # as low as anything built on it goes (FastPlay Engine: 16)
         ios_slice() {
             local name="$1" sdk="$2" arch="$3" minflag="$4"
             shift 4

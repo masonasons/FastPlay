@@ -133,14 +133,15 @@ struct Dsp {
     int priority;
 };
 
+}  // namespace
+
 // ---------------------------------------------------------------------------
-// Engine state
+// A player's state
 // ---------------------------------------------------------------------------
 
-struct Engine {
+struct Player::Impl {
     // Device
-    ma_context context;
-    bool contextReady = false;
+    ma_context* context = nullptr;  // shared by every player (AcquireContext())
     ma_device device;
     bool deviceReady = false;
     std::wstring deviceName;
@@ -244,22 +245,59 @@ struct Engine {
     std::function<void()> scrubEndHandler;
 };
 
-Engine g;
+namespace {
+
+using Engine = Player::Impl;
+
+// ---------------------------------------------------------------------------
+// The audio system: one context for every player, made when the first needs it
+// ---------------------------------------------------------------------------
+
+bool g_iosSessionPlayback = true;
+std::mutex g_contextMutex;
+ma_context g_context;
+int g_contextUsers = 0;
+
+ma_context* AcquireContext() {
+    std::lock_guard<std::mutex> lock(g_contextMutex);
+    if (g_contextUsers == 0) {
+        ma_backend nullBackend = ma_backend_null;
+        const bool test = getenv("FASTPLAY_NULL_AUDIO") != nullptr;
+        ma_context_config contextConfig = ma_context_config_init();
+#if TARGET_OS_IOS
+        // The iPhone's audio session, for a player: sound with the ring switch
+        // off and the screen locked (miniaudio's default is for a phone call)
+        contextConfig.coreaudio.sessionCategory =
+            g_iosSessionPlayback ? ma_ios_session_category_playback : ma_ios_session_category_none;
+#endif
+        if (ma_context_init(test ? &nullBackend : nullptr, test ? 1 : 0, &contextConfig, &g_context) != MA_SUCCESS) {
+            return nullptr;
+        }
+    }
+    g_contextUsers++;
+    return &g_context;
+}
+
+void ReleaseContext() {
+    std::lock_guard<std::mutex> lock(g_contextMutex);
+    if (g_contextUsers > 0 && --g_contextUsers == 0) ma_context_uninit(&g_context);
+}
 
 // ---------------------------------------------------------------------------
 // Device callback
 // ---------------------------------------------------------------------------
 
-void Callback(float* out, ma_uint32 frameCount);
-void RunDsps(float* samples, int frames);
+void Callback(Engine& g, float* out, ma_uint32 frameCount);
+void RunDsps(Engine& g, float* samples, int frames);
 
-void DataCallback(ma_device*, void* output, const void*, ma_uint32 frameCount) {
+void DataCallback(ma_device* device, void* output, const void*, ma_uint32 frameCount) {
+    Engine& g = *static_cast<Engine*>(device->pUserData);
     float* out = static_cast<float*>(output);
-    Callback(out, frameCount);
+    Callback(g, out, frameCount);
     if (TapProc monitor = g.monitor.load()) monitor(out, static_cast<int>(frameCount), kChannels, g.outputRate, g.monitorUser);
 }
 
-void Callback(float* out, ma_uint32 frameCount) {
+void Callback(Engine& g, float* out, ma_uint32 frameCount) {
     std::memset(out, 0, static_cast<size_t>(frameCount) * kChannels * sizeof(float));
     g.lastPeriod = frameCount;
     if (g.state.load() != State::Playing) {
@@ -328,7 +366,7 @@ void Callback(float* out, ma_uint32 frameCount) {
     // they hold was thrown away unheard by a seek or pause, and a change to them
     // is heard at once. The whole block, silence included, so tails ring on.
     auto t0 = std::chrono::steady_clock::now();
-    RunDsps(out, static_cast<int>(frameCount));
+    RunDsps(g, out, static_cast<int>(frameCount));
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (ms > g.maxBlockMs.load()) g.maxBlockMs = ms;
 
@@ -357,8 +395,8 @@ void Callback(float* out, ma_uint32 frameCount) {
 
     // The end: everything produced and played
     if (g.primed.load() && done < frameCount && g.producerEnded.load() && !g.endReported.exchange(true)) {
-        RunOnUiThread([]() {
-            if (g.endHandler) g.endHandler();
+        RunOnUiThread([handler = g.endHandler]() {
+            if (handler) handler();
         });
     }
 }
@@ -372,7 +410,7 @@ void Callback(float* out, ma_uint32 frameCount) {
 // into the start of the next, so a seek that lands a few samples off never
 // clicks; and a little more before that again, decoded and dropped, since some
 // formats (MP3) take a frame or two to settle after a seek.
-void ReadBackward(std::vector<float>& chunk, std::vector<float>& reversed) {
+void ReadBackward(Engine& g, std::vector<float>& chunk, std::vector<float>& reversed) {
     std::lock_guard<std::mutex> use(g.decoderMutex);
     if (!g.decoder || !g.reverse) return;
     const int64_t end = g.reverseEnd;
@@ -419,7 +457,8 @@ void ReadBackward(std::vector<float>& chunk, std::vector<float>& reversed) {
     g.reverseTail.assign(reversed.end() - static_cast<std::ptrdiff_t>(hold * kChannels), reversed.end());
 }
 
-void DecodeLoop() {
+void DecodeLoop(Engine* engine) {
+    Engine& g = *engine;
     std::vector<float> block(4096 * kChannels);
     std::vector<float> chunk, reversed;
     while (g.running) {
@@ -465,7 +504,7 @@ void DecodeLoop() {
             }
         }
         if (backward) {
-            ReadBackward(chunk, reversed);
+            ReadBackward(g, chunk, reversed);
             continue;
         }
         bool titleChanged;
@@ -483,8 +522,8 @@ void DecodeLoop() {
             titleChanged = TakeStreamTitleChange(g.decoder.get());
         }
         if (titleChanged) {
-            RunOnUiThread([]() {
-                if (g.titleHandler) g.titleHandler();
+            RunOnUiThread([handler = g.titleHandler]() {
+                if (handler) handler();
             });
         }
     }
@@ -494,14 +533,15 @@ void DecodeLoop() {
 // Mix thread
 // ---------------------------------------------------------------------------
 
-void RunDsps(float* samples, int frames) {
+void RunDsps(Engine& g, float* samples, int frames) {
     std::lock_guard<std::mutex> lock(g.dspMutex);
     if (g.tap && g.tapBeforeEffects) g.tap(samples, frames, kChannels, g.outputRate, g.tapUser);
     for (const Dsp& dsp : g.dsps) dsp.proc(samples, frames, kChannels, g.outputRate, dsp.user);
     if (g.tap && !g.tapBeforeEffects) g.tap(samples, frames, kChannels, g.outputRate, g.tapUser);
 }
 
-void MixLoop() {
+void MixLoop(Engine* engine) {
+    Engine& g = *engine;
     g.mixBlock.resize(static_cast<size_t>(kMixBlockFrames) * kChannels);
     while (g.running) {
         bool idle = true;
@@ -543,8 +583,8 @@ void MixLoop() {
             }
             // Tape wound down, and heard to the end of it: the player carries on
             if (g.scrub && g.scrub->TakeFinished(g.played.load())) {
-                RunOnUiThread([]() {
-                    if (g.scrubEndHandler) g.scrubEndHandler();
+                RunOnUiThread([handler = g.scrubEndHandler]() {
+                    if (handler) handler();
                 });
             }
         }
@@ -562,11 +602,11 @@ void MixLoop() {
 // Device
 // ---------------------------------------------------------------------------
 
-bool FindDevice(const std::wstring& name, ma_device_id& id) {
+bool FindDevice(Engine& g, const std::wstring& name, ma_device_id& id) {
     if (name.empty()) return false;
     ma_device_info* devices = nullptr;
     ma_uint32 count = 0;
-    if (ma_context_get_devices(&g.context, &devices, &count, nullptr, nullptr) != MA_SUCCESS) return false;
+    if (ma_context_get_devices(g.context, &devices, &count, nullptr, nullptr) != MA_SUCCESS) return false;
     for (ma_uint32 i = 0; i < count; i++) {
         if (Utf8ToWide(devices[i].name) == name) {
             id = devices[i].id;
@@ -576,7 +616,7 @@ bool FindDevice(const std::wstring& name, ma_device_id& id) {
     return false;
 }
 
-void CloseDevice() {
+void CloseDevice(Engine& g) {
     if (g.deviceReady) {
         ma_device_uninit(&g.device);
         g.deviceReady = false;
@@ -588,7 +628,7 @@ void CloseDevice() {
     }
 }
 
-void StopIdleDevice() {
+void StopIdleDevice(Engine& g) {
 #if TARGET_OS_IOS
 	// iOS determines Now Playing's state from the audio output. Sending silence
 	// still counts as playing, so pause the device as well as the source.
@@ -599,26 +639,27 @@ void StopIdleDevice() {
 #endif
 }
 
-bool OpenDevice(const std::wstring& name, int bufferMs) {
+bool OpenDevice(Engine& g, const std::wstring& name, int bufferMs) {
     ma_device_id id;
-    bool found = FindDevice(name, id);
+    bool found = FindDevice(g, name, id);
     ma_device_config config = ma_device_config_init(ma_device_type_playback);
     config.playback.pDeviceID = found ? &id : nullptr;
     config.playback.format = ma_format_f32;
     config.playback.channels = kChannels;
     config.sampleRate = 0;  // the device's own
     config.dataCallback = DataCallback;
+    config.pUserData = &g;
     // The device takes small periods (as BASS's device buffer was small); the
     // output buffer (bufferMs, the setting) is what holds audio in hand. A
     // device period as long as that buffer would find it short every time.
     config.performanceProfile = ma_performance_profile_low_latency;
     config.periodSizeInMilliseconds = kDevicePeriodMs;
     config.periods = 3;
-    if (ma_device_init(&g.context, &config, &g.device) != MA_SUCCESS) {
+    if (ma_device_init(g.context, &config, &g.device) != MA_SUCCESS) {
         if (!found) return false;
         config.playback.pDeviceID = nullptr;  // fall back to the default
         found = false;
-        if (ma_device_init(&g.context, &config, &g.device) != MA_SUCCESS) return false;
+        if (ma_device_init(g.context, &config, &g.device) != MA_SUCCESS) return false;
     }
     g.deviceReady = true;
     g.defaultDevice = !found;
@@ -649,7 +690,7 @@ bool OpenDevice(const std::wstring& name, int bufferMs) {
 
 // Empties the output ring and starts counting played frames again. The mix
 // thread must be held (m_mixMutex).
-void ResetOutput() {
+void ResetOutput(Engine& g) {
     std::lock_guard<std::mutex> lock(g.ringMutex);
     if (g.ringReady) ma_pcm_rb_reset(&g.ring);
     g.primed = false;
@@ -663,7 +704,7 @@ void ResetOutput() {
 // output too (pausing); otherwise only what goes into them, and their tails ring
 // on (seeking). The caller clears fadeOut when the sound may come back. Does
 // nothing if nothing is playing.
-void FadeOut(bool output) {
+void FadeOut(Engine& g, bool output) {
     if (g.fadeStep.load() >= 1.0f) return;  // smooth seeking is off
     g.fadedOut = false;
     g.fadeOutput = output;
@@ -683,44 +724,45 @@ void FadeOut(bool output) {
 
 std::vector<Device> ListDevices() {
     std::vector<Device> list;
-    if (!g.contextReady) return list;
+    ma_context* context = AcquireContext();
+    if (!context) return list;
     ma_device_info* devices = nullptr;
     ma_uint32 count = 0;
-    if (ma_context_get_devices(&g.context, &devices, &count, nullptr, nullptr) != MA_SUCCESS) return list;
-    for (ma_uint32 i = 0; i < count; i++) {
-        Device device;
-        device.name = Utf8ToWide(devices[i].name);
-        device.isDefault = devices[i].isDefault != 0;
-        list.push_back(device);
+    if (ma_context_get_devices(context, &devices, &count, nullptr, nullptr) == MA_SUCCESS) {
+        for (ma_uint32 i = 0; i < count; i++) {
+            Device device;
+            device.name = Utf8ToWide(devices[i].name);
+            device.isDefault = devices[i].isDefault != 0;
+            list.push_back(device);
+        }
     }
+    ReleaseContext();
     return list;
 }
 
-bool Init(const std::wstring& deviceName, int bufferMs) {
-    if (!g.contextReady) {
-        ma_backend nullBackend = ma_backend_null;
-        const bool test = getenv("FASTPLAY_NULL_AUDIO") != nullptr;
-        ma_context_config contextConfig = ma_context_config_init();
-#if TARGET_OS_IOS
-        // The iPhone's audio session, for a player: sound with the ring switch
-        // off and the screen locked (miniaudio's default is for a phone call)
-        contextConfig.coreaudio.sessionCategory = ma_ios_session_category_playback;
-#endif
-        if (ma_context_init(test ? &nullBackend : nullptr, test ? 1 : 0, &contextConfig, &g.context) != MA_SUCCESS) {
-            return false;
-        }
-        g.contextReady = true;
+void SetIosAudioSession(bool playback) { g_iosSessionPlayback = playback; }
+
+Player::Player() : m(std::make_unique<Impl>()) {}
+
+Player::~Player() { Shutdown(); }
+
+bool Player::Init(const std::wstring& deviceName, int bufferMs) {
+    Engine& g = *m;
+    if (!g.context) {
+        g.context = AcquireContext();
+        if (!g.context) return false;
     }
-    if (!OpenDevice(deviceName, bufferMs)) return false;
+    if (!OpenDevice(g, deviceName, bufferMs)) return false;
     if (!g.running) {
         g.running = true;
-        g.decodeThread = std::thread(DecodeLoop);
-        g.mixThread = std::thread(MixLoop);
+        g.decodeThread = std::thread(DecodeLoop, &g);
+        g.mixThread = std::thread(MixLoop, &g);
     }
     return true;
 }
 
-void Shutdown() {
+void Player::Shutdown() {
+    Engine& g = *m;
     Unload();
     if (g.running) {
         g.running = false;
@@ -729,25 +771,36 @@ void Shutdown() {
         if (g.decodeThread.joinable()) g.decodeThread.join();
         if (g.mixThread.joinable()) g.mixThread.join();
     }
-    CloseDevice();
-    if (g.contextReady) {
-        ma_context_uninit(&g.context);
-        g.contextReady = false;
+    CloseDevice(g);
+    if (g.context) {
+        ReleaseContext();
+        g.context = nullptr;
     }
 }
 
-bool SwitchDevice(const std::wstring& deviceName, int bufferMs) {
+bool Player::SwitchDevice(const std::wstring& deviceName, int bufferMs) {
+    Engine& g = *m;
     if (g.loaded) return false;
     std::lock_guard<std::mutex> mix(g.mixMutex);
-    CloseDevice();
-    return OpenDevice(deviceName, bufferMs);
+    CloseDevice(g);
+    return OpenDevice(g, deviceName, bufferMs);
 }
 
-std::wstring CurrentDeviceName() { return g.deviceName; }
-bool UsingDefaultDevice() { return g.defaultDevice; }
-int MixSampleRate() { return g.outputRate; }
+std::wstring Player::CurrentDeviceName() {
+    Engine& g = *m;
+    return g.deviceName;
+}
+bool Player::UsingDefaultDevice() {
+    Engine& g = *m;
+    return g.defaultDevice;
+}
+int Player::MixSampleRate() {
+    Engine& g = *m;
+    return g.outputRate;
+}
 
-bool Load(std::unique_ptr<Decoder> decoder, TempoAlgorithm algorithm) {
+bool Player::Load(std::unique_ptr<Decoder> decoder, TempoAlgorithm algorithm) {
+    Engine& g = *m;
     Unload();
     if (!decoder || !g.deviceReady) return false;
 
@@ -772,19 +825,20 @@ bool Load(std::unique_ptr<Decoder> decoder, TempoAlgorithm algorithm) {
         g.reverse = false;
     }
     g.seekRequested = false;
-    ResetOutput();
+    ResetOutput(g);
     g.state = State::Paused;
     g.loaded = true;
     g.decodeWake.notify_one();
     return true;
 }
 
-void Unload() {
+void Player::Unload() {
+    Engine& g = *m;
     if (!g.loaded) return;
-    FadeOut(true);
+    FadeOut(g, true);
     g.state = State::Empty;
     g.fadeOut = false;
-	StopIdleDevice();
+	StopIdleDevice(g);
     // A decoder blocked on the network is asked to give up, then the threads are
     // held while it goes.
     if (g.decoder) g.decoder->Abort();
@@ -799,13 +853,19 @@ void Unload() {
         g.reverse = false;
     }
     g.pcm.Clear();
-    ResetOutput();
+    ResetOutput(g);
     g.live = false;
     g.length = 0;
 }
 
-bool IsLoaded() { return g.loaded; }
-const Decoder* Current() { return g.loaded ? g.decoder.get() : nullptr; }
+bool Player::IsLoaded() {
+    Engine& g = *m;
+    return g.loaded;
+}
+const Decoder* Player::Current() {
+    Engine& g = *m;
+    return g.loaded ? g.decoder.get() : nullptr;
+}
 
 namespace {
 void (*g_beforeDeviceStart)() = nullptr;
@@ -813,38 +873,46 @@ void (*g_beforeDeviceStart)() = nullptr;
 
 void SetBeforeDeviceStart(void (*beforeStart)()) { g_beforeDeviceStart = beforeStart; }
 
-bool EnsureDeviceRunning() {
+bool Player::EnsureDeviceRunning() {
+    Engine& g = *m;
     if (!g.deviceReady) return false;
     if (ma_device_get_state(&g.device) == ma_device_state_started) return true;
     if (g_beforeDeviceStart) g_beforeDeviceStart();
     return ma_device_start(&g.device) == MA_SUCCESS;
 }
 
-void Play() {
+void Player::Play() {
+    Engine& g = *m;
     if (!g.loaded) return;
 	EnsureDeviceRunning();  // a pause or interruption may have stopped it
     g.state = State::Playing;
 }
 
-void Pause() {
+void Player::Pause() {
+    Engine& g = *m;
     if (!g.loaded) return;
-    FadeOut(true);
+    FadeOut(g, true);
     g.state = State::Paused;
     g.fadeOut = false;
-	StopIdleDevice();
+	StopIdleDevice(g);
 }
 
-void Stop() {
+void Player::Stop() {
+    Engine& g = *m;
     if (!g.loaded) return;
-    FadeOut(true);
+    FadeOut(g, true);
     g.state = State::Stopped;
     g.fadeOut = false;
-	StopIdleDevice();
+	StopIdleDevice(g);
 }
 
-State GetState() { return g.state.load(); }
+State Player::GetState() {
+    Engine& g = *m;
+    return g.state.load();
+}
 
-double Position() {
+double Player::Position() {
+    Engine& g = *m;
     if (!g.loaded) return 0.0;
     std::lock_guard<std::mutex> mix(g.mixMutex);
     double seconds = g.scrub       ? g.scrub->PositionAt(g.played.load())
@@ -853,21 +921,28 @@ double Position() {
     return g.length > 0 ? std::min(seconds, g.length) : seconds;
 }
 
-double Length() { return g.loaded ? g.length : 0.0; }
-bool IsLive() { return g.loaded && g.live; }
+double Player::Length() {
+    Engine& g = *m;
+    return g.loaded ? g.length : 0.0;
+}
+bool Player::IsLive() {
+    Engine& g = *m;
+    return g.loaded && g.live;
+}
 
 namespace {
 
 // Carries on from `seconds`: played normally (scrub null), or by the scrubber,
 // reading the source backward in chunks of `reverseChunkFrames` if that is not 0,
 // back as far as `floorSeconds`.
-bool Reposition(double seconds, std::unique_ptr<Scrubber> scrub, int reverseChunkFrames, double floorSeconds = 0) {
+bool Reposition(Engine& g, double seconds, std::unique_ptr<Scrubber> scrub, int reverseChunkFrames, double floorSeconds = 0) {
     if (g.length > 0) seconds = std::min(seconds, g.length);
     if (seconds < 0) seconds = 0;
-    FadeOut(false);
+    FadeOut(g, false);
     struct FadeBackIn {
+        Engine& g;
         ~FadeBackIn() { g.fadeOut = false; }
-    } fadeBackIn;  // however the seek ends
+    } fadeBackIn{g};  // however the seek ends
     std::unique_lock<std::mutex> mix(g.mixMutex);
     bool ok;
     {
@@ -879,19 +954,20 @@ bool Reposition(double seconds, std::unique_ptr<Scrubber> scrub, int reverseChun
         g.seekRequested = true;
         g.seekDone = false;
         g.decodeWake.notify_all();
-        if (!g.seekFinished.wait_for(lock, std::chrono::seconds(30), [] { return g.seekDone; })) return false;
+        if (!g.seekFinished.wait_for(lock, std::chrono::seconds(30), [&g] { return g.seekDone; })) return false;
         ok = g.seekOk;
     }
     g.scrub = std::move(scrub);
     if (g.processor && !g.scrub) g.processor->Restart(seconds);
-    ResetOutput();
+    ResetOutput(g);
     g.decodeWake.notify_all();
     return ok;
 }
 
 }  // namespace
 
-bool LiveRange(double& start, double& live) {
+bool Player::LiveRange(double& start, double& live) {
+    Engine& g = *m;
     if (!g.loaded || !g.live || !g.decoder) return false;
     double end;
     if (!g.decoder->Rewindable(start, end)) return false;
@@ -900,17 +976,19 @@ bool LiveRange(double& start, double& live) {
     return true;
 }
 
-bool Seek(double seconds) {
+bool Player::Seek(double seconds) {
+    Engine& g = *m;
     if (!g.loaded) return false;
     if (g.live) {
         double start, live;
         if (!LiveRange(start, live)) return false;
         seconds = std::clamp(seconds, start, live);
     }
-    return Reposition(seconds, nullptr, 0);
+    return Reposition(g, seconds, nullptr, 0);
 }
 
-bool StartScrub(ScrubStyle style, int direction, float speed) {
+bool Player::StartScrub(ScrubStyle style, int direction, float speed) {
+    Engine& g = *m;
     if (!g.loaded) return false;
     double floor = 0, live = 0;
     if (g.live) {
@@ -923,25 +1001,31 @@ bool StartScrub(ScrubStyle style, int direction, float speed) {
     // seeks between them stay few
     int chunk = 0;
     if (direction < 0) chunk = static_cast<int>(g.sourceRate * std::clamp(speed * 0.125, 0.25, 2.0));
-    return Reposition(from, std::move(scrub), chunk, floor);
+    return Reposition(g, from, std::move(scrub), chunk, floor);
 }
 
-void SetScrubSpeed(float speed) {
+void Player::SetScrubSpeed(float speed) {
+    Engine& g = *m;
     std::lock_guard<std::mutex> mix(g.mixMutex);
     if (g.scrub) g.scrub->SetSpeed(speed);
 }
 
-bool StopScrub() {
+bool Player::StopScrub() {
+    Engine& g = *m;
     if (!g.loaded || !g.scrub) return false;
     double at = Position();
     double start, live;
     if (g.live && LiveRange(start, live)) at = std::clamp(at, start, live);
-    return Reposition(at, nullptr, 0);
+    return Reposition(g, at, nullptr, 0);
 }
 
-bool IsScrubbing() { return g.loaded && g.scrub != nullptr; }
+bool Player::IsScrubbing() {
+    Engine& g = *m;
+    return g.loaded && g.scrub != nullptr;
+}
 
-bool ReleaseScrub() {
+bool Player::ReleaseScrub() {
+    Engine& g = *m;
     if (!g.loaded) return false;
     int direction;
     float top;
@@ -966,10 +1050,11 @@ bool ReleaseScrub() {
                                             Scrubber::Begin::WindDown, speed);
     int chunk = 0;
     if (direction < 0) chunk = static_cast<int>(g.sourceRate * std::clamp(speed * 0.125, 0.25, 2.0));
-    return Reposition(from, std::move(scrub), chunk, floor);
+    return Reposition(g, from, std::move(scrub), chunk, floor);
 }
 
-bool TapeStop() {
+bool Player::TapeStop() {
+    Engine& g = *m;
     if (!g.loaded) return false;
     if (g.live) {
         double start, live;
@@ -978,37 +1063,48 @@ bool TapeStop() {
     double from = Position();
     auto scrub = std::make_unique<Scrubber>(ScrubStyle::Tape, 1, 1.0f, g.sourceRate, g.outputRate, from,
                                             Scrubber::Begin::TapeStop);
-    return Reposition(from, std::move(scrub), 0);
+    return Reposition(g, from, std::move(scrub), 0);
 }
 
-void SetScrubEndHandler(std::function<void()> handler) { g.scrubEndHandler = std::move(handler); }
+void Player::SetScrubEndHandler(std::function<void()> handler) {
+    Engine& g = *m;
+    g.scrubEndHandler = std::move(handler);
+}
 
-void SetTempo(float percent) {
+void Player::SetTempo(float percent) {
+    Engine& g = *m;
     g.tempo = percent;
     std::lock_guard<std::mutex> mix(g.mixMutex);
     if (g.processor && !g.live) g.processor->SetTempo(percent);
 }
 
-void SetPitch(float semitones) {
+void Player::SetPitch(float semitones) {
+    Engine& g = *m;
     g.pitch = semitones;
     std::lock_guard<std::mutex> mix(g.mixMutex);
     if (g.processor) g.processor->SetPitch(semitones);
 }
 
-void SetRate(float rate) {
+void Player::SetRate(float rate) {
+    Engine& g = *m;
     g.rate = rate;
     std::lock_guard<std::mutex> mix(g.mixMutex);
     if (g.processor && !g.live) g.processor->SetRate(rate);
 }
 
-void SetGain(float linear) { g.gain = linear; }
+void Player::SetGain(float linear) {
+    Engine& g = *m;
+    g.gain = linear;
+}
 
-void SetSmoothTransitions(bool smooth) {
+void Player::SetSmoothTransitions(bool smooth) {
+    Engine& g = *m;
     // Over 8 ms at the device's rate, or at once
     g.fadeStep = smooth ? 1.0f / std::max(1.0f, g.outputRate * 0.008f) : 1.0f;
 }
 
-int AddDsp(DspProc proc, void* user, int priority) {
+int Player::AddDsp(DspProc proc, void* user, int priority) {
+    Engine& g = *m;
     std::lock_guard<std::mutex> lock(g.dspMutex);
     Dsp dsp{g.nextDspId++, proc, user, priority};
     // After any of the same priority already there, as BASS did
@@ -1017,24 +1113,28 @@ int AddDsp(DspProc proc, void* user, int priority) {
     return dsp.id;
 }
 
-void RemoveDsp(int id) {
+void Player::RemoveDsp(int id) {
+    Engine& g = *m;
     std::lock_guard<std::mutex> lock(g.dspMutex);
     g.dsps.erase(std::remove_if(g.dsps.begin(), g.dsps.end(), [&](const Dsp& d) { return d.id == id; }),
                  g.dsps.end());
 }
 
-void SetTap(TapProc proc, void* user) {
+void Player::SetTap(TapProc proc, void* user) {
+    Engine& g = *m;
     std::lock_guard<std::mutex> lock(g.dspMutex);
     g.tap = proc;
     g.tapUser = user;
 }
 
-void SetTapBeforeEffects(bool before) {
+void Player::SetTapBeforeEffects(bool before) {
+    Engine& g = *m;
     std::lock_guard<std::mutex> lock(g.dspMutex);
     g.tapBeforeEffects = before;
 }
 
-Stats GetStats() {
+Stats Player::GetStats() {
+    Engine& g = *m;
     Stats s;
     s.underruns = g.underruns.load();
     uint32_t minBuffered = g.minBuffered.load();
@@ -1045,18 +1145,79 @@ Stats GetStats() {
     return s;
 }
 
-void ResetStats() {
+void Player::ResetStats() {
+    Engine& g = *m;
     g.underruns = 0;
     g.minBuffered = 0xFFFFFFFF;
     g.maxBlockMs = 0;
 }
 
-void SetOutputMonitor(TapProc proc, void* user) {
+void Player::SetOutputMonitor(TapProc proc, void* user) {
+    Engine& g = *m;
     g.monitorUser = user;
     g.monitor = proc;
 }
 
-void SetEndHandler(std::function<void()> handler) { g.endHandler = std::move(handler); }
-void SetStreamTitleHandler(std::function<void()> handler) { g.titleHandler = std::move(handler); }
+void Player::SetEndHandler(std::function<void()> handler) {
+    Engine& g = *m;
+    g.endHandler = std::move(handler);
+}
+void Player::SetStreamTitleHandler(std::function<void()> handler) {
+    Engine& g = *m;
+    g.titleHandler = std::move(handler);
+}
+
+// ---------------------------------------------------------------------------
+// The app's player
+// ---------------------------------------------------------------------------
+
+Player& DefaultPlayer() {
+    // Never destroyed: the app shuts it down itself, and nothing at exit can
+    // find it gone
+    static Player* player = new Player();
+    return *player;
+}
+
+bool Init(const std::wstring& deviceName, int bufferMs) { return DefaultPlayer().Init(deviceName, bufferMs); }
+void Shutdown() { return DefaultPlayer().Shutdown(); }
+bool SwitchDevice(const std::wstring& deviceName, int bufferMs) { return DefaultPlayer().SwitchDevice(deviceName, bufferMs); }
+std::wstring CurrentDeviceName() { return DefaultPlayer().CurrentDeviceName(); }
+bool UsingDefaultDevice() { return DefaultPlayer().UsingDefaultDevice(); }
+int MixSampleRate() { return DefaultPlayer().MixSampleRate(); }
+bool Load(std::unique_ptr<Decoder> decoder, TempoAlgorithm algorithm) { return DefaultPlayer().Load(std::move(decoder), algorithm); }
+void Unload() { return DefaultPlayer().Unload(); }
+bool IsLoaded() { return DefaultPlayer().IsLoaded(); }
+const Decoder* Current() { return DefaultPlayer().Current(); }
+bool EnsureDeviceRunning() { return DefaultPlayer().EnsureDeviceRunning(); }
+void Play() { return DefaultPlayer().Play(); }
+void Pause() { return DefaultPlayer().Pause(); }
+void Stop() { return DefaultPlayer().Stop(); }
+State GetState() { return DefaultPlayer().GetState(); }
+double Position() { return DefaultPlayer().Position(); }
+double Length() { return DefaultPlayer().Length(); }
+bool IsLive() { return DefaultPlayer().IsLive(); }
+bool LiveRange(double& start, double& live) { return DefaultPlayer().LiveRange(start, live); }
+bool Seek(double seconds) { return DefaultPlayer().Seek(seconds); }
+bool StartScrub(ScrubStyle style, int direction, float speed) { return DefaultPlayer().StartScrub(style, direction, speed); }
+void SetScrubSpeed(float speed) { return DefaultPlayer().SetScrubSpeed(speed); }
+bool StopScrub() { return DefaultPlayer().StopScrub(); }
+bool IsScrubbing() { return DefaultPlayer().IsScrubbing(); }
+bool ReleaseScrub() { return DefaultPlayer().ReleaseScrub(); }
+bool TapeStop() { return DefaultPlayer().TapeStop(); }
+void SetScrubEndHandler(std::function<void()> handler) { return DefaultPlayer().SetScrubEndHandler(std::move(handler)); }
+void SetTempo(float percent) { return DefaultPlayer().SetTempo(percent); }
+void SetPitch(float semitones) { return DefaultPlayer().SetPitch(semitones); }
+void SetRate(float rate) { return DefaultPlayer().SetRate(rate); }
+void SetGain(float linear) { return DefaultPlayer().SetGain(linear); }
+void SetSmoothTransitions(bool smooth) { return DefaultPlayer().SetSmoothTransitions(smooth); }
+int AddDsp(DspProc proc, void* user, int priority) { return DefaultPlayer().AddDsp(proc, user, priority); }
+void RemoveDsp(int id) { return DefaultPlayer().RemoveDsp(id); }
+void SetTap(TapProc proc, void* user) { return DefaultPlayer().SetTap(proc, user); }
+void SetTapBeforeEffects(bool before) { return DefaultPlayer().SetTapBeforeEffects(before); }
+Stats GetStats() { return DefaultPlayer().GetStats(); }
+void ResetStats() { return DefaultPlayer().ResetStats(); }
+void SetOutputMonitor(TapProc proc, void* user) { return DefaultPlayer().SetOutputMonitor(proc, user); }
+void SetEndHandler(std::function<void()> handler) { return DefaultPlayer().SetEndHandler(std::move(handler)); }
+void SetStreamTitleHandler(std::function<void()> handler) { return DefaultPlayer().SetStreamTitleHandler(std::move(handler)); }
 
 }  // namespace audio

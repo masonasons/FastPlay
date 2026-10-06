@@ -13,8 +13,10 @@
 
 #include "youtube.h"
 #include "youtube_tools.h"
+#ifndef FASTPLAY_ENGINE_LIBRARY
 #include "accessibility.h"
 #include "app_ui.h"
+#endif
 #include "globals.h"
 #include "http.h"
 #include "mp4_remux.h"
@@ -1096,6 +1098,12 @@ bool YouTubePrepare(const std::wstring& videoId, YouTubeMedia& media, std::wstri
 	return true;
 }
 
+void YouTubePrepareTools(const YouTubeStatus& status) {
+	const auto tools = GetYouTubeToolSettings();
+	std::wstring ytdlp, error;
+	if (EnsureYtdlp(ytdlp, error, status, tools) && tools.source == YouTubeToolSource::Managed) EnsureDeno(status);
+}
+
 bool YouTubeImportCookies(const std::wstring& path, std::wstring& error) {
     FILE* in = FileOpen(path, "rb");
     if (!in) {
@@ -1141,6 +1149,8 @@ bool YouTubeHasCookies() {
 // Downloads to keep
 // ---------------------------------------------------------------------------
 
+// The app's (the engine library has no download queue)
+#ifndef FASTPLAY_ENGINE_LIBRARY
 namespace {
 
 struct DownloadJob {
@@ -1335,6 +1345,8 @@ void YouTubeDownload(const std::wstring& url, const std::wstring& title) {
         SpeakW(L"Queued " + title + L", " + std::to_wstring(ahead) + L" ahead");
     }
 }
+
+#endif  // FASTPLAY_ENGINE_LIBRARY
 
 void YouTubeCleanup() {
     std::error_code ec;

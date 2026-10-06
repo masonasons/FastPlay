@@ -129,6 +129,9 @@ bool SwitchDevice(const std::wstring& deviceName, int bufferMs);
 // False if the device would not start.
 bool EnsureDeviceRunning();
 void SetBeforeDeviceStart(void (*beforeStart)());
+// On iOS: whether Init() sets the audio session up for playback (the default),
+// or leaves it to the app. Before Init().
+void SetIosAudioSession(bool playback);
 // The device in use ("" before Init), and whether it is the system default.
 std::wstring CurrentDeviceName();
 bool UsingDefaultDevice();
@@ -233,6 +236,77 @@ void ResetStats();
 // a stream's title changes.
 void SetEndHandler(std::function<void()> handler);
 void SetStreamTitleHandler(std::function<void()> handler);
+
+// ---------------------------------------------------------------------------
+// Players
+// ---------------------------------------------------------------------------
+
+// Everything above, from Init() to the handlers, is the app's one player
+// (DefaultPlayer()). A Player is another, with a device, threads and everything
+// loaded of its own, so several can play at once (the engine library's players).
+// Its functions are the ones above, and say the same; the devices are shared.
+class Player {
+public:
+    Player();
+    ~Player();  // shut down
+    Player(const Player&) = delete;
+    Player& operator=(const Player&) = delete;
+
+    bool Init(const std::wstring& deviceName, int bufferMs);
+    void Shutdown();
+    bool SwitchDevice(const std::wstring& deviceName, int bufferMs);
+    bool EnsureDeviceRunning();
+    std::wstring CurrentDeviceName();
+    bool UsingDefaultDevice();
+
+    bool Load(std::unique_ptr<Decoder> decoder, TempoAlgorithm algorithm);
+    void Unload();
+    bool IsLoaded();
+    const Decoder* Current();
+    void Play();
+    void Pause();
+    void Stop();
+    State GetState();
+    double Position();
+    double Length();
+    bool IsLive();
+    bool Seek(double seconds);
+    bool LiveRange(double& start, double& live);
+
+    bool StartScrub(ScrubStyle style, int direction, float speed);
+    void SetScrubSpeed(float speed);
+    bool StopScrub();
+    bool IsScrubbing();
+    bool ReleaseScrub();
+    bool TapeStop();
+    void SetScrubEndHandler(std::function<void()> handler);
+
+    void SetTempo(float percent);
+    void SetPitch(float semitones);
+    void SetRate(float rate);
+    void SetGain(float linear);
+    void SetSmoothTransitions(bool smooth);
+    int AddDsp(DspProc proc, void* user, int priority);
+    void RemoveDsp(int id);
+    void SetTap(TapProc proc, void* user);
+    void SetTapBeforeEffects(bool before);
+    int MixSampleRate();
+    Stats GetStats();
+    void ResetStats();
+    void SetOutputMonitor(TapProc proc, void* user);  // for tests (audio_internal.h)
+
+    // Called on the UI thread (for the library, its event thread)
+    void SetEndHandler(std::function<void()> handler);
+    void SetStreamTitleHandler(std::function<void()> handler);
+
+    struct Impl;
+
+private:
+    std::unique_ptr<Impl> m;
+};
+
+// The app's player, which the functions above use.
+Player& DefaultPlayer();
 
 }  // namespace audio
 

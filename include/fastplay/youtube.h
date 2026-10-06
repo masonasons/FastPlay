@@ -95,6 +95,10 @@ std::wstring YouTubeListUrl(YouTubeKind kind, const std::wstring& id);
 // A cookies.txt (Netscape format, as browser extensions export it) for yt-dlp to
 // use, for videos YouTube only shows to a signed-in account. Importing copies it
 // into FastPlay's data folder.
+// Gets yt-dlp and deno ready (downloading or updating them), so the next video
+// starts sooner. Blocks.
+void YouTubePrepareTools(const YouTubeStatus& status = nullptr);
+
 bool YouTubeImportCookies(const std::wstring& path, std::wstring& error);
 void YouTubeRemoveCookies();
 bool YouTubeHasCookies();
