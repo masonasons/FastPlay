@@ -141,6 +141,8 @@ elseif(FASTPLAY_IOS)
         MACOSX_FRAMEWORK_IDENTIFIER me.masonasons.fastplayengine
         MACOSX_FRAMEWORK_BUNDLE_VERSION 1
         MACOSX_FRAMEWORK_SHORT_VERSION_STRING 1.0
+        # With the MinimumOSVersion the App Store insists on in every framework
+        MACOSX_FRAMEWORK_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FastPlayEngine-Info.plist.in
         PUBLIC_HEADER include/fastplay_engine/fastplay_engine.h
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_NAME_DIR TRUE

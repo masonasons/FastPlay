@@ -32,6 +32,12 @@ struct EventThread {
     std::thread thread;
     bool running = false;
 
+    // At exit with the library never shut down: let the thread go rather than
+    // end the program (a joinable std::thread's destructor calls terminate)
+    ~EventThread() {
+        if (thread.joinable()) thread.detach();
+    }
+
     void Run() {
         std::unique_lock<std::mutex> lock(mutex);
         for (;;) {

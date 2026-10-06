@@ -23,6 +23,10 @@
 
 #include "miniaudio.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
@@ -258,11 +262,22 @@ std::mutex g_contextMutex;
 ma_context g_context;
 int g_contextUsers = 0;
 
+// FASTPLAY_NULL_AUDIO: play to no device at all (tests, machines without sound).
+// From the process's environment itself: in a DLL with its own C runtime, getenv
+// sees only what was there when it loaded.
+bool NullAudioRequested() {
+#ifdef _WIN32
+    return GetEnvironmentVariableW(L"FASTPLAY_NULL_AUDIO", nullptr, 0) > 0;
+#else
+    return getenv("FASTPLAY_NULL_AUDIO") != nullptr;
+#endif
+}
+
 ma_context* AcquireContext() {
     std::lock_guard<std::mutex> lock(g_contextMutex);
     if (g_contextUsers == 0) {
         ma_backend nullBackend = ma_backend_null;
-        const bool test = getenv("FASTPLAY_NULL_AUDIO") != nullptr;
+        const bool test = NullAudioRequested();
         ma_context_config contextConfig = ma_context_config_init();
 #if TARGET_OS_IOS
         // The iPhone's audio session, for a player: sound with the ring switch
