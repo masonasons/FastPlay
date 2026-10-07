@@ -67,7 +67,7 @@ final class FolderResume {
         }
         // Still the folder's: the track playing is the file it was given as
         let index = engine.currentTrack
-        let path = engine.trackPathAtIndex(index)
+        let path = engine.trackPath(at: index)
         let file = files[index]
         guard path.hasPrefix("http") || FolderResume.local(path) == file else { return }
         save(key: key, place: Place(file: file, position: engine.loaded ? engine.position : 0))
@@ -81,7 +81,7 @@ final class FolderResume {
             let engine = FPEngine.shared
             for _ in 0..<150 {  // up to 15 seconds for a file on a server to open
                 if engine.loaded && engine.length > 0 {
-                    engine.seekTo(max(0, place.position - 3))
+                    engine.seek(to: max(0, place.position - 3))
                     return
                 }
                 try? await Task.sleep(nanoseconds: 100_000_000)

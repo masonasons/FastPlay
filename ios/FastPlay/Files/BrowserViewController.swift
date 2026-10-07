@@ -303,9 +303,9 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         if source.isLocal {
             engine.playFolder(folder.path)
             guard engine.trackCount > 0 else { return }
-            let files = (0..<engine.trackCount).map { FolderResume.local(engine.trackPathAtIndex($0)) }
+            let files = (0..<engine.trackCount).map { FolderResume.local(engine.trackPath(at: $0)) }
             if let place, let at = files.firstIndex(of: place.file), at != engine.currentTrack {
-                engine.playTrackAtIndex(at)
+                engine.playTrack(at: at)
             }
             FolderResume.shared.begin(key: key, files: files)
             if let place { FolderResume.shared.seek(to: place) }
