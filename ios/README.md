@@ -24,7 +24,10 @@ testers (`ios/scripts/testflight-public.py`: the Public group, Apple's beta revi
 and the last commit's message as What to Test); `--internal` leaves that out.
 GitHub runs it for every push to master that changes the app or the engine
 (`.github/workflows/ios-testflight.yml`), with the key from the repository's secrets
-`ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_B64`. The version is `APP_VERSION` in
+`ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_B64`, and signing with the team's one
+Apple Distribution certificate and the "FastPlay App Store CI" profile from
+`BUILD_CERT_P12_B64`, `BUILD_CERT_PASSWORD` and `PP_APP_B64` (the same certificate as
+FastSMRW; automatic signing would make a new certificate on every run). The version is `APP_VERSION` in
 `include/fastplay/version.h`; the build number is the count of commits.
 
 The icon is drawn by `ios/scripts/make-icon.py`; replace `AppIcon.png` with real

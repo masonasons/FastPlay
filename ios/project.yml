@@ -90,6 +90,17 @@ targets:
               - com.microsoft.waveform-audio
               - public.aiff-audio
     settings:
+      # Release (the archive for TestFlight) signs with one distribution certificate
+      # and the App Store profile made for it, by hand: automatic signing on a
+      # machine without a certificate makes a new one, and GitHub's runners did,
+      # every build. GitHub puts the certificate and profile in place from the
+      # repository's secrets (.github/workflows/ios-testflight.yml). Debug keeps
+      # automatic signing, for the simulator and a phone of one's own.
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "FastPlay App Store CI"
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.masonasons.fastplay
         PRODUCT_NAME: FastPlay

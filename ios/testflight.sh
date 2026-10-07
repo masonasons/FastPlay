@@ -13,7 +13,10 @@
 # with the key from the repository's secrets.
 #
 # Before the first run on a machine: ./download-deps.sh, and FFmpeg for iOS
-# (ci/ffmpeg/build.sh ios ffmpeg-ios).
+# (ci/ffmpeg/build.sh ios ffmpeg-ios). Signing is by hand, with the team's Apple
+# Distribution certificate and the "FastPlay App Store CI" profile, which must be
+# in the keychain and installed (GitHub puts them there from the repository's
+# secrets); automatic signing is not used, so no machine ever makes a certificate.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -31,23 +34,21 @@ xcodegen generate
 
 ARCHIVE="build/FastPlay.xcarchive"
 EXPORT_DIR="build/export"
-AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID"
-      -authenticationKeyIssuerID "$ISSUER")
 
 echo "==> Archiving"
 rm -rf "$ARCHIVE"
-# Not signed here: the export below signs it for the App Store, with a certificate
-# Apple keeps (so a machine with no certificates of its own, GitHub's, can do it).
+# Signed with the pinned certificate and profile (project.yml's Release settings):
+# no -allowProvisioningUpdates, so this can never make a certificate.
 xcodebuild archive -project FastPlay.xcodeproj -scheme FastPlay \
     -configuration Release -destination 'generic/platform=iOS' \
     -archivePath "$ARCHIVE" -derivedDataPath build/dd-archive \
-    DEVELOPMENT_TEAM="$TEAM" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+    DEVELOPMENT_TEAM="$TEAM" \
     MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD"
 
 echo "==> Exporting (App Store)"
 rm -rf "$EXPORT_DIR"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist exportOptions.plist "${AUTH[@]}"
+    -exportOptionsPlist exportOptions.plist
 
 if [ "${1:-}" = "--no-upload" ]; then
     echo "Exported to $EXPORT_DIR; not uploaded."
