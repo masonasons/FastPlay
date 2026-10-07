@@ -38,6 +38,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let index = arguments.firstIndex(of: "-FPPlay"), index + 1 < arguments.count {
             let path = (FPEngine.shared.documentsPath as NSString).appendingPathComponent(arguments[index + 1])
             FPEngine.shared.playFile(path)
+            let engine = FPEngine.shared
+            NSLog("FPPlay: %d tracks: %@", engine.trackCount,
+                  (0..<engine.trackCount).map { engine.trackName(at: $0) }.joined(separator: " | "))
         }
         if let index = arguments.firstIndex(of: "-FPPlayURL"), index + 1 < arguments.count {
             FPEngine.shared.playURL(arguments[index + 1], name: nil)

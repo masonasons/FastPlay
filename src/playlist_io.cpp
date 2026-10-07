@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -55,13 +56,81 @@ static bool IsFolder(const std::wstring& path) {
     return std::filesystem::is_directory(std::filesystem::path(path), ec);
 }
 
-// A path that does not need the playlist's folder in front of it.
+// A path that does not need the playlist's folder in front of it: one from this
+// system's root, or a Windows drive path (which another computer wrote).
 static bool IsAbsolutePath(const std::wstring& path) {
-#ifdef _WIN32
-    return path.length() > 2 && path[1] == L':';
-#else
-    return !path.empty() && path[0] == L'/';
+    if (path.length() > 2 && iswalpha(path[0]) && path[1] == L':') return true;
+    return !path.empty() && (path[0] == L'/' || path[0] == L'\\');
+}
+
+static bool IsURL(const std::wstring& entry) {
+    return WStrNICmp(entry.c_str(), L"http://", 7) == 0 || WStrNICmp(entry.c_str(), L"https://", 8) == 0 ||
+           WStrNICmp(entry.c_str(), L"ftp://", 6) == 0;
+}
+
+static bool Exists(const std::wstring& path) {
+    std::error_code ec;
+    return std::filesystem::exists(std::filesystem::path(path), ec);
+}
+
+// The name in `dir` (ending with a separator) that is `name` whatever its capitals,
+// or "" if there is none. Where the file system minds capitals (iOS, Linux), a
+// playlist written elsewhere may not match them.
+static std::wstring NameInFolder(const std::wstring& dir, const std::wstring& name) {
+    std::vector<FolderEntry> entries;
+    if (!ListFolder(dir, false, entries)) return L"";
+    for (const auto& entry : entries) {
+        if (WStrICmp(entry.name.c_str(), name.c_str()) == 0) return entry.name;
+    }
+    return L"";
+}
+
+// Where a playlist's entry is. As written, if that exists. Otherwise the entry is
+// looked for near the playlist: a playlist made on another computer, or in another
+// folder, names files by paths that are not this device's, but the files are
+// usually beside it, in the same arrangement. The end of the path is tried against
+// the playlist's folder, from all of it down to the file's name alone, each part
+// matched whatever its capitals. If nothing is found, the path as written is
+// returned, for the entry to be skipped when it comes up.
+static std::wstring ResolveEntry(const std::wstring& written, const std::wstring& baseDir) {
+    if (IsURL(written)) return written;
+    std::wstring entry = written;
+#ifndef _WIN32
+    std::replace(entry.begin(), entry.end(), L'\\', L'/');  // written on Windows
 #endif
+    std::wstring fullPath = IsAbsolutePath(entry) ? entry : baseDir + entry;
+    if (Exists(fullPath)) return fullPath;
+
+    std::vector<std::wstring> parts;
+    size_t start = 0;
+    while (start <= entry.size()) {
+        size_t sep = entry.find_first_of(L"\\/", start);
+        if (sep == std::wstring::npos) sep = entry.size();
+        if (sep > start) parts.push_back(entry.substr(start, sep - start));
+        start = sep + 1;
+    }
+    if (parts.empty() || baseDir.empty()) return fullPath;
+    if (parts[0].size() == 2 && parts[0][1] == L':') parts.erase(parts.begin());  // the drive
+
+    for (size_t first = 0; first < parts.size(); first++) {
+        std::wstring path = baseDir;
+        bool found = true;
+        for (size_t i = first; i < parts.size() && found; i++) {
+            std::wstring candidate = path + parts[i];
+            if (!Exists(candidate)) {
+                std::wstring real = NameInFolder(path, parts[i]);
+                if (real.empty()) {
+                    found = false;
+                    break;
+                }
+                candidate = path + real;
+            }
+            path = candidate;
+            if (i + 1 < parts.size()) path += kPathSeparator;
+        }
+        if (found) return path;
+    }
+    return fullPath;
 }
 
 // A playlist line: UTF-8 if it is valid UTF-8, otherwise the system's legacy code page
@@ -232,17 +301,7 @@ static std::vector<std::wstring> ParseM3U(const std::wstring& playlistPath) {
 
         if (entry.empty()) continue;
 
-        // Build full path
-        std::wstring fullPath;
-        if (WStrNICmp(entry.c_str(), L"http://", 7) == 0 ||
-            WStrNICmp(entry.c_str(), L"https://", 8) == 0 ||
-            WStrNICmp(entry.c_str(), L"ftp://", 6) == 0 ||
-            IsAbsolutePath(entry)) {
-            fullPath = entry;
-        } else {
-            // Relative path - prepend base directory
-            fullPath = baseDir + entry;
-        }
+        std::wstring fullPath = ResolveEntry(entry, baseDir);
 
         // Check if it's a folder and expand it
         if (IsFolder(fullPath)) {
@@ -275,18 +334,7 @@ static std::vector<std::wstring> ParsePLS(const std::wstring& playlistPath) {
         IniGetString(L"playlist", key, L"", value, 4096, playlistPath.c_str());
         if (value[0] == L'\0') break;
 
-        std::wstring entry = value;
-        std::wstring fullPath;
-        // Check if it's a URL or absolute path
-        if (WStrNICmp(entry.c_str(), L"http://", 7) == 0 ||
-            WStrNICmp(entry.c_str(), L"https://", 8) == 0 ||
-            WStrNICmp(entry.c_str(), L"ftp://", 6) == 0 ||
-            IsAbsolutePath(entry)) {
-            fullPath = entry;
-        } else {
-            // Relative path - prepend base directory
-            fullPath = baseDir + entry;
-        }
+        std::wstring fullPath = ResolveEntry(value, baseDir);
 
         // Check if it's a folder and expand it
         if (IsFolder(fullPath)) {
