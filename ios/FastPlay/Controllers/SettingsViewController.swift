@@ -262,6 +262,8 @@ final class SettingsViewController: SettingsPageViewController {
                        [("Off", 0), ("5 minutes", 5), ("10 minutes", 10), ("20 minutes", 20), ("30 minutes", 30),
                         ("45 minutes", 45), ("60 minutes", 60)]),
                 toggle("Load All Files in Folder When Opening a Single File", "loadFolder"),
+                .toggle(title: "Play All Resumes Where You Left Off", isOn: { FolderResume.enabled },
+                        set: { FolderResume.enabled = $0 }),
                 toggle("Auto-Advance to Next Playlist Item", "autoAdvance"),
                 toggle("Shuffle", "shuffle"),
                 choice("Repeat", "repeatMode", [("Off", 0), ("One", 1), ("All", 2)]),

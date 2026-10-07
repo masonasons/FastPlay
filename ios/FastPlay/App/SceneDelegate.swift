@@ -291,6 +291,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        FolderResume.shared.record()
         FPEngine.shared.saveState()
     }
 

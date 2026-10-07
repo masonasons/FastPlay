@@ -7,6 +7,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // Before the engine reopens what was playing, which may be a server's file
+        LoopbackServer.shared.startForRestore()
         engineStarted = FPEngine.shared.start()
         return true
     }

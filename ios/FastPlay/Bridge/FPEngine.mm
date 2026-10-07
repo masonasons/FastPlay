@@ -371,6 +371,11 @@ void MoveSettingsToThisContainer() {
     return ToNS(GetTrackName(g_playlist[static_cast<size_t>(index)]));
 }
 
+- (NSString*)trackPathAtIndex:(NSInteger)index {
+    if (index < 0 || index >= static_cast<NSInteger>(g_playlist.size())) return @"";
+    return ToNS(g_playlist[static_cast<size_t>(index)]);
+}
+
 - (void)playTrackAtIndex:(NSInteger)index {
     if (index < 0 || index >= static_cast<NSInteger>(g_playlist.size())) return;
     PlayTrack(static_cast<int>(index));

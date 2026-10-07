@@ -298,13 +298,42 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
     // MARK: Playing
 
     @objc private func playAll() {
+        let key = FolderResume.key(source: source, folder: folder.path)
+        let place = FolderResume.enabled ? FolderResume.shared.place(for: key) : nil
         if source.isLocal {
             engine.playFolder(folder.path)
-            if engine.trackCount > 0 { openPlayer() }
-        } else if let first = entries.firstIndex(where: { !$0.isFolder }) {
-            play(from: first)
-        } else {
+            guard engine.trackCount > 0 else { return }
+            let files = (0..<engine.trackCount).map { FolderResume.local(engine.trackPathAtIndex($0)) }
+            if let place, let at = files.firstIndex(of: place.file), at != engine.currentTrack {
+                engine.playTrackAtIndex(at)
+            }
+            FolderResume.shared.begin(key: key, files: files)
+            if let place { FolderResume.shared.seek(to: place) }
+            openPlayer()
+            return
+        }
+        let files = entries.filter { !$0.isFolder }.prefix(Self.playlistLimit)
+        guard !files.isEmpty else {
             announce("No files here to play")
+            return
+        }
+        let start = place.flatMap { place in files.firstIndex { $0.path == place.file } } ?? files.startIndex
+        announce("Opening \(files[start].name)")
+        Task { @MainActor in
+            do {
+                var urls: [String] = []
+                var names: [String] = []
+                for file in files {
+                    urls.append(try await source.streamURL(for: file))
+                    names.append(file.name)
+                }
+                engine.playURLs(urls, names: names, startingAt: start - files.startIndex)
+                FolderResume.shared.begin(key: key, files: files.map(\.path))
+                if let place, files[start].path == place.file { FolderResume.shared.seek(to: place) }
+                openPlayer()
+            } catch {
+                tell(folder.name, error.localizedDescription)
+            }
         }
     }
 
@@ -317,6 +346,8 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
             if !isPlaylist, engine.number(forSetting: "loadFolder") != 0,
                let start = files.firstIndex(where: { $0.path == entry.path }) {
                 engine.playURLs(files.map(\.path), names: [], startingAt: start)
+                FolderResume.shared.begin(key: FolderResume.key(source: source, folder: folder.path),
+                                          files: files.map { FolderResume.local($0.path) })
             } else {
                 engine.playFile(entry.path)
             }
@@ -339,6 +370,8 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                     names.append(file.name)
                 }
                 engine.playURLs(urls, names: names, startingAt: 0)
+                FolderResume.shared.begin(key: FolderResume.key(source: source, folder: folder.path),
+                                          files: files.map(\.path))
                 openPlayer()
             } catch {
                 tell(folder.name, error.localizedDescription)

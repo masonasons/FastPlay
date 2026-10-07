@@ -71,6 +71,8 @@ typedef NS_ENUM(NSInteger, FPSeekMode) {
 @property (nonatomic, readonly) NSInteger trackCount;
 @property (nonatomic, readonly) NSInteger currentTrack;  // -1: none
 - (NSString*)trackNameAtIndex:(NSInteger)index;
+// The file or address of a track ("" for none).
+- (NSString*)trackPathAtIndex:(NSInteger)index;
 - (void)playTrackAtIndex:(NSInteger)index;
 
 // ---- Playback ---------------------------------------------------------------

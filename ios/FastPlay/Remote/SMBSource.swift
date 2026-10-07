@@ -73,7 +73,8 @@ final class SMBSource: FileSource {
         if size <= 0 {
             size = (try await manager.attributesOfItem(atPath: below)[.fileSizeKey] as? NSNumber)?.int64Value ?? 0
         }
-        return try await LoopbackServer.shared.address(name: entry.name, size: size) { range in
+        return try await LoopbackServer.shared.address(name: entry.name, size: size, source: id,
+                                                       path: entry.path) { range in
             try await manager.contents(atPath: below, range: UInt64(range.lowerBound)..<UInt64(range.upperBound))
         }
     }

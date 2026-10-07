@@ -86,7 +86,8 @@ final class SFTPSource: FileSource {
         var size = entry.size
         if size <= 0 { size = Int64(try await sftp.getAttributes(at: entry.path).size ?? 0) }
         let opened = OpenFile()
-        return try await LoopbackServer.shared.address(name: entry.name, size: size) { range in
+        return try await LoopbackServer.shared.address(name: entry.name, size: size, source: id,
+                                                       path: entry.path) { range in
             // The file opened once, for all the ranges asked of it
             let file = try await opened.get(sftp, entry.path)
             var data = Data()
