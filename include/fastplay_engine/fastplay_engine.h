@@ -266,6 +266,20 @@ FPE_API void fpe_set_eq_frequencies(fpe_player* player, float bass, float mid, f
 /* The convolution reverb's impulse response, a WAV file. */
 FPE_API int fpe_load_impulse_response(fpe_player* player, const char* path);
 
+/* ---- the player's settings, as FastPlay keeps them ---- */
+
+/* The player's settings - tempo, pitch and rate, the tempo algorithm, smooth
+   transitions, every effect on or off and every parameter, the EQ's bands, the
+   impulse response - as the text of a FastPlay.ini ([Playback], [Advanced],
+   [Effects], [DSPEffects], [DSPParams]). Returns the whole length (as
+   fpe_device_name()). Volume is not among them: that is the app's. */
+FPE_API int fpe_settings_export(fpe_player* player, char* buffer, int size);
+/* Takes what it knows from FastPlay.ini text (FastPlay's own settings file
+   will do; the rest of it is ignored). Returns how many settings it found. */
+FPE_API int fpe_settings_import(fpe_player* player, const char* ini_text);
+/* Everything back as it starts: no effects, the defaults. */
+FPE_API void fpe_settings_reset(fpe_player* player);
+
 /* ---- recording what plays ---- */
 
 enum fpe_record_format {

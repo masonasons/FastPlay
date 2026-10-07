@@ -27,6 +27,9 @@
 #endif
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
 #include <atomic>
 #include <cstring>
 #include <cwctype>
@@ -57,6 +60,7 @@ struct PlayerState {
     float tempo = 0.0f, pitch = 0.0f, rate = 1.0f;
     TempoAlgorithm algorithm = TempoAlgorithm::Signalsmith;
     bool smooth = true;
+    float eqBassHz = 50.0f, eqMidHz = 1000.0f, eqTrebleHz = 12000.0f;
 
     // After the engine, so they go first: the effects come out of its chain, and
     // the recording off its tap, while it is still there
@@ -791,7 +795,11 @@ FPE_API float fpe_get_param(fpe_player* player, const char* key) {
 
 FPE_API void fpe_set_eq_frequencies(fpe_player* player, float bass, float mid, float treble) {
     Locked p(player);
-    if (p) p->effects.SetEqFrequencies(bass, mid, treble);
+    if (!p) return;
+    p->eqBassHz = bass;
+    p->eqMidHz = mid;
+    p->eqTrebleHz = treble;
+    p->effects.SetEqFrequencies(bass, mid, treble);
 }
 
 FPE_API int fpe_load_impulse_response(fpe_player* player, const char* path) {
@@ -799,6 +807,222 @@ FPE_API int fpe_load_impulse_response(fpe_player* player, const char* path) {
     if (!p || !path) return 0;
     std::wstring error;
     return p->effects.LoadImpulseResponse(Utf8ToWide(path), error) ? 1 : 0;
+}
+
+// ---- settings, as FastPlay.ini keeps them ----
+
+}  // extern "C"
+
+namespace {
+
+// [DSPEffects]'s names, in DSPEffectType's order
+const char* const kIniEffectNames[] = {"Reverb",       "Echo",        "EQ",           "Compressor", "StereoWidth",
+                                       "CenterCancel", "Convolution", "SpatialAudio", "Normalizer"};
+static_assert(sizeof(kIniEffectNames) / sizeof(kIniEffectNames[0]) == static_cast<size_t>(DSPEffectType::COUNT),
+              "an effect without its FastPlay.ini name");
+
+// "Section" -> "Key" -> value, from INI text (keys and sections as written)
+using IniText = std::map<std::string, std::map<std::string, std::string>>;
+
+IniText ParseIni(const char* text) {
+    IniText ini;
+    std::string section;
+    std::string line;
+    auto take = [&](std::string l) {
+        while (!l.empty() && (l.back() == '\r' || l.back() == ' ' || l.back() == '\t')) l.pop_back();
+        size_t start = l.find_first_not_of(" \t");
+        if (start == std::string::npos) return;
+        l = l.substr(start);
+        if (l[0] == ';' || l[0] == '#') return;
+        if (l[0] == '[') {
+            size_t end = l.find(']');
+            section = l.substr(1, end == std::string::npos ? std::string::npos : end - 1);
+            return;
+        }
+        size_t eq = l.find('=');
+        if (eq == std::string::npos) return;
+        std::string key = l.substr(0, eq), value = l.substr(eq + 1);
+        while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+        size_t v = value.find_first_not_of(" \t");
+        value = v == std::string::npos ? std::string() : value.substr(v);
+        ini[section][key] = value;
+    };
+    // A UTF-8 file may start with its byte order mark
+    if (text && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+        static_cast<unsigned char>(text[2]) == 0xBF) {
+        text += 3;
+    }
+    for (const char* c = text; c && *c; c++) {
+        if (*c == '\n') {
+            take(line);
+            line.clear();
+        } else {
+            line += *c;
+        }
+    }
+    take(line);
+    return ini;
+}
+
+bool IniValue(const IniText& ini, const char* section, const char* key, std::string& value) {
+    auto s = ini.find(section);
+    if (s == ini.end()) return false;
+    auto k = s->second.find(key);
+    if (k == s->second.end()) return false;
+    value = k->second;
+    return true;
+}
+
+bool IniNumber(const IniText& ini, const char* section, const char* key, double& number) {
+    std::string value;
+    if (!IniValue(ini, section, key, value) || value.empty()) return false;
+    char* end = nullptr;
+    number = strtod(value.c_str(), &end);
+    return end != value.c_str();
+}
+
+std::string Number(double value, int decimals) {
+    char buf[64];
+    snprintf(buf, sizeof buf, "%.*f", decimals, value);
+    return buf;
+}
+
+// The player's settings back to how a new one starts. Lock held.
+void ResetSettings(PlayerState& p) {
+    for (int i = 0; i < static_cast<int>(DSPEffectType::COUNT); i++) {
+        p.effects.Enable(static_cast<DSPEffectType>(i), false);
+    }
+    p.effects.SetReverbAlgorithm(0);
+    for (const ParamDef& def : audio::ParamDefs()) {
+        if (static_cast<int>(def.dspEffect) >= 0) p.effects.Set(def.id, def.defaultValue);
+    }
+    p.effects.SetEqFrequencies(50.0f, 1000.0f, 12000.0f);
+    p.tempo = 0.0f;
+    p.pitch = 0.0f;
+    p.rate = 1.0f;
+    p.algorithm = TempoAlgorithm::Signalsmith;
+    p.smooth = true;
+    if (p.engineReady) {
+        p.engine.SetTempo(p.tempo);
+        p.engine.SetPitch(p.pitch);
+        p.engine.SetRate(p.rate);
+        p.engine.SetSmoothTransitions(p.smooth);
+    }
+}
+
+}  // namespace
+
+extern "C" {
+
+FPE_API int fpe_settings_export(fpe_player* player, char* buffer, int size) {
+    Locked p(player);
+    if (!p) return CopyOut(std::string(), buffer, size);
+    std::string out = "; FastPlay player settings\n";
+    out += "[Playback]\n";
+    out += "Pitch=" + Number(p->pitch, 2) + "\n";
+    out += "Tempo=" + Number(p->tempo, 2) + "\n";
+    out += "Rate=" + Number(p->rate, 4) + "\n";
+    out += "\n[Advanced]\n";
+    out += "TempoAlgorithm=" + std::to_string(static_cast<int>(p->algorithm)) + "\n";
+    out += "SmoothSeek=" + std::string(p->smooth ? "1" : "0") + "\n";
+    // Not readable back from the chain once set, so kept from the last import
+    out += "EQBassFreq=" + Number(p->eqBassHz, 1) + "\n";
+    out += "EQMidFreq=" + Number(p->eqMidHz, 1) + "\n";
+    out += "EQTrebleFreq=" + Number(p->eqTrebleHz, 1) + "\n";
+    out += "\n[Effects]\n";
+    out += "ReverbAlgorithm=" + std::to_string(p->effects.ReverbAlgorithm()) + "\n";
+    out += "\n[DSPEffects]\n";
+    for (int i = 0; i < static_cast<int>(DSPEffectType::COUNT); i++) {
+        out += std::string(kIniEffectNames[i]) + "=" +
+               (p->effects.Enabled(static_cast<DSPEffectType>(i)) ? "1" : "0") + "\n";
+    }
+    out += "ConvolutionIR=" + WideToUtf8(p->effects.ImpulseResponsePath()) + "\n";
+    out += "\n[DSPParams]\n";
+    for (const ParamDef& def : audio::ParamDefs()) {
+        if (static_cast<int>(def.dspEffect) < 0) continue;  // the stream controls are [Playback]'s
+        out += std::string(audio::ParamIniName(def.id)) + "=" + Number(p->effects.Get(def.id), 2) + "\n";
+    }
+    return CopyOut(out, buffer, size);
+}
+
+FPE_API int fpe_settings_import(fpe_player* player, const char* ini_text) {
+    Locked p(player);
+    if (!p || !ini_text) return 0;
+    const IniText ini = ParseIni(ini_text);
+    int found = 0;
+    double v;
+
+    if (IniNumber(ini, "Playback", "Pitch", v)) { p->pitch = static_cast<float>(v); found++; }
+    if (IniNumber(ini, "Playback", "Tempo", v)) { p->tempo = static_cast<float>(v); found++; }
+    if (IniNumber(ini, "Playback", "Rate", v) && v > 0) { p->rate = static_cast<float>(v); found++; }
+    if (IniNumber(ini, "Advanced", "TempoAlgorithm", v)) {
+        p->algorithm = static_cast<int>(v) == 1 ? TempoAlgorithm::Speedy : TempoAlgorithm::Signalsmith;
+        found++;
+    }
+    if (IniNumber(ini, "Advanced", "SmoothSeek", v)) { p->smooth = v != 0; found++; }
+    double bass = p->eqBassHz, mid = p->eqMidHz, treble = p->eqTrebleHz;
+    bool bands = false;
+    if (IniNumber(ini, "Advanced", "EQBassFreq", v) && v >= 20 && v <= 500) { bass = v; bands = true; }
+    if (IniNumber(ini, "Advanced", "EQMidFreq", v) && v >= 200 && v <= 5000) { mid = v; bands = true; }
+    if (IniNumber(ini, "Advanced", "EQTrebleFreq", v) && v >= 2000 && v <= 20000) { treble = v; bands = true; }
+    if (bands) {
+        p->eqBassHz = static_cast<float>(bass);
+        p->eqMidHz = static_cast<float>(mid);
+        p->eqTrebleHz = static_cast<float>(treble);
+        p->effects.SetEqFrequencies(p->eqBassHz, p->eqMidHz, p->eqTrebleHz);
+        found++;
+    }
+
+    // The parameters first (a reverb's room or environment sets the rest, so
+    // they go in order), then which effects are on
+    for (const ParamDef& def : audio::ParamDefs()) {
+        if (static_cast<int>(def.dspEffect) < 0) continue;
+        if (IniNumber(ini, "DSPParams", audio::ParamIniName(def.id), v)) {
+            p->effects.Set(def.id, static_cast<float>(v));
+            found++;
+        } else if (def.id == ParamId::SpatialBass && IniNumber(ini, "DSPParams", "SpatialSubLevel", v)) {
+            p->effects.Set(def.id, static_cast<float>(v));  // what 3D Bass was called before
+            found++;
+        }
+    }
+    std::string ir;
+    if (IniValue(ini, "DSPEffects", "ConvolutionIR", ir) && !ir.empty()) {
+        std::wstring error;
+        p->effects.LoadImpulseResponse(Utf8ToWide(ir), error);
+        found++;
+    }
+    for (int i = 0; i < static_cast<int>(DSPEffectType::COUNT); i++) {
+        if (static_cast<DSPEffectType>(i) == DSPEffectType::Reverb) continue;  // by its algorithm, below
+        if (IniNumber(ini, "DSPEffects", kIniEffectNames[i], v)) {
+            p->effects.Enable(static_cast<DSPEffectType>(i), v != 0);
+            found++;
+        }
+    }
+    if (IniNumber(ini, "Effects", "ReverbAlgorithm", v)) {
+        int algorithm = static_cast<int>(v);
+        p->effects.SetReverbAlgorithm(algorithm < 0 ? 0 : (algorithm > 2 ? 2 : algorithm));
+        found++;
+    } else if (IniNumber(ini, "DSPEffects", "Reverb", v)) {
+        p->effects.SetReverbAlgorithm(v != 0 ? 1 : 0);
+        found++;
+    }
+
+    if (p->engineReady) {
+        p->engine.SetTempo(p->tempo);
+        p->engine.SetPitch(p->pitch);
+        p->engine.SetRate(p->rate);
+        p->engine.SetSmoothTransitions(p->smooth);
+    }
+    return found;
+}
+
+FPE_API void fpe_settings_reset(fpe_player* player) {
+    Locked p(player);
+    if (!p) return;
+    ResetSettings(*p.p);
+    p->eqBassHz = 50.0f;
+    p->eqMidHz = 1000.0f;
+    p->eqTrebleHz = 12000.0f;
 }
 
 // ---- recording ----

@@ -32,6 +32,8 @@ const ParamDef* FindParamDef(ParamId id);
 // and the library: unlike ParamId's numbers, they never move.
 const char* ParamKey(ParamId id);
 bool ParamFromKey(const std::string& key, ParamId& id);
+// What FastPlay.ini calls it: "EQBass" ([DSPParams]; "Tempo" and the like, [Playback]).
+const char* ParamIniName(ParamId id);
 const char* EffectKey(DSPEffectType type);
 bool EffectFromKey(const std::string& key, DSPEffectType& type);
 // The names of a choice parameter's values (the simple reverb's rooms, the
