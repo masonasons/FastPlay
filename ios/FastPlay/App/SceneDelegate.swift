@@ -45,6 +45,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let index = arguments.firstIndex(of: "-FPPlayURL"), index + 1 < arguments.count {
             FPEngine.shared.playURL(arguments[index + 1], name: nil)
         }
+        // "-FPAddress <address>": as Open Address plays it (a playlist's entries as tracks)
+        if let index = arguments.firstIndex(of: "-FPAddress"), index + 1 < arguments.count {
+            Task { @MainActor in
+                await PlaylistText.play(address: arguments[index + 1])
+                let engine = FPEngine.shared
+                NSLog("FPAddress: %d tracks: %@", engine.trackCount,
+                      (0..<engine.trackCount).map { engine.trackName(at: $0) }.joined(separator: " | "))
+            }
+        }
         // "-FPStress <address>": starts the stream again and again, each cutting the
         // last one off as it connects, to shake out trouble in abandoning a connection
         if let index = arguments.firstIndex(of: "-FPStress"), index + 1 < arguments.count {
@@ -251,6 +260,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             case "player": screen = PlayerViewController()
             case "files": screen = BrowserViewController(source: LocalSource.shared)
             case "settings": screen = SettingsViewController()
+            case "address": screen = AddressViewController()
             case "playlist": screen = PlaylistViewController()
             case "radio": screen = RadioViewController()
             case "servers": screen = ServersViewController()

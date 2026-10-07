@@ -306,7 +306,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         let entry = entries[index]
         if source.isLocal {
             // With its folder, the folder plays on in the order it is shown in here
-            let isPlaylist = ["m3u", "m3u8", "pls"].contains((entry.name as NSString).pathExtension.lowercased())
+            let isPlaylist = PlaylistText.isPlaylistName(entry.name)
             let files = entries.filter { !$0.isFolder }
             if !isPlaylist, engine.number(forSetting: "loadFolder") != 0,
                let start = files.firstIndex(where: { $0.path == entry.path }) {
@@ -317,7 +317,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
             openPlayer()
             return
         }
-        if ["m3u", "m3u8", "pls"].contains((entry.name as NSString).pathExtension.lowercased()) {
+        if PlaylistText.isPlaylistName(entry.name) {
             playRemotePlaylist(entry)
             return
         }
@@ -355,7 +355,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                 try await source.download(playlist, to: copy)
                 let data = try Data(contentsOf: copy)
                 let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-                let written = Self.playlistEntries(in: text, isPLS: playlist.name.lowercased().hasSuffix(".pls"))
+                let written = PlaylistText.entries(in: text, isPLS: playlist.name.lowercased().hasSuffix(".pls"))
                 guard !written.isEmpty else {
                     tell(playlist.name, "The playlist has no entries.")
                     return
@@ -412,24 +412,6 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         }
     }
 
-    /// The entries written in a playlist: an M3U's lines that are not comments, or a
-    /// PLS's File1=, File2=... in order.
-    static func playlistEntries(in text: String, isPLS: Bool) -> [String] {
-        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-        if isPLS {
-            var numbered: [(Int, String)] = []
-            for line in lines {
-                let lower = line.lowercased()
-                guard lower.hasPrefix("file"), let equals = line.firstIndex(of: "=") else { continue }
-                let number = Int(line[line.index(line.startIndex, offsetBy: 4)..<equals]) ?? 0
-                let value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
-                if !value.isEmpty { numbered.append((number, value)) }
-            }
-            return numbered.sorted { $0.0 < $1.0 }.map(\.1)
-        }
-        return lines.filter { !$0.isEmpty && !$0.hasPrefix("#") }
-            .map { $0.hasPrefix("\u{FEFF}") ? String($0.dropFirst()) : $0 }
-    }
 
     // MARK: Rows
 

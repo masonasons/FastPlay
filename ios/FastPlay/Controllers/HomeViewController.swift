@@ -27,8 +27,8 @@ final class HomeViewController: FastPlayTableViewController {
         Item(title: "Podcasts", detail: "Subscriptions and the podcast directory", symbol: "mic") {
             $0.show(PodcastsViewController())
         },
-        Item(title: "Open Address", detail: "A stream or a file on the internet", symbol: "link") {
-            $0.openAddress()
+        Item(title: "Open Address", detail: "A stream, a file or a playlist on the internet", symbol: "link") {
+            $0.navigationController?.pushViewController(AddressViewController(), animated: true)
         },
     ]
 
@@ -118,26 +118,6 @@ final class HomeViewController: FastPlayTableViewController {
         favorites = FavoritesStore.all
         tableView.reloadData()
         UIAccessibility.post(notification: .announcement, argument: "Removed \(favorite.name) from favorites")
-    }
-
-    private func openAddress() {
-        let alert = UIAlertController(title: "Open Address", message: "The address of a stream or an audio file.",
-                                      preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "https://"
-            field.keyboardType = .URL
-            field.autocapitalizationType = .none
-            field.autocorrectionType = .no
-            field.accessibilityLabel = "Address"
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Play", style: .default) { [weak self, weak alert] _ in
-            let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !text.isEmpty, let self else { return }
-            self.engine.playURL(text.contains("://") ? text : "http://" + text, name: nil)
-            self.openPlayer()
-        })
-        present(alert, animated: true)
     }
 
     private func tell(_ title: String, _ message: String) {
