@@ -56,6 +56,6 @@ artwork (1024 pixels square, no transparency) whenever there is some.
 
 A Debug build takes launch arguments for trying things from a script:
 `-FPPlay <path in FastPlay's folder>`, `-FPPlayURL <address>`,
-`-FPShow player|files|settings|playlist|radio|podcasts|servers|address`, `-FPRadioSearch <words>`,
+`-FPShow player|files|settings|playlist|radio|podcasts|servers|address|autosync`, `-FPRadioSearch <words>`,
 `-FPFeed <feed address>`, and more for stress and server tests (see `SceneDelegate.swift`). With `FASTPLAY_NULL_AUDIO=1` in the environment the
 engine plays to nothing, for a simulator that should stay quiet.

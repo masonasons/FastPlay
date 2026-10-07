@@ -199,9 +199,7 @@ final class SettingsViewController: SettingsPageViewController {
     init() {
         super.init(title: "Settings") { _ in
             [SettingSection(title: nil, footer: nil, rows: Self.pages.map { page in
-                .screen(title: page.title, detail: page.detail, symbol: page.symbol) {
-                    SettingsPageViewController(title: page.title, sections: page.sections)
-                }
+                .screen(title: page.title, detail: page.detail, symbol: page.symbol) { page.screen() }
             })]
         }
     }
@@ -210,14 +208,20 @@ final class SettingsViewController: SettingsPageViewController {
 
     /// One of the screens by its title, for opening it directly.
     static func page(titled title: String) -> UIViewController? {
-        pages.first { $0.title == title }.map { SettingsPageViewController(title: $0.title, sections: $0.sections) }
+        pages.first { $0.title == title }?.screen()
     }
 
     private struct Page {
         let title: String
         let detail: String
         let symbol: String
+        /// A screen of its own, instead of one made from `sections`.
+        var make: (() -> UIViewController)? = nil
         let sections: (FPEngine) -> [SettingSection]
+
+        func screen() -> UIViewController {
+            make?() ?? SettingsPageViewController(title: title, sections: sections)
+        }
     }
 
     // Shorthands for an option kept by name (FPSettings)
@@ -380,6 +384,8 @@ final class SettingsViewController: SettingsPageViewController {
                 toggle("Sinc Interpolation (Higher Quality, More CPU)", "midiSincInterp"),
             ]),
         ] },
+        Page(title: "Auto Sync", detail: "Folders synced to this device when FastPlay starts",
+             symbol: "clock.arrow.2.circlepath", make: { AutoSyncViewController() }) { _ in [] },
         Page(title: "About", detail: "Version and audio engine", symbol: "info.circle") { engine in [
             SettingSection(title: nil, footer: nil, rows: [
                 .info(title: "Version", detail: engine.version),

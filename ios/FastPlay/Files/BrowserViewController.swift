@@ -279,6 +279,12 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                 guard let self else { return }
                 self.transfer(self.folder, sync: true)
             })
+            let autoSyncing = AutoSyncStore.find(source: source, path: folder.path) != nil
+            items.append(UIAction(title: autoSyncing ? "Stop Auto Syncing This Folder" : "Auto Sync This Folder",
+                                  image: UIImage(systemName: autoSyncing ? "clock.badge.xmark" : "clock.arrow.2.circlepath")) { [weak self] _ in
+                guard let self else { return }
+                self.toggleAutoSync(self.folder)
+            })
         }
         if isTop, let account = source.accountAction {
             items.append(UIAction(title: account.title, attributes: .destructive) { [weak self] _ in
@@ -451,6 +457,10 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
             if entry.isFolder {
                 list.append(("Sync Folder to This Device", "arrow.triangle.2.circlepath", false,
                              { [weak self] in self?.transfer(entry, sync: true) }))
+                let autoSyncing = AutoSyncStore.find(source: source, path: entry.path) != nil
+                list.append((autoSyncing ? "Stop Auto Syncing" : "Auto Sync This Folder",
+                             autoSyncing ? "clock.badge.xmark" : "clock.arrow.2.circlepath", false,
+                             { [weak self] in self?.toggleAutoSync(entry) }))
             }
         }
         list.append(("Select", "checkmark.circle", false, { [weak self] in self?.startSelecting(row: row) }))
@@ -688,7 +698,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
             } catch is FileOperations.Stopped {
                 problem = "Stopped."
             } catch {
-                problem = Self.describe(error)
+                problem = FolderSync.describe(error)
             }
             state.finished = true
             await Self.dismiss(progress)
@@ -725,14 +735,6 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         }
     }
 
-    private static func describe(_ error: Error) -> String {
-        let nsError = error as NSError
-        if (error as? URLError)?.code == .cancelled
-            || (nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError) {
-            return "Stopped."
-        }
-        return error.localizedDescription
-    }
 
     // MARK: Adding
 
@@ -766,7 +768,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                     self.load()
                     self.announce("Made \(name)")
                 } catch {
-                    self.tell("New Folder", Self.describe(error))
+                    self.tell("New Folder", FolderSync.describe(error))
                 }
             }
         }
@@ -819,7 +821,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                     self.load()
                     self.announce("Renamed to \(name)")
                 } catch {
-                    self.tell("Rename", Self.describe(error))
+                    self.tell("Rename", FolderSync.describe(error))
                 }
             }
         }
@@ -858,7 +860,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                     if let favorite = FavoritesStore.find(source: source, path: entry.path) { FavoritesStore.remove(favorite) }
                     deleted += 1
                 } catch {
-                    problem = "\(entry.name) could not be deleted. \(Self.describe(error))"
+                    problem = "\(entry.name) could not be deleted. \(FolderSync.describe(error))"
                     break
                 }
             }
@@ -904,7 +906,7 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
                 state.finished = true
                 await Self.dismiss(progress)
                 try? FileManager.default.removeItem(at: holder)
-                tell("Share", Self.describe(error))
+                tell("Share", FolderSync.describe(error))
             }
         }
         progress.addAction(UIAlertAction(title: "Stop", style: .cancel) { _ in task.cancel() })
@@ -990,97 +992,51 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         let progress = UIAlertController(title: "\(sync ? "Syncing" : "Downloading") \(entry.name)",
                                          message: "Looking…", preferredStyle: .alert)
         let task = Task { @MainActor in
-            var outcome: String
+            var outcome: String?
             do {
-                let manager = FileManager.default
-                let documents = URL(fileURLWithPath: engine.documentsPath)
-                let root = documents.appendingPathComponent(entry.name)
-
-                // What is there, and where each file goes here
-                var wanted: [(file: FileEntry, destination: URL)] = []
-                var sizes: [String: Int64] = [:]  // by destination path
-                if entry.isFolder {
-                    let prefix = entry.displayPath.count
-                    for item in try await source.listAll(path: entry.path)
-                    where !item.isFolder && engine.isPlayableFile(item.name) {
-                        // The path below the folder being fetched
-                        let relative = String(item.displayPath.dropFirst(prefix)).trimmingCharacters(
-                            in: CharacterSet(charactersIn: "/"))
-                        let destination = root.appendingPathComponent(relative)
-                        wanted.append((item, destination))
-                        sizes[destination.standardizedFileURL.path] = item.size
-                    }
-                } else {
-                    wanted.append((entry, documents.appendingPathComponent(entry.name)))
-                }
-
-                // Syncing: what is here that is no longer there
-                var stale: [URL] = []
-                if sync, entry.isFolder,
-                   let walker = manager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
-                    for case let url as URL in walker {
-                        let isFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
-                        if isFile, sizes[url.standardizedFileURL.path] == nil { stale.append(url) }
-                    }
-                }
-                if !stale.isEmpty {
-                    progress.dismiss(animated: false)
-                    guard await confirmDeleting(stale.count, from: entry.name) else { return }
-                    present(progress, animated: false)
-                }
-
-                var fetched = 0, kept = 0
-                for (index, item) in wanted.enumerated() {
-                    try Task.checkCancellation()
-                    let destination = item.destination
-                    progress.message = "\(index + 1) of \(wanted.count): \(destination.lastPathComponent)"
-                    if manager.fileExists(atPath: destination.path) {
-                        // Download keeps what is here. Sync fetches it again if the
-                        // one there is another size, or changed after this copy was made.
-                        let attributes = try? manager.attributesOfItem(atPath: destination.path)
-                        let localSize = (attributes?[.size] as? NSNumber)?.int64Value ?? -1
-                        let localDate = attributes?[.modificationDate] as? Date ?? .distantPast
-                        let changed = (item.file.size > 0 && localSize != item.file.size)
-                            || (item.file.modified.map { $0 > localDate.addingTimeInterval(1) } ?? false)
-                        if !sync || !changed {
-                            kept += 1
-                            continue
-                        }
-                    }
-                    try manager.createDirectory(at: destination.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-                    try await source.download(item.file, to: destination)
-                    // Dated as it is there, so a later sync can tell if it changed
-                    if let modified = item.file.modified {
-                        try? manager.setAttributes([.modificationDate: modified], ofItemAtPath: destination.path)
-                    }
-                    fetched += 1
-                }
-
-                var removed = 0
-                for url in stale where (try? manager.removeItem(at: url)) != nil { removed += 1 }
-                if removed > 0 { Self.removeEmptyFolders(under: root) }
-
-                if wanted.isEmpty && removed == 0 {
-                    outcome = "Nothing there that FastPlay plays."
-                } else {
-                    var parts = [fetched == 1 ? "1 file downloaded" : "\(fetched) files downloaded"]
-                    if kept > 0 { parts.append(sync ? "\(kept) up to date" : "\(kept) already here") }
-                    if removed > 0 {
-                        parts.append(removed == 1 ? "1 deleted from this device" : "\(removed) deleted from this device")
-                    }
-                    outcome = parts.joined(separator: ", ") + "."
-                }
+                outcome = try await FolderSync.run(
+                    source: source, entry: entry, sync: sync,
+                    progress: { progress.message = $0 },
+                    confirmDeleting: { [weak self] count, name in
+                        guard let self else { return false }
+                        progress.dismiss(animated: false)
+                        let yes = await self.confirmDeleting(count, from: name)
+                        if yes { self.present(progress, animated: false) }
+                        return yes
+                    })
             } catch is CancellationError {
                 outcome = "Stopped."
             } catch {
-                outcome = Self.describe(error)
+                outcome = FolderSync.describe(error)
             }
+            guard let outcome else { return }  // deleting refused: nothing done
             let show: () -> Void = { [weak self] in self?.tell(entry.name, outcome) }
             if progress.presentingViewController != nil { progress.dismiss(animated: true, completion: show) } else { show() }
         }
         progress.addAction(UIAlertAction(title: "Stop", style: .cancel) { _ in task.cancel() })
         present(progress, animated: true)
+    }
+
+    /// Turns syncing this folder by itself, each time FastPlay starts, on or off.
+    private func toggleAutoSync(_ entry: FileEntry) {
+        if let existing = AutoSyncStore.find(source: source, path: entry.path) {
+            AutoSyncStore.remove(existing)
+            announce("Stopped auto syncing \(entry.name)")
+            return
+        }
+        let alert = UIAlertController(
+            title: "Auto Sync \(entry.name)",
+            message: "Each time FastPlay starts, this folder is synced to this device: new and changed files are "
+                + "downloaded, and files no longer in it are deleted from this device, without asking. "
+                + "The folders that auto sync are listed in Settings. It is synced now too.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Auto Sync", style: .default) { [weak self] _ in
+            guard let self else { return }
+            AutoSyncStore.add(source: self.source, folder: entry)
+            self.transfer(entry, sync: true)
+        })
+        present(alert, animated: true)
     }
 
     /// Asks before a sync deletes anything. False if the user says no.
@@ -1100,21 +1056,6 @@ final class BrowserViewController: FastPlayTableViewController, UIDocumentPicker
         }
     }
 
-    /// Folders left with nothing in them after a sync deleted their files.
-    private static func removeEmptyFolders(under root: URL) {
-        let manager = FileManager.default
-        guard let walker = manager.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
-        var folders: [URL] = []
-        for case let url as URL in walker where (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-            folders.append(url)
-        }
-        // Deepest first, so a folder emptied of its empty folders goes too
-        for folder in folders.sorted(by: { $0.path.count > $1.path.count }) {
-            if ((try? manager.contentsOfDirectory(atPath: folder.path)) ?? ["x"]).isEmpty {
-                try? manager.removeItem(at: folder)
-            }
-        }
-    }
 
     // MARK: Telling
 

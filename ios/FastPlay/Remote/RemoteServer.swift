@@ -97,6 +97,7 @@ enum ServerStore {
         server.password = ""
         SFTPSource.forgetHostKey(server)
         FavoritesStore.removeAll(sourceID: "server-\(server.id.uuidString)")
+        AutoSyncStore.removeAll(sourceID: "server-\(server.id.uuidString)")
         all = all.filter { $0.id != server.id }
     }
 }

@@ -45,6 +45,19 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let index = arguments.firstIndex(of: "-FPPlayURL"), index + 1 < arguments.count {
             FPEngine.shared.playURL(arguments[index + 1], name: nil)
         }
+        // "-FPAutoSyncTest <folder in FastPlay's files>": makes that folder (of this
+        // device's own files, which the app never offers) auto sync, so that it is
+        // copied under its name, and runs the sync, logging each folder's outcome
+        if let index = arguments.firstIndex(of: "-FPAutoSyncTest"), index + 1 < arguments.count {
+            let path = (FPEngine.shared.documentsPath as NSString).appendingPathComponent(arguments[index + 1])
+            let name = (arguments[index + 1] as NSString).lastPathComponent
+            AutoSyncStore.add(source: LocalSource.shared,
+                              folder: FileEntry(name: name, path: path, displayPath: path, isFolder: true))
+            Task { @MainActor in
+                await AutoSync.runAll(announce: false)
+                for folder in AutoSyncStore.all { NSLog("FPAutoSync: %@: %@", folder.name, folder.lastOutcome ?? "-") }
+            }
+        }
         // "-FPAddress <address>": as Open Address plays it (a playlist's entries as tracks)
         if let index = arguments.firstIndex(of: "-FPAddress"), index + 1 < arguments.count {
             Task { @MainActor in
@@ -261,6 +274,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             case "files": screen = BrowserViewController(source: LocalSource.shared)
             case "settings": screen = SettingsViewController()
             case "address": screen = AddressViewController()
+            case "autosync": screen = SettingsViewController.page(titled: "Auto Sync")
             case "playlist": screen = PlaylistViewController()
             case "radio": screen = RadioViewController()
             case "servers": screen = ServersViewController()
@@ -278,6 +292,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         FPEngine.shared.saveState()
+    }
+
+    // At the start, and on coming back to the front after a while: the folders
+    // that sync by themselves
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        #if DEBUG
+        if CommandLine.arguments.contains("-FPAutoSyncTest") { return }
+        #endif
+        AutoSync.runIfDue()
     }
 
     /// A file handed over by Files or another app ("Open in FastPlay"): played where it is.
