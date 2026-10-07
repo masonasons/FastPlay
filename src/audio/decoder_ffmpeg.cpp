@@ -79,6 +79,62 @@ std::string IcyField(const std::string& meta, const char* key) {
     return meta.substr(start, end - start);
 }
 
+// A video's sound is all that is wanted. Video, subtitles and data are set aside
+// before the streams are probed: nothing here decodes them, and the probe would
+// wait on them, so long that a stream of several videos never got as far as
+// finding out what its sound was. An HLS stream of several variants (a video
+// in several sizes) keeps one, whose sound is played and whose segments alone
+// are fetched: the smallest of at least 400 kbps, as the very smallest often
+// cut the sound too, else the biggest. Returns a stream of the variant kept,
+// for av_find_best_stream() to keep to (-1 when there is no choosing).
+int SetAsideAllButSound(AVFormatContext* format) {
+    for (unsigned i = 0; i < format->nb_streams; i++) {
+        if (format->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+            format->streams[i]->discard = AVDISCARD_ALL;
+        }
+    }
+    if (format->nb_programs < 2) return -1;
+    const AVProgram* chosen = nullptr;
+    int64_t chosenRate = 0;
+    const int64_t kEnough = 400000;
+    for (unsigned p = 0; p < format->nb_programs; p++) {
+        const AVProgram* program = format->programs[p];
+        bool hasSound = false;
+        for (unsigned k = 0; k < program->nb_stream_indexes; k++) {
+            if (format->streams[program->stream_index[k]]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) hasSound = true;
+        }
+        if (!hasSound) continue;
+        const AVDictionaryEntry* entry = av_dict_get(program->metadata, "variant_bitrate", nullptr, 0);
+        const int64_t rate = entry ? strtoll(entry->value, nullptr, 10) : 0;
+        bool better;
+        if (!chosen) {
+            better = true;
+        } else if (rate >= kEnough && chosenRate >= kEnough) {
+            better = rate < chosenRate;
+        } else {
+            better = rate > chosenRate;  // the biggest, until one is big enough
+        }
+        if (better) {
+            chosen = program;
+            chosenRate = rate;
+        }
+    }
+    if (!chosen) return -1;
+    int related = -1;
+    for (unsigned i = 0; i < format->nb_streams; i++) {
+        bool inChosen = false;
+        for (unsigned k = 0; k < chosen->nb_stream_indexes; k++) {
+            if (chosen->stream_index[k] == i) inChosen = true;
+        }
+        if (!inChosen) {
+            format->streams[i]->discard = AVDISCARD_ALL;
+        } else if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            related = static_cast<int>(i);
+        }
+    }
+    return related;
+}
+
 class FfmpegDecoder : public Decoder {
 public:
     ~FfmpegDecoder() override {
@@ -157,10 +213,11 @@ public:
             return Fail(error, network ? L"Could not open the stream: " + ErrorText(rc) : OpenErrorText(rc));
         }
         Arm();
+        const int related = SetAsideAllButSound(m_format);
         if (avformat_find_stream_info(m_format, nullptr) < 0 && network) {
             // Streams can still play; their details show up once audio flows.
         }
-        m_stream = av_find_best_stream(m_format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+        m_stream = av_find_best_stream(m_format, AVMEDIA_TYPE_AUDIO, -1, related, nullptr, 0);
         if (m_stream < 0) return Fail(error, L"There is no audio in it.");
         AVStream* stream = m_format->streams[m_stream];
         for (unsigned i = 0; i < m_format->nb_streams; i++) {
