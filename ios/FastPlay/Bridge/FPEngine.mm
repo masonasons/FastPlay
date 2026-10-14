@@ -47,6 +47,7 @@ const NSTimeInterval kMediaSeekDelay = 0.4;
 const NSTimeInterval kMediaSeekRepeat = 0.2;
 // A setting of the iPhone app alone, so in its own defaults rather than FastPlay.ini
 NSString* const kMixWithOthersKey = @"MixWithOthers";
+NSString* const kRemoteSeekControlsKey = @"RemoteSeekControls";
 
 // The audio session as a player's, mixing with other apps' sound or taking over
 // from it. (miniaudio made it a playback session when the engine started.)
@@ -71,7 +72,23 @@ std::wstring ToWide(NSString* text) {
 
 bool g_stateChangePending = false;
 
+double MediaSeekInterval() {
+	if (g_currentSeekIndex == kChapterSeekIndex) return 0;
+	if (g_currentSeekIndex < 0 || g_currentSeekIndex >= g_seekAmountCount) return GetCurrentSeekAmount();
+	if (g_seekAmounts[g_currentSeekIndex].isTrack) {
+		if (g_playlist.size() <= 1) {
+			// Match seekStep's time-step fallback when there is only one track.
+			for (int i = 0; i < g_seekAmountCount; i++) {
+				if (g_seekEnabled[i] && !g_seekAmounts[i].isTrack) return g_seekAmounts[i].value;
+			}
+		}
+		return 0;
+	}
+	return GetCurrentSeekAmount();
+}
+
 void PublishNowPlaying() {
+	SetMediaSeekControls(FPEngine.shared.remoteSeekControls, MediaSeekInterval());
 	if (!audio::IsLoaded()) {
 		ClearNowPlaying();
 		return;
@@ -712,6 +729,16 @@ void MoveSettingsToThisContainer() {
 - (void)setMixWithOthers:(BOOL)mix {
     [NSUserDefaults.standardUserDefaults setBool:mix forKey:kMixWithOthersKey];
     ApplyAudioSessionOptions();
+}
+
+- (BOOL)remoteSeekControls {
+	return [NSUserDefaults.standardUserDefaults boolForKey:kRemoteSeekControlsKey];
+}
+
+- (void)setRemoteSeekControls:(BOOL)enabled {
+	[NSUserDefaults.standardUserDefaults setBool:enabled forKey:kRemoteSeekControlsKey];
+	SetMediaSeekControls(enabled, MediaSeekInterval());
+	PostStateChange();
 }
 
 - (NSString*)engineInfo {

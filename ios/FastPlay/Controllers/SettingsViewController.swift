@@ -276,6 +276,13 @@ final class SettingsViewController: SettingsPageViewController {
                 number("Preamp", "replayGainPreamp", unit: "dB", -20...20),
                 toggle("Prevent Clipping", "replayGainPreventClip"),
             ]),
+			SettingSection(title: "Lock Screen and Headphones",
+				footer: "Rewind and fast-forward use the player's selected Seek By amount, including tracks " +
+					"or chapters when selected. Changes to Seek By apply here too.",
+				rows: [
+					.toggle(title: "Use Rewind and Fast-Forward", isOn: { engine.remoteSeekControls },
+						set: { engine.remoteSeekControls = $0 }),
+				]),
             SettingSection(title: "This Device",
                            footer: "With Mix With Others on, FastPlay plays alongside other apps instead of " +
                                "stopping them, and the lock screen and headphone controls go to the other app. " +

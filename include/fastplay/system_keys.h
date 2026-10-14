@@ -27,6 +27,11 @@ void UnregisterSystemHotkey(int id);
 void StartMediaKeys(void (*handler)(int commandId), void (*seekHandler)(int direction, bool pressed));
 void StopMediaKeys();
 
+// Replace previous/next with skip buttons, using the player's seek commands.
+// Off by default. `interval` is the displayed time step in seconds, or 0 for a
+// chapter/track step, which has no fixed duration. Call on the UI thread.
+void SetMediaSeekControls(bool enabled, double interval);
+
 // What Control Center shows under Now Playing. macOS sends the media keys to the app
 // that last reported something playing.
 void UpdateNowPlaying(const std::wstring& title, double duration, double position, bool playing);

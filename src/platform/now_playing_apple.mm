@@ -17,11 +17,19 @@ namespace {
 void (*g_mediaHandler)(int) = nullptr;
 void (*g_seekHandler)(int, bool) = nullptr;
 NSMutableArray* g_mediaTargets = nil;  // (command, target) pairs to remove on stop
+bool g_mediaSeekControls = false;
+double g_mediaSeekInterval = -1;
 
 void AddMediaTarget(MPRemoteCommand* command, int commandId) {
     id target = [command addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent*) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (g_mediaHandler) g_mediaHandler(commandId);
+			// Some accessories still send track commands when skip buttons are shown.
+			int mapped = commandId;
+			if (g_mediaSeekControls) {
+				if (mapped == IDM_PLAY_PREV) mapped = IDM_PLAY_SEEKBACK;
+				else if (mapped == IDM_PLAY_NEXT) mapped = IDM_PLAY_SEEKFWD;
+			}
+			if (g_mediaHandler) g_mediaHandler(mapped);
         });
         return MPRemoteCommandHandlerStatusSuccess;
     }];
@@ -71,6 +79,24 @@ void StartMediaKeys(void (*handler)(int commandId), void (*seekHandler)(int dire
     AddMediaTarget(center.previousTrackCommand, IDM_PLAY_PREV);
     AddSeekTarget(center.seekBackwardCommand, -1);
     AddSeekTarget(center.seekForwardCommand, 1);
+	AddMediaTarget(center.skipBackwardCommand, IDM_PLAY_SEEKBACK);
+	AddMediaTarget(center.skipForwardCommand, IDM_PLAY_SEEKFWD);
+	SetMediaSeekControls(false, 0);
+}
+
+void SetMediaSeekControls(bool enabled, double interval) {
+	if (!g_mediaTargets) return;
+	if (g_mediaSeekControls == enabled && g_mediaSeekInterval == interval) return;
+	g_mediaSeekControls = enabled;
+	g_mediaSeekInterval = interval;
+	MPRemoteCommandCenter* center = [MPRemoteCommandCenter sharedCommandCenter];
+	NSArray<NSNumber*>* intervals = interval > 0 ? @[@(interval)] : @[];
+	center.skipBackwardCommand.preferredIntervals = intervals;
+	center.skipForwardCommand.preferredIntervals = intervals;
+	center.previousTrackCommand.enabled = !enabled;
+	center.nextTrackCommand.enabled = !enabled;
+	center.skipBackwardCommand.enabled = enabled;
+	center.skipForwardCommand.enabled = enabled;
 }
 
 void StopMediaKeys() {
@@ -79,8 +105,11 @@ void StopMediaKeys() {
     for (NSArray* pair in g_mediaTargets) {
         MPRemoteCommand* command = pair[0];
         [command removeTarget:pair[1]];
+		command.enabled = NO;
     }
     g_mediaTargets = nil;
+	g_mediaSeekControls = false;
+	g_mediaSeekInterval = -1;
     ClearNowPlaying();
 }
 

@@ -148,6 +148,9 @@ typedef NS_ENUM(NSInteger, FPSeekMode) {
 // While on, iOS does not treat FastPlay as the app that is playing, so the lock
 // screen and headphone controls go to the other app.
 @property (nonatomic) BOOL mixWithOthers;
+// Lock screen and headphone previous/next buttons use the current seek unit.
+// Off unless turned on; saved in this device's defaults.
+@property (nonatomic) BOOL remoteSeekControls;
 @property (nonatomic, readonly, copy) NSString* engineInfo;
 @property (nonatomic, readonly, copy) NSString* version;
 
