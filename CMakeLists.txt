@@ -376,6 +376,7 @@ if(WIN32)
         src/platform/startup_windows.cpp
         src/platform/updater_windows.cpp
         src/platform/folder_watch_windows.cpp
+        src/platform/held_arrows_windows.cpp
         res/fastplay.rc
     )
 elseif(FASTPLAY_IOS)

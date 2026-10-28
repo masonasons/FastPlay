@@ -21,8 +21,8 @@
 #include "audio.h"
 #include "utils.h"
 #include "keycodes.h"
-#ifdef __WXOSX__
 #include "system_keys.h"
+#ifdef __WXOSX__
 #include "platform.h"
 #endif
 
@@ -100,6 +100,15 @@ MainFrame::MainFrame()
     Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
     // An arrow held for scrubbing that comes up in another window: stop anyway
     Bind(wxEVT_ACTIVATE, [this](wxActivateEvent& event) {
+#ifdef __WXMSW__
+        // The arrows held on the keyboard are watched only while the window is in front
+        if (event.GetActive()) {
+            StartWatchingArrows();
+        } else {
+            m_scrubArrowPoll.Stop();
+            StopWatchingArrows();
+        }
+#endif
         if (!event.GetActive() && m_scrubKey) {
             m_scrubKey = 0;
             StopScrubbing();
@@ -123,11 +132,19 @@ MainFrame::MainFrame()
     m_scrubHotkeyPoll.Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
         if (!(::GetAsyncKeyState(static_cast<int>(m_scrubHotkeyVk)) & 0x8000)) StopHotkeyScrub();
     });
+    m_scrubArrowPoll.Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+        if (m_scrubKey && ArrowHeld(m_scrubKey)) return;
+        m_scrubArrowPoll.Stop();
+        if (!m_scrubKey) return;
+        m_scrubKey = 0;
+        StopScrubbing();
+    });
 #endif
 }
 
 MainFrame::~MainFrame() {
 #ifdef __WXMSW__
+    StopWatchingArrows();
     if (m_nativeAccel) ::DestroyAcceleratorTable(static_cast<HACCEL>(m_nativeAccel));
 #endif
 #ifdef __WXOSX__
@@ -608,6 +625,15 @@ bool MainFrame::HandleScrubKey(unsigned modifiers, unsigned vk, bool down, bool 
     if (vk != VK_LEFT && vk != VK_RIGHT) return false;
     if (!down) {
         if (vk != m_scrubKey) return false;
+#ifdef __WXMSW__
+        // Come up only as a screen reader passes it on, after each repeat: still held
+        // on the keyboard, so scrubbing goes on until it comes up there
+        if (ArrowHeld(vk)) {
+            if (!m_scrubArrowPoll.IsRunning()) m_scrubArrowPoll.Start(15);
+            return true;
+        }
+        m_scrubArrowPoll.Stop();
+#endif
         m_scrubKey = 0;
         StopScrubbing();
         return true;
@@ -617,8 +643,13 @@ bool MainFrame::HandleScrubKey(unsigned modifiers, unsigned vk, bool down, bool 
     for (const auto& hk : g_hotkeys) {
         if (!hk.global && hk.modifiers == 0 && hk.vk == vk) return false;
     }
-    // Held, the key repeats: only its first press starts (or turns) scrubbing
-    if (!repeat || vk != m_scrubKey) {
+    // Held, the key repeats: only its first press starts (or turns) scrubbing. (A
+    // screen reader passes the repeats on as presses, while it is held on the keyboard.)
+    bool held = repeat;
+#ifdef __WXMSW__
+    if (ArrowHeld(vk)) held = true;
+#endif
+    if (!held || vk != m_scrubKey) {
         m_scrubKey = vk;
         StartScrubbing(vk == VK_LEFT ? -1 : 1);
     }

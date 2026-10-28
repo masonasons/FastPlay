@@ -4,7 +4,7 @@
 
 // System-wide keys on macOS (src/platform/system_keys_mac.mm): global hotkeys, and the
 // media keys and Now Playing controls. On Windows wxWidgets registers the hotkeys and
-// media keys itself.
+// media keys itself; there, the arrows are watched for scrubbing (below).
 
 #include <string>
 
@@ -42,6 +42,21 @@ void SetMediaSeekControls(bool enabled, double interval);
 // that last reported something playing.
 void UpdateNowPlaying(const std::wstring& title, double duration, double position, bool playing);
 void ClearNowPlaying();
+
+#endif
+
+#ifdef _WIN32
+
+// The arrow keys as the keyboard has them (src/platform/held_arrows_windows.cpp).
+// A screen reader such as JAWS takes the arrows and passes one held on as a press
+// and a release for every repeat, so the window's own key messages cannot tell it
+// is still held. A low-level keyboard hook sees the keyboard's own presses ahead
+// of it. Watched while FastPlay's window is in front.
+void StartWatchingArrows();
+void StopWatchingArrows();
+// True while `vk` (VK_LEFT or VK_RIGHT) is held down on the keyboard, as far as
+// the hook has seen.
+bool ArrowHeld(unsigned vk);
 
 #endif
 

@@ -1,4 +1,5 @@
 0.7.0
+Windows: with JAWS running, holding an arrow in tape or spring seeking scrubs smoothly. JAWS passes a held arrow on as a new press and release for every repeat, so scrubbing started over some 30 times a second, in small jerks. FastPlay now looks at the keyboard's own arrows (only while its window is in front, and without taking them from anyone) to tell the key is still held.
 In tape seeking, pressing Play (X) just after the last track has played to the end starts it again. It used to do nothing for a moment, while an inaudible tape stop ran down after the end.
 Changing the pitch, tempo or rate while stopped or paused is heard as soon as it plays again. It used to play as much as the buffer holds with the old setting first, even when the file started over.
 FastPlay plays Codec 2 (.c2), the speech codec for amateur radio, from 3200 down to 700 bits per second. The Open dialog shows .c2 files, opening one with Load Folder brings the rest of its folder, the library finds them, and FastPlay can be made their player.
