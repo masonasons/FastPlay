@@ -376,6 +376,7 @@ if(WIN32)
         src/platform/startup_windows.cpp
         src/platform/updater_windows.cpp
         src/platform/folder_watch_windows.cpp
+        src/platform/midi_out_windows.cpp
         res/fastplay.rc
     )
 elseif(FASTPLAY_IOS)
@@ -391,6 +392,7 @@ elseif(FASTPLAY_IOS)
         src/platform/now_playing_apple.mm
         src/platform/updater_unsupported.cpp
         src/platform/folder_watch_none.cpp
+        src/platform/midi_out_none.cpp
     )
 elseif(FASTPLAY_ANDROID)
     # The same, and the rest (HTTP, paths, speech, startup) is the app's JNI
@@ -400,6 +402,7 @@ elseif(FASTPLAY_ANDROID)
         src/platform/subprocess_none.cpp
         src/platform/updater_unsupported.cpp
         src/platform/folder_watch_none.cpp
+        src/platform/midi_out_none.cpp
     )
 else()
     list(APPEND FASTPLAY_SOURCES
@@ -418,10 +421,14 @@ if(APPLE AND NOT FASTPLAY_IOS)
         src/platform/startup_mac.cpp
         src/platform/system_keys_mac.mm
         src/platform/updater_mac.cpp
+        src/platform/midi_out_apple.mm
         src/platform/folder_watch_mac.cpp
     )
 elseif(NOT WIN32 AND NOT FASTPLAY_MOBILE)
     list(APPEND FASTPLAY_SOURCES src/platform/updater_unsupported.cpp src/platform/folder_watch_none.cpp)
+endif()
+if(NOT WIN32 AND NOT APPLE AND NOT FASTPLAY_ANDROID)
+    list(APPEND FASTPLAY_SOURCES src/platform/midi_out_none.cpp)  # Linux: no MIDI ports yet
 endif()
 
 if(FASTPLAY_IOS)
@@ -550,7 +557,7 @@ if(WIN32)
         ${FASTPLAY_FFMPEG_DIR}/lib/codec2.lib
         ws2_32 secur32 ncrypt crypt32 bcrypt
         user32 comctl32 comdlg32 shell32 shlwapi advapi32 ole32 oleaut32
-        uuid version psapi wininet winhttp)
+        uuid version psapi wininet winhttp winmm)
 
     # FastPlay.exe goes to the repository root, where dist.bat and the installer expect it.
     set_target_properties(FastPlay PROPERTIES
@@ -568,9 +575,10 @@ if(APPLE AND NOT FASTPLAY_IOS)
         ${FASTPLAY_FFMPEG_DIR}/lib/libcodec2.a
         z "-framework Security" "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox"
         "-framework AppKit" "-framework AVFoundation" "-framework Carbon"
-        "-framework CoreServices" "-framework MediaPlayer")
+        "-framework CoreServices" "-framework MediaPlayer" "-framework CoreMIDI")
     set_source_files_properties(src/platform/speech_mac.mm src/platform/system_keys_mac.mm
-        src/platform/menu_keys_mac.mm src/platform/now_playing_apple.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+        src/platform/menu_keys_mac.mm src/platform/now_playing_apple.mm src/platform/midi_out_apple.mm
+        PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 
     # The app bundle: Info.plist with the version from version.h and the
     # documentation in Contents/Resources/docs.

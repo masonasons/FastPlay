@@ -156,6 +156,7 @@ extern std::wstring g_convolutionIRPath;  // Path to impulse response WAV file
 extern std::wstring g_midiSoundFont;  // Path to SoundFont (.sf2/.sf3) file
 extern int g_midiMaxVoices;           // Max polyphony (1-1000, default 128)
 extern bool g_midiSincInterp;         // Use sinc interpolation (higher quality, more CPU)
+extern std::wstring g_midiOutputPort;  // A MIDI output port to play through instead; "" for the synthesizer
 
 // EQ frequency settings (Hz)
 extern float g_eqBassFreq;

@@ -130,6 +130,8 @@ void LoadSettings() {
     if (g_midiMaxVoices < 1) g_midiMaxVoices = 1;
     if (g_midiMaxVoices > 1000) g_midiMaxVoices = 1000;
     g_midiSincInterp = IniGetInt(L"MIDI", L"SincInterp", 0, g_configPath.c_str()) != 0;
+    IniGetString(L"MIDI", L"OutputPort", L"", midiBuf, kMaxPathChars, g_configPath.c_str());
+    g_midiOutputPort = midiBuf;
 
     // EQ frequencies loaded using string conversion (IniGetFloat defined later)
     wchar_t eqBuf[32];
@@ -505,6 +507,7 @@ void SaveSettings() {
     swprintf(buf, 32, L"%d", g_midiMaxVoices);
     IniWriteString(L"MIDI", L"MaxVoices", buf, g_configPath.c_str());
     IniWriteString(L"MIDI", L"SincInterp", g_midiSincInterp ? L"1" : L"0", g_configPath.c_str());
+    IniWriteString(L"MIDI", L"OutputPort", g_midiOutputPort.c_str(), g_configPath.c_str());
 
     swprintf(buf, 32, L"%.1f", g_eqBassFreq);
     IniWriteString(L"Advanced", L"EQBassFreq", buf, g_configPath.c_str());

@@ -274,6 +274,7 @@ std::wstring g_convolutionIRPath;
 std::wstring g_midiSoundFont;      // Path to SoundFont file
 int g_midiMaxVoices = 128;         // Max polyphony (1-1000)
 bool g_midiSincInterp = false;     // Use sinc interpolation
+std::wstring g_midiOutputPort;     // "" plays through the built-in synthesizer
 
 // EQ frequency settings (Hz)
 float g_eqBassFreq = 50.0f;

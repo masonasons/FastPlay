@@ -6,6 +6,7 @@
 #include "ui/hotkey_dialog.h"
 
 #include "globals.h"
+#include "midi_out.h"
 #include "app_ui.h"
 #include "player.h"
 #include "settings.h"
@@ -251,6 +252,8 @@ private:
     wxTextCtrl* m_midiSoundFont = nullptr;
     wxTextCtrl* m_midiVoices = nullptr;
     wxCheckBox* m_midiSinc = nullptr;
+    wxChoice* m_midiOutput = nullptr;
+    std::vector<std::wstring> m_midiPorts;
 
     // Library: the folders as edited here, saved on OK
     std::vector<LibraryFolder> m_libraryFolders;
@@ -919,6 +922,22 @@ void OptionsDialog::BuildMidiPage(wxNotebook* book) {
     auto* sizer = new wxBoxSizer(wxVERTICAL);
 
     AddText(page, sizer, "MIDI playback settings:");
+
+    // Through the built-in synthesizer, or a MIDI output port the system has
+    m_midiOutput = AddChoice(page, AddRow(sizer), "Play MIDI &through:", 330);
+    m_midiOutput->Append("Built-in synthesizer (SoundFont)");
+    m_midiOutput->SetSelection(0);
+    m_midiPorts = ListMidiOutputPorts();
+    for (const auto& port : m_midiPorts) {
+        int index = m_midiOutput->Append(WX(port));
+        if (port == g_midiOutputPort) m_midiOutput->SetSelection(index);
+    }
+    if (!g_midiOutputPort.empty() && m_midiOutput->GetSelection() == 0) {
+        // The port chosen before is not there now; shown, so the choice is kept
+        m_midiPorts.push_back(g_midiOutputPort);
+        m_midiOutput->SetSelection(m_midiOutput->Append(WX(g_midiOutputPort) + " (not found)"));
+    }
+
     AddText(page, sizer, "&SoundFont (.sf2/.sf3):");
 
     auto* row = AddRow(sizer);
@@ -1268,6 +1287,10 @@ void OptionsDialog::OnOK(wxCommandEvent&) {
         if (voices >= 1 && voices <= 1000) g_midiMaxVoices = voices;
 
         g_midiSincInterp = m_midiSinc->GetValue();
+
+        int output = m_midiOutput->GetSelection();
+        g_midiOutputPort = output > 0 && output - 1 < static_cast<int>(m_midiPorts.size())
+                               ? m_midiPorts[static_cast<size_t>(output - 1)] : L"";
     }
 
     // Library folders: indexed again only if they changed
