@@ -138,6 +138,7 @@ int g_ssTonalityLimit = 0;
 std::wstring g_midiSoundFont;  // none: MIDI files use the system's synth, where there is one
 int g_midiMaxVoices = 128;
 bool g_midiSincInterp = false;
+std::wstring g_midiOutputPort;  // none: MIDI plays through the synthesizer (the library has no ports)
 std::wstring g_ytApiKey;       // none: YouTube searches go through yt-dlp
 
 // ---------------------------------------------------------------------------
