@@ -333,9 +333,14 @@ void CycleParam(int direction) {
         currentIdx = 0;
     } else {
         currentIdx += direction;
-        // Clamp to bounds (no wrapping)
-        if (currentIdx < 0) currentIdx = 0;
-        if (currentIdx >= (int)params.size()) currentIdx = (int)params.size() - 1;
+        const int count = (int)params.size();
+        if (g_wrapEffects) {
+            // Round from the last to the first, and back
+            currentIdx = (currentIdx % count + count) % count;
+        } else {
+            if (currentIdx < 0) currentIdx = 0;
+            if (currentIdx >= count) currentIdx = count - 1;
+        }
     }
 
     g_currentParamIndex = (int)params[currentIdx];

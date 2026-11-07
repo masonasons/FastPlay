@@ -98,6 +98,7 @@ private:
     void BuildDownloadsPage(wxNotebook* book);
     void BuildSpeechPage(wxNotebook* book);
     void BuildMovementPage(wxNotebook* book);
+    void BuildSeekingPage(wxNotebook* book);
     void BuildHotkeysPage(wxNotebook* book);
     void BuildEffectsPage(wxNotebook* book);
     void BuildAdvancedPage(wxNotebook* book);
@@ -174,6 +175,22 @@ private:
     std::vector<wxCheckBox*> m_seekChecks;
     wxCheckBox* m_chapterSeek = nullptr;
 
+    // Seeking
+    wxChoice* m_seekMode = nullptr;
+    wxChoice* m_springSpeed = nullptr;
+    wxCheckBox* m_springWindUp = nullptr;
+    wxTextCtrl* m_springDoubling = nullptr;
+    wxChoice* m_tapeSpeed = nullptr;
+    wxCheckBox* m_tapeSpinUp = nullptr;
+    wxTextCtrl* m_tapeSpinUpMs = nullptr;
+    wxCheckBox* m_tapeSpinDown = nullptr;
+    wxTextCtrl* m_tapeSpinDownMs = nullptr;
+    wxCheckBox* m_tapeStopOnPause = nullptr;
+    wxCheckBox* m_tapeStopOnStop = nullptr;
+    wxTextCtrl* m_tapeStopMs = nullptr;
+    wxCheckBox* m_tapeStartOnPlay = nullptr;
+    wxTextCtrl* m_tapeStartMs = nullptr;
+
     // Global Hotkeys
     wxCheckBox* m_hotkeyEnabled = nullptr;
     wxListBox* m_hotkeyList = nullptr;
@@ -184,6 +201,7 @@ private:
     wxCheckBox* m_effectTempo = nullptr;
     wxCheckBox* m_effectRate = nullptr;
     wxChoice* m_rateStepMode = nullptr;
+    wxCheckBox* m_wrapEffects = nullptr;
     wxChoice* m_reverb = nullptr;
     wxCheckBox* m_dspEcho = nullptr;
     wxCheckBox* m_dspEQ = nullptr;
@@ -273,6 +291,7 @@ OptionsDialog::OptionsDialog(wxWindow* parent)
     BuildDownloadsPage(m_book);
     BuildSpeechPage(m_book);
     BuildMovementPage(m_book);
+    BuildSeekingPage(m_book);
     BuildHotkeysPage(m_book);
     BuildEffectsPage(m_book);
     BuildAdvancedPage(m_book);
@@ -552,6 +571,58 @@ void OptionsDialog::BuildMovementPage(wxNotebook* book) {
     book->AddPage(page, "Movement");
 }
 
+void OptionsDialog::BuildSeekingPage(wxNotebook* book) {
+    auto* page = NewPage(book);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+
+    // A speed list (times normal), with `speed` chosen
+    auto speeds = [this, page, sizer](const wxString& label, int speed) {
+        wxChoice* choice = AddChoice(page, AddRow(sizer), label);
+        int index = 0;
+        for (int i = 0; i < g_scrubSpeedCount; i++) {
+            choice->Append(wxString::Format("%d times", g_scrubSpeeds[i]));
+            if (g_scrubSpeeds[i] <= speed) index = i;
+        }
+        choice->SetSelection(index);
+        return choice;
+    };
+    auto milliseconds = [this, page, sizer](const wxString& label, int ms) {
+        wxTextCtrl* edit = AddEdit(page, AddRow(sizer), label, wxString::Format("%d", ms), 60);
+        SetDigitsOnly(edit);
+        return edit;
+    };
+
+    m_seekMode = AddChoice(page, AddRow(sizer), "Seek &mode (/ to cycle):");
+    m_seekMode->Append("Jump");
+    m_seekMode->Append("Spring");
+    m_seekMode->Append("Tape");
+    m_seekMode->SetSelection(g_seekMode);
+    AddText(page, sizer, wxString::Format("Times are in milliseconds, %d to %d.", kScrubTimeMinMs, kScrubTimeMaxMs));
+
+    AddText(page, sizer, "Spring seeking (an arrow held; the pitch stays):");
+    m_springSpeed = speeds("Spring top &speed:", g_springSpeed);
+    m_springWindUp = AddCheck(page, sizer, "Spring &winds up the longer an arrow is held", g_springWindUp);
+    m_springDoubling = milliseconds("&Doubling its speed every:", g_springDoublingMs);
+
+    AddText(page, sizer, "Tape seeking (an arrow held; faster is higher):");
+    m_tapeSpeed = speeds("Tape s&peed:", g_tapeSpeed);
+    m_tapeSpinUp = AddCheck(page, sizer, "Tape spins &up to speed when an arrow is held", g_tapeSpinUp);
+    m_tapeSpinUpMs = milliseconds("Spin-up t&ime:", g_tapeSpinUpMs);
+    m_tapeSpinDown = AddCheck(page, sizer, "Tape winds d&own when the arrow is let go", g_tapeSpinDown);
+    m_tapeSpinDownMs = milliseconds("Wind-down tim&e:", g_tapeSpinDownMs);
+    m_tapeStopOnPause = AddCheck(page, sizer, "Tape stop when p&ausing (slows to a standstill)", g_tapeStopOnPause);
+    m_tapeStopOnStop = AddCheck(page, sizer, "Tape stop when s&topping", g_tapeStopOnStop);
+    m_tapeStopMs = milliseconds("Tape stop &length:", g_tapeStopMs);
+    m_tapeStartOnPlay = AddCheck(page, sizer, "Tape start when playing or &resuming (speeds up from a standstill)",
+                                 g_tapeStartOnPlay);
+    m_tapeStartMs = milliseconds("Tape start le&ngth:", g_tapeStartMs);
+
+    page->SetSizer(new wxBoxSizer(wxVERTICAL));
+    page->GetSizer()->Add(sizer, 1, wxEXPAND | wxALL, 10);
+    page->FitInside();
+    book->AddPage(page, "Seeking");
+}
+
 void OptionsDialog::BuildHotkeysPage(wxNotebook* book) {
     auto* page = NewPage(book);
     auto* sizer = new wxBoxSizer(wxVERTICAL);
@@ -603,6 +674,8 @@ void OptionsDialog::BuildEffectsPage(wxNotebook* book) {
     m_rateStepMode->Append("0.01x");
     m_rateStepMode->Append("Semitone");
     m_rateStepMode->SetSelection(g_rateStepMode);
+
+    m_wrapEffects = AddCheck(page, sizer, "&Wrap [ and ] around from the last effect to the first", g_wrapEffects);
 
     AddText(page, sizer, "DSP effects (enable to add their parameters to cycle list):");
 
@@ -1120,6 +1193,35 @@ void OptionsDialog::OnOK(wxCommandEvent&) {
     }
     g_chapterSeekEnabled = m_chapterSeek->GetValue();
 
+    // Seeking
+    {
+        if (m_seekMode->GetSelection() >= 0 && m_seekMode->GetSelection() != g_seekMode) {
+            StopScrubbing();
+            g_seekMode = m_seekMode->GetSelection();
+        }
+        auto speed = [](wxChoice* choice, int& value) {
+            int sel = choice->GetSelection();
+            if (sel >= 0 && sel < g_scrubSpeedCount) value = g_scrubSpeeds[sel];
+        };
+        auto milliseconds = [](wxTextCtrl* edit, int& value) {
+            long ms = 0;
+            if (edit->GetValue().ToLong(&ms)) value = std::clamp(static_cast<int>(ms), kScrubTimeMinMs, kScrubTimeMaxMs);
+        };
+        speed(m_springSpeed, g_springSpeed);
+        g_springWindUp = m_springWindUp->GetValue();
+        milliseconds(m_springDoubling, g_springDoublingMs);
+        speed(m_tapeSpeed, g_tapeSpeed);
+        g_tapeSpinUp = m_tapeSpinUp->GetValue();
+        milliseconds(m_tapeSpinUpMs, g_tapeSpinUpMs);
+        g_tapeSpinDown = m_tapeSpinDown->GetValue();
+        milliseconds(m_tapeSpinDownMs, g_tapeSpinDownMs);
+        g_tapeStopOnPause = m_tapeStopOnPause->GetValue();
+        g_tapeStopOnStop = m_tapeStopOnStop->GetValue();
+        milliseconds(m_tapeStopMs, g_tapeStopMs);
+        g_tapeStartOnPlay = m_tapeStartOnPlay->GetValue();
+        milliseconds(m_tapeStartMs, g_tapeStartMs);
+    }
+
     // Validate current seek index - ensure it points to an enabled amount
     if (!g_seekEnabled[g_currentSeekIndex]) {
         for (int i = 0; i < g_seekAmountCount; i++) {
@@ -1156,6 +1258,7 @@ void OptionsDialog::OnOK(wxCommandEvent&) {
             g_rateStepMode = rateStepSel;
         }
     }
+    g_wrapEffects = m_wrapEffects->GetValue();
 
     // Validate current effect index - ensure it points to an enabled effect
     if (!g_effectEnabled[g_currentEffectIndex]) {

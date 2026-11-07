@@ -13,11 +13,6 @@ namespace audio {
 namespace {
 
 const int kChannels = 2;
-// Spring: seconds held for the speed to double (from normal speed)
-const double kSpringDoubling = 0.5;
-// Tape: seconds to spin up to speed, and let go of, back down
-const double kTapeSpinUp = 0.25;
-const double kTapeSpinDown = 0.4;
 // Slower than this is a standstill: silence. Below kQuietSpeed it fades, so the
 // last rumble does not end in a thump.
 const double kStopped = 0.01;
@@ -87,8 +82,9 @@ struct Scrubber::Shift {
 };
 
 Scrubber::Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start,
-                   Begin begin, double fromSpeed)
+                   const ScrubTiming& timing, Begin begin, double fromSpeed)
     : m_style(begin == Begin::Held ? style : ScrubStyle::Tape),
+      m_timing(timing),
       m_direction(direction < 0 ? -1 : 1),
       m_topSpeed(speed),
       m_sourceRate(sourceRate),
@@ -114,8 +110,12 @@ Scrubber::~Scrubber() = default;
 double Scrubber::HeardSpeed(uint64_t played) const {
     const double top = std::max(1.0, static_cast<double>(m_topSpeed.load()));
     const double held = static_cast<double>(played) / m_outputRate;
-    if (m_style == ScrubStyle::Spring) return std::min(top, std::pow(2.0, held / kSpringDoubling));
-    return std::pow(top, std::min(1.0, held / kTapeSpinUp));
+    if (m_style == ScrubStyle::Spring) {
+        if (m_timing.springDoubling <= 0) return top;
+        return std::min(top, std::pow(2.0, held / m_timing.springDoubling));
+    }
+    if (m_timing.tapeSpinUp <= 0) return top;
+    return std::pow(top, std::min(1.0, held / m_timing.tapeSpinUp));
 }
 
 bool Scrubber::TakeFinished(uint64_t played) {
@@ -134,7 +134,7 @@ double Scrubber::Speed() const {
             return HeardSpeed(m_produced);
         case Phase::Release:
         default: {
-            const double t = std::min(1.0, since / kTapeSpinDown);
+            const double t = m_timing.tapeSpinDown > 0 ? std::min(1.0, since / m_timing.tapeSpinDown) : 1.0;
             // Forward, back down to normal speed (evenly in pitch); backward, slowing
             // to a stop before it plays on forward
             if (m_direction > 0) return std::pow(std::max(1.0, m_phaseFrom), 1.0 - t);

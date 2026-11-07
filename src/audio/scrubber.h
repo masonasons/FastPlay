@@ -11,7 +11,7 @@
 // Tape: resampled, so pitch rises with speed, spinning up over a moment; let go,
 // it winds back down (to normal speed going forward, to a stop going back). Spring: time-stretched
 // (Signalsmith Stretch), so pitch stays, and it winds up the longer it is held,
-// doubling in speed every half second up to the top speed.
+// doubling in speed every half second (ScrubTiming) up to the top speed.
 //
 // Either way it starts from the sound as it plays (SetSound): the rate runs the
 // tape faster or slower still, and the pitch is kept on top, so scrubbing neither
@@ -39,7 +39,7 @@ public:
 
     // `speed`: tape's speed, or spring's top speed (times normal).
     Scrubber(ScrubStyle style, int direction, float speed, int sourceRate, int outputRate, double start,
-             Begin begin = Begin::Held, double fromSpeed = 1.0);
+             const ScrubTiming& timing, Begin begin = Begin::Held, double fromSpeed = 1.0);
     ~Scrubber();
 
     // Fills `frames` of stereo output at the output rate: fewer if the source is
@@ -78,6 +78,7 @@ private:
     bool m_finished = false, m_finishTaken = false;
     uint64_t m_finishedAt = 0;   // the output frame it was wound down by
     ScrubStyle m_style;
+    const ScrubTiming m_timing;
     const int m_direction;
     std::atomic<float> m_topSpeed;
     const double m_sourceRate, m_outputRate;
