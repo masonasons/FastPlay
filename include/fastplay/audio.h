@@ -177,6 +177,16 @@ bool LiveRange(double& start, double& live);
 // tape runs the rate faster still, with the pitch on top; spring stays at the
 // pitch playing has. The tempo doesn't come into it: the scrubbing sets the speed.
 enum class ScrubStyle { Tape, Spring };
+// How long scrubbing and the tape effects take, in seconds (0: at once). Taken by
+// each scrub, tape stop or tape start as it begins.
+struct ScrubTiming {
+    double springDoubling = 0.5;  // spring held: its speed doubles this often
+    double tapeSpinUp = 0.25;     // tape held: up to its speed
+    double tapeSpinDown = 0.4;    // tape let go of: back to normal speed
+    double tapeStop = 0.6;        // the tape stop: normal speed to a standstill
+    double tapeStart = 0.6;       // the tape start: a standstill to normal speed
+};
+void SetScrubTiming(const ScrubTiming& timing);
 bool StartScrub(ScrubStyle style, int direction, float speed);
 void SetScrubSpeed(float speed);
 bool StopScrub();
@@ -196,6 +206,12 @@ bool IsTapeStopping();
 // Calls a tape stop off: it plays on at normal speed from where the tape got to.
 // False if there was none.
 bool CancelTapeStop();
+// The tape start, the tape stop the other way: what is heard speeds up from a
+// standstill to normal speed. Call it before Play() (from a pause or stop); during
+// a tape stop, the tape winds back up from as slow as it had got, and the stop is
+// off. TapeStop() during a tape start winds it back down from there. False while
+// scrubbing, or with nothing left to play.
+bool TapeStart();
 // Called on the UI thread when a release or tape stop has wound down.
 void SetScrubEndHandler(std::function<void()> handler);
 
@@ -299,6 +315,8 @@ public:
     bool TapeStop();
     bool IsTapeStopping();
     bool CancelTapeStop();
+    bool TapeStart();
+    void SetScrubTiming(const ScrubTiming& timing);
     void SetScrubEndHandler(std::function<void()> handler);
 
     void SetTempo(float percent);

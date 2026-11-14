@@ -409,6 +409,8 @@ void KeepPlaceSaved() {
     }
 }
 
+static void TapeStartFirst();  // (with the seek modes, below)
+
 // Play or pause current track
 void PlayPause() {
     if (!audio::IsLoaded()) {
@@ -425,6 +427,7 @@ void PlayPause() {
             Pause();
         }
     } else {
+        TapeStartFirst();
         audio::Play();
         UpdateWindowTitle();
         UpdateStatusBar();
@@ -460,6 +463,8 @@ void Play() {
     if (IsPlaying() && !g_isLiveStream) {
         // Already playing - restart from beginning
         JumpTo(0);
+    } else {
+        TapeStartFirst();
     }
     audio::Play();
     UpdateWindowTitle();
@@ -646,10 +651,24 @@ static void ScrubWoundDown() {
     }
 }
 
+// How long scrubbing and the tape effects take, from the Seeking options. Given to
+// the engine before each one starts.
+static void ApplyScrubTiming() {
+    audio::ScrubTiming timing;
+    timing.springDoubling = g_springWindUp ? g_springDoublingMs / 1000.0 : 0.0;
+    timing.tapeSpinUp = g_tapeSpinUp ? g_tapeSpinUpMs / 1000.0 : 0.0;
+    timing.tapeSpinDown = g_tapeSpinDownMs / 1000.0;
+    timing.tapeStop = g_tapeStopMs / 1000.0;
+    timing.tapeStart = g_tapeStartMs / 1000.0;
+    audio::SetScrubTiming(timing);
+}
+
 // In tape seeking, pausing and stopping slow the tape to a standstill first.
 // True if that has begun (the pause or stop follows when it is done).
 static bool TapeStopFirst(bool stopping) {
     if (g_seekMode != SEEK_MODE_TAPE || !IsPlaying() || audio::IsScrubbing()) return false;
+    if (!(stopping ? g_tapeStopOnStop : g_tapeStopOnPause)) return false;
+    ApplyScrubTiming();
     if (!audio::TapeStop()) return false;
     g_scrubEnding = stopping ? ScrubEnding::Stop : ScrubEnding::Pause;
     return true;
@@ -669,10 +688,21 @@ static void TapeStopNow() {
 static bool CancelTapeStopping() {
     if (!TapeStopping()) return false;
     g_scrubEnding = ScrubEnding::None;  // nothing to pause or stop once it is down
-    audio::CancelTapeStop();
+    // Wound back up from as slow as it had got, or on at normal speed at once
+    ApplyScrubTiming();
+    if (!g_tapeStartOnPlay || !audio::TapeStart()) audio::CancelTapeStop();
     UpdateWindowTitle();
     UpdateStatusBar();
     return true;
+}
+
+// In tape seeking, playing from a pause or stop speeds the tape up from a
+// standstill (before audio::Play()).
+static void TapeStartFirst() {
+    if (g_seekMode != SEEK_MODE_TAPE || !g_tapeStartOnPlay || !audio::IsLoaded() || IsPlaying()) return;
+    if (audio::IsScrubbing()) return;
+    ApplyScrubTiming();
+    audio::TapeStart();
 }
 
 void StartScrubbing(int direction) {
@@ -681,6 +711,7 @@ void StartScrubbing(int direction) {
     if (g_isLiveStream ? !IsRewindable() : audio::Length() <= 0) return;
     if (!audio::IsScrubbing()) g_pausedBeforeScrub = !IsPlaying();
     const bool tape = g_seekMode == SEEK_MODE_TAPE;
+    ApplyScrubTiming();
     if (!audio::StartScrub(tape ? audio::ScrubStyle::Tape : audio::ScrubStyle::Spring, direction,
                            static_cast<float>(tape ? g_tapeSpeed : g_springSpeed))) {
         return;
@@ -692,7 +723,7 @@ void StartScrubbing(int direction) {
 void StopScrubbing() {
     if (!audio::IsScrubbing() || g_scrubEnding != ScrubEnding::None) return;
     // Tape winds back down first
-    if (g_seekMode == SEEK_MODE_TAPE && audio::ReleaseScrub()) {
+    if (g_seekMode == SEEK_MODE_TAPE && g_tapeSpinDown && audio::ReleaseScrub()) {
         g_scrubEnding = ScrubEnding::Release;
         return;
     }

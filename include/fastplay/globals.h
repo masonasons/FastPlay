@@ -97,6 +97,24 @@ extern int g_springSpeed;  // spring's top speed, times normal
 extern int g_tapeSpeed;    // tape's speed, times normal
 extern const int g_scrubSpeeds[];
 extern const int g_scrubSpeedCount;
+// What spring and tape seeking do, and how long it takes (milliseconds): the
+// Seeking options. Each behavior can be turned off.
+extern bool g_springWindUp;      // spring speeds up the longer it is held (off: its top speed at once)
+extern int g_springDoublingMs;   // ...doubling its speed this often
+extern bool g_tapeSpinUp;        // tape spins up to speed when held (off: at speed at once)
+extern int g_tapeSpinUpMs;
+extern bool g_tapeSpinDown;      // tape let go of winds back down (off: normal speed at once)
+extern int g_tapeSpinDownMs;
+extern bool g_tapeStopOnPause;   // in tape seeking, pausing slows the tape to a standstill first
+extern bool g_tapeStopOnStop;    // ...and stopping
+extern int g_tapeStopMs;
+extern bool g_tapeStartOnPlay;   // in tape seeking, playing speeds the tape up from a standstill
+extern int g_tapeStartMs;
+const int kScrubTimeMinMs = 50;
+const int kScrubTimeMaxMs = 5000;
+
+// [ and ] go round from the last effect to the first and back (off: they stop at the ends)
+extern bool g_wrapEffects;
 
 // Hotkey actions
 extern const HotkeyAction g_hotkeyActions[];
@@ -156,6 +174,7 @@ extern std::wstring g_convolutionIRPath;  // Path to impulse response WAV file
 extern std::wstring g_midiSoundFont;  // Path to SoundFont (.sf2/.sf3) file
 extern int g_midiMaxVoices;           // Max polyphony (1-1000, default 128)
 extern bool g_midiSincInterp;         // Use sinc interpolation (higher quality, more CPU)
+extern std::wstring g_midiOutputPort;  // A MIDI output port to play through instead; "" for the synthesizer
 
 // EQ frequency settings (Hz)
 extern float g_eqBassFreq;

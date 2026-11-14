@@ -130,6 +130,8 @@ void LoadSettings() {
     if (g_midiMaxVoices < 1) g_midiMaxVoices = 1;
     if (g_midiMaxVoices > 1000) g_midiMaxVoices = 1000;
     g_midiSincInterp = IniGetInt(L"MIDI", L"SincInterp", 0, g_configPath.c_str()) != 0;
+    IniGetString(L"MIDI", L"OutputPort", L"", midiBuf, kMaxPathChars, g_configPath.c_str());
+    g_midiOutputPort = midiBuf;
 
     // EQ frequencies loaded using string conversion (IniGetFloat defined later)
     wchar_t eqBuf[32];
@@ -220,6 +222,20 @@ void LoadSettings() {
                                g_scrubSpeeds[g_scrubSpeedCount - 1]);
     g_tapeSpeed = std::clamp(IniGetInt(L"Movement", L"TapeSpeed", 4, g_configPath.c_str()), g_scrubSpeeds[0],
                              g_scrubSpeeds[g_scrubSpeedCount - 1]);
+    auto scrubTime = [](const wchar_t* key, int fallback) {
+        return std::clamp(IniGetInt(L"Movement", key, fallback, g_configPath.c_str()), kScrubTimeMinMs, kScrubTimeMaxMs);
+    };
+    g_springWindUp = IniGetInt(L"Movement", L"SpringWindUp", 1, g_configPath.c_str()) != 0;
+    g_springDoublingMs = scrubTime(L"SpringDoublingMs", 500);
+    g_tapeSpinUp = IniGetInt(L"Movement", L"TapeSpinUp", 1, g_configPath.c_str()) != 0;
+    g_tapeSpinUpMs = scrubTime(L"TapeSpinUpMs", 250);
+    g_tapeSpinDown = IniGetInt(L"Movement", L"TapeSpinDown", 1, g_configPath.c_str()) != 0;
+    g_tapeSpinDownMs = scrubTime(L"TapeSpinDownMs", 400);
+    g_tapeStopOnPause = IniGetInt(L"Movement", L"TapeStopOnPause", 1, g_configPath.c_str()) != 0;
+    g_tapeStopOnStop = IniGetInt(L"Movement", L"TapeStopOnStop", 1, g_configPath.c_str()) != 0;
+    g_tapeStopMs = scrubTime(L"TapeStopMs", 600);
+    g_tapeStartOnPlay = IniGetInt(L"Movement", L"TapeStartOnPlay", 1, g_configPath.c_str()) != 0;
+    g_tapeStartMs = scrubTime(L"TapeStartMs", 600);
 
     // Validate current seek index
     if (g_currentSeekIndex < 0 || g_currentSeekIndex >= g_seekAmountCount || !g_seekEnabled[g_currentSeekIndex]) {
@@ -241,6 +257,7 @@ void LoadSettings() {
     g_currentEffectIndex = IniGetInt(L"Effects", L"CurrentEffect", 0, g_configPath.c_str());
     g_rateStepMode = IniGetInt(L"Effects", L"RateStepMode", 0, g_configPath.c_str());
     if (g_rateStepMode < 0 || g_rateStepMode > 1) g_rateStepMode = 0;
+    g_wrapEffects = IniGetInt(L"Effects", L"WrapList", 0, g_configPath.c_str()) != 0;
 
     // Validate current effect index
     if (g_currentEffectIndex < 0 || g_currentEffectIndex >= 4 || !g_effectEnabled[g_currentEffectIndex]) {
@@ -505,6 +522,7 @@ void SaveSettings() {
     swprintf(buf, 32, L"%d", g_midiMaxVoices);
     IniWriteString(L"MIDI", L"MaxVoices", buf, g_configPath.c_str());
     IniWriteString(L"MIDI", L"SincInterp", g_midiSincInterp ? L"1" : L"0", g_configPath.c_str());
+    IniWriteString(L"MIDI", L"OutputPort", g_midiOutputPort.c_str(), g_configPath.c_str());
 
     swprintf(buf, 32, L"%.1f", g_eqBassFreq);
     IniWriteString(L"Advanced", L"EQBassFreq", buf, g_configPath.c_str());
@@ -585,6 +603,24 @@ void SaveSettings() {
     IniWriteString(L"Movement", L"SpringSpeed", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%d", g_tapeSpeed);
     IniWriteString(L"Movement", L"TapeSpeed", buf, g_configPath.c_str());
+    auto writeFlag = [](const wchar_t* key, bool on) {
+        IniWriteString(L"Movement", key, on ? L"1" : L"0", g_configPath.c_str());
+    };
+    auto writeNumber = [&buf](const wchar_t* key, int value) {
+        swprintf(buf, 32, L"%d", value);
+        IniWriteString(L"Movement", key, buf, g_configPath.c_str());
+    };
+    writeFlag(L"SpringWindUp", g_springWindUp);
+    writeNumber(L"SpringDoublingMs", g_springDoublingMs);
+    writeFlag(L"TapeSpinUp", g_tapeSpinUp);
+    writeNumber(L"TapeSpinUpMs", g_tapeSpinUpMs);
+    writeFlag(L"TapeSpinDown", g_tapeSpinDown);
+    writeNumber(L"TapeSpinDownMs", g_tapeSpinDownMs);
+    writeFlag(L"TapeStopOnPause", g_tapeStopOnPause);
+    writeFlag(L"TapeStopOnStop", g_tapeStopOnStop);
+    writeNumber(L"TapeStopMs", g_tapeStopMs);
+    writeFlag(L"TapeStartOnPlay", g_tapeStartOnPlay);
+    writeNumber(L"TapeStartMs", g_tapeStartMs);
 
     // Save effect settings
     IniWriteString(L"Effects", L"Volume", g_effectEnabled[0] ? L"1" : L"0", g_configPath.c_str());
@@ -595,6 +631,7 @@ void SaveSettings() {
     IniWriteString(L"Effects", L"CurrentEffect", buf, g_configPath.c_str());
     swprintf(buf, 32, L"%d", g_rateStepMode);
     IniWriteString(L"Effects", L"RateStepMode", buf, g_configPath.c_str());
+    IniWriteString(L"Effects", L"WrapList", g_wrapEffects ? L"1" : L"0", g_configPath.c_str());
 
     // Save DSP effect settings
     IniWriteString(L"DSPEffects", L"Reverb", IsDSPEffectEnabled(DSPEffectType::Reverb) ? L"1" : L"0", g_configPath.c_str());

@@ -154,6 +154,10 @@ class SettingsScreen : SettingsPageScreen("Settings", {
         private fun file(title: String, name: String, mimeTypes: Array<String>) =
             SettingRow.FileChoice(title, mimeTypes, { Engine.fileName(name) }, { Engine.setFile(it, name) })
 
+        /** Spring's or tape's speed, from the speeds comma and period go through */
+        private fun speed(title: String, name: String) =
+            choice(title, name, listOf(2, 3, 4, 6, 8, 12, 16, 24, 32).map { "$it times" to it.toDouble() })
+
         private fun effect(title: String, identifier: Int) = SettingRow.Toggle(
             title,
             { Engine.effects.firstOrNull { it.identifier == identifier }?.enabled ?: false },
@@ -222,15 +226,47 @@ class SettingsScreen : SettingsPageScreen("Settings", {
                             { Engine.setSeekUnit(id, it) })
                     }))
             },
+            Page("Seeking", "Spring and tape seeking", R.drawable.ic_fast_forward) {
+                listOf(
+                    SettingSection("Spring",
+                        "In touch mode, Seek Mode chooses spring or tape seeking. Spring plays through the audio at " +
+                            "speed while held, the pitch kept, speeding up the longer it's held.",
+                        listOf(
+                            speed("Top Speed", "springSpeed"),
+                            toggle("Speed Up the Longer It's Held", "springWindUp"),
+                            number("Doubling Its Speed Every", "springDoublingMs", "ms", 50.0..5000.0),
+                        )),
+                    SettingSection("Tape",
+                        "Tape plays faster and higher, like a tape. The tape stop slows what's playing to a standstill " +
+                            "before it pauses or stops; the tape start speeds it up from one when it plays again. Times " +
+                            "are 50 to 5000 milliseconds.",
+                        listOf(
+                            speed("Speed", "tapeSpeed"),
+                            toggle("Spin Up When Held", "tapeSpinUp"),
+                            number("Spin-Up Time", "tapeSpinUpMs", "ms", 50.0..5000.0),
+                            toggle("Wind Down When Let Go", "tapeSpinDown"),
+                            number("Wind-Down Time", "tapeSpinDownMs", "ms", 50.0..5000.0),
+                            toggle("Tape Stop When Pausing", "tapeStopOnPause"),
+                            toggle("Tape Stop When Stopping", "tapeStopOnStop"),
+                            number("Tape Stop Length", "tapeStopMs", "ms", 50.0..5000.0),
+                            toggle("Tape Start When Playing", "tapeStartOnPlay"),
+                            number("Tape Start Length", "tapeStartMs", "ms", 50.0..5000.0),
+                        )),
+                )
+            },
             Page("Effects", "Which effects are on", R.drawable.ic_settings) {
                 listOf(
-                    SettingSection("Stream Effects", null, listOf(
-                        effect("Volume (0 to 400%)", 0),
-                        effect("Pitch (-12 to +12 semitones)", 1),
-                        effect("Tempo (-50% to +100%)", 2),
-                        effect("Playback Rate (0.5x to 2x)", 3),
-                        choice("Rate Step", "rateStepMode", listOf("0.01x" to 0.0, "Semitone" to 1.0)),
-                    )),
+                    SettingSection("Stream Effects",
+                        "With Wrap Around the Effect List on, the player's Effect control goes from the last " +
+                            "effect to the first, and back.",
+                        listOf(
+                            effect("Volume (0 to 400%)", 0),
+                            effect("Pitch (-12 to +12 semitones)", 1),
+                            effect("Tempo (-50% to +100%)", 2),
+                            effect("Playback Rate (0.5x to 2x)", 3),
+                            choice("Rate Step", "rateStepMode", listOf("0.01x" to 0.0, "Semitone" to 1.0)),
+                            toggle("Wrap Around the Effect List", "wrapEffects"),
+                        )),
                     SettingSection("DSP Effects",
                         "The player's Effect control goes through the settings of the effects that are on. " +
                             "Convolution reverb needs an impulse response file.",

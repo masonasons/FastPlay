@@ -158,6 +158,19 @@ int g_springSpeed = 16;
 int g_tapeSpeed = 4;
 const int g_scrubSpeeds[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
 const int g_scrubSpeedCount = sizeof(g_scrubSpeeds) / sizeof(g_scrubSpeeds[0]);
+bool g_springWindUp = true;
+int g_springDoublingMs = 500;
+bool g_tapeSpinUp = true;
+int g_tapeSpinUpMs = 250;
+bool g_tapeSpinDown = true;
+int g_tapeSpinDownMs = 400;
+bool g_tapeStopOnPause = true;
+bool g_tapeStopOnStop = true;
+int g_tapeStopMs = 600;
+bool g_tapeStartOnPlay = true;
+int g_tapeStartMs = 600;
+
+bool g_wrapEffects = false;
 
 // Hotkey actions. Saved hotkeys name their action by its key, so this list can be
 // reordered and added to freely; a key must never change once released.
@@ -274,6 +287,7 @@ std::wstring g_convolutionIRPath;
 std::wstring g_midiSoundFont;      // Path to SoundFont file
 int g_midiMaxVoices = 128;         // Max polyphony (1-1000)
 bool g_midiSincInterp = false;     // Use sinc interpolation
+std::wstring g_midiOutputPort;     // "" plays through the built-in synthesizer
 
 // EQ frequency settings (Hz)
 float g_eqBassFreq = 50.0f;

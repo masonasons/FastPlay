@@ -8,6 +8,7 @@
 #include "audio.h"
 #include "audio_internal.h"
 #include "globals.h"
+#include "midi_out.h"
 #include "mp4_index.h"
 #include "utils.h"
 
@@ -21,9 +22,12 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace audio {
@@ -304,9 +308,214 @@ private:
     std::string m_title;
 };
 
+// A MIDI file played through a MIDI output port (Options > MIDI), by a synthesizer
+// or other program outside FastPlay. Nothing is heard from FastPlay itself: the
+// decoder gives silence, so that the player's transport works as it does for any
+// file, and a thread of its own sends the events as the player's position passes
+// them. Pause stops the position, and so the events; a seek moves the sequencer,
+// which sends the notes off and the setup of the new place itself. Tempo and
+// rate changes move the position faster or slower, and so the music. Pitch
+// changes and the effects cannot reach it.
+class MidiPortDecoder : public Decoder {
+public:
+    ~MidiPortDecoder() override {
+        m_stop = true;
+        if (m_thread.joinable()) m_thread.join();
+        if (m_port) {
+            AllNotesOff();
+            m_port.reset();
+        }
+        if (m_sequencer) ss_sequencer_free(m_sequencer);
+        if (m_midi) ss_midi_free(m_midi);
+    }
+
+    bool Open(const std::wstring& path, std::wstring& error) {
+        m_port = OpenMidiOutputPort(g_midiOutputPort, error);
+        if (!m_port) return false;
+
+        SS_File* file = OpenFile(path);
+        if (!file) {
+            error = L"The file could not be opened.";
+            return false;
+        }
+        std::string name = WideToUtf8(path);
+        m_midi = ss_midi_load(file, name.c_str());
+        ss_file_close(file);
+        if (!m_midi) {
+            error = L"It is not a MIDI file FastPlay can read.";
+            return false;
+        }
+
+        SS_SequencerCallbacks callbacks = {};
+        callbacks.sample_rate = kRate;
+        callbacks.context = this;
+        callbacks.midi_command = [](void* context, const uint8_t* data, size_t length, double) {
+            static_cast<MidiPortDecoder*>(context)->Send(data, length);
+        };
+        m_sequencer = ss_sequencer_create_callbacks(&callbacks);
+        if (!m_sequencer || !ss_sequencer_load_midi(m_sequencer, m_midi)) {
+            error = L"The MIDI file could not be played.";
+            return false;
+        }
+        ss_sequencer_set_skip_to_first_note_on(m_sequencer, false);  // the file's own timing
+        ss_sequencer_set_loop_count(m_sequencer, 0);
+        ss_sequencer_play(m_sequencer);
+
+        m_length = m_midi->duration;
+        m_title = Text(m_midi->binary_name, m_midi->binary_name_length);
+        m_thread = std::thread([this]() { Run(); });
+        return true;
+    }
+
+    int SampleRate() const override { return kRate; }
+
+    // Silence, for as long as the file is; what is heard comes from the port
+    int Read(float* out, int frames) override {
+        double end = m_length + kTailSeconds;
+        int left = static_cast<int>((end - m_readSeconds) * kRate);
+        int n = std::clamp(std::min(frames, left), 0, frames);
+        if (n > 0) std::memset(out, 0, static_cast<size_t>(n) * 2 * sizeof(float));
+        m_readSeconds += static_cast<double>(n) / kRate;
+        return n;
+    }
+
+    bool Seek(double seconds) override {
+        m_readSeconds = std::clamp(seconds, 0.0, m_length);
+        return true;
+    }
+
+    void Abort() override {}
+    double Length() const override { return m_length; }
+    bool IsLive() const override { return false; }
+
+    std::string Tag(const std::string& name) const override {
+        if (!m_midi) return "";
+        const SS_RMIDIInfo& info = m_midi->rmidi_info;
+        auto field = [](const uint8_t* bytes, size_t length) { return bytes ? Text(bytes, length) : std::string(); };
+        const char* key = name.c_str();
+        if (StrICmp(key, "TITLE") == 0) {
+            std::string title = field(info.name, info.name_len);
+            return title.empty() ? m_title : title;
+        }
+        if (StrICmp(key, "ARTIST") == 0) return field(info.artist, info.artist_len);
+        if (StrICmp(key, "ALBUM") == 0) return field(info.album, info.album_len);
+        return "";
+    }
+
+    std::string StreamTitle() const override { return ""; }
+    std::vector<Chapter> Chapters() const override { return {}; }
+    int Bitrate() const override { return 0; }
+    bool IsVbr() const override { return false; }
+    int SourceChannels() const override { return 2; }
+    int SourceSampleRate() const override { return kRate; }
+    int SourceBits() const override { return 0; }
+    std::string CodecName() const override { return "MIDI, through " + WideToUtf8(g_midiOutputPort); }
+
+private:
+    // The sequencer's events, as they come; the port-select messages of a file
+    // for several ports are not for a port
+    void Send(const uint8_t* data, size_t length) {
+        if (length == 0 || data[0] == 0xF5) return;
+        if ((data[0] & 0xF0) == 0x90 && length >= 3) {
+            m_sounding[data[0] & 0x0F][data[1] & 0x7F] = data[2] != 0;
+        } else if ((data[0] & 0xF0) == 0x80 && length >= 2) {
+            m_sounding[data[0] & 0x0F][data[1] & 0x7F] = false;
+        }
+        m_port->Send(data, length);
+    }
+
+    // Every note off, and the sustain pedal up, on every channel: for a pause, and
+    // the end. Notes are let go one by one too, for a device that ignores the
+    // all-notes-off controller.
+    void AllNotesOff() {
+        for (int channel = 0; channel < 16; channel++) {
+            for (int key = 0; key < 128; key++) {
+                if (!m_sounding[channel][key]) continue;
+                uint8_t off[3] = {static_cast<uint8_t>(0x80 | channel), static_cast<uint8_t>(key), 0};
+                m_port->Send(off, 3);
+                m_sounding[channel][key] = false;
+            }
+            uint8_t sustain[3] = {static_cast<uint8_t>(0xB0 | channel), 64, 0};
+            m_port->Send(sustain, 3);
+            uint8_t all[3] = {static_cast<uint8_t>(0xB0 | channel), 123, 0};
+            m_port->Send(all, 3);
+        }
+    }
+
+    // Follows the player's position, sending what it passes. The position comes
+    // from the device callback, in steps; between steps it is reckoned on from the
+    // last, at the speed the last steps went, so the timing is the file's.
+    void Run() {
+        using clock = std::chrono::steady_clock;
+        double sent = -1;            // the sequencer's time
+        double reported = -1;        // the player's last position
+        clock::time_point reportedAt = clock::now();
+        double speed = 1;            // position per second, lately
+        bool silent = true;
+        while (!m_stop) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            if (m_stop) break;
+            const bool playing = audio::GetState() == State::Playing && !audio::IsReverse();
+            if (!playing) {
+                if (!silent) {
+                    AllNotesOff();
+                    silent = true;
+                }
+                reported = -1;
+                continue;
+            }
+            double position = audio::Position();
+            clock::time_point now = clock::now();
+            if (position != reported) {
+                if (reported >= 0) {
+                    double seconds = std::chrono::duration<double>(now - reportedAt).count();
+                    if (seconds > 0.01 && position > reported && position - reported < 2) {
+                        double measured = (position - reported) / seconds;
+                        speed = speed * 0.7 + measured * 0.3;
+                    }
+                }
+                reported = position;
+                reportedAt = now;
+            } else {
+                position = reported + std::chrono::duration<double>(now - reportedAt).count() * speed;
+            }
+            if (sent < 0 || position < sent || position - sent > 1.0) {
+                // A start, a seek, or a jump: the sequencer goes there (sending the
+                // notes off and the setup of that place itself)
+                ss_sequencer_set_time(m_sequencer, std::clamp(position, 0.0, m_length));
+                ss_sequencer_play(m_sequencer);
+                sent = position;
+                silent = false;
+                continue;
+            }
+            if (position > sent) {
+                ss_sequencer_tick(m_sequencer, static_cast<uint32_t>((position - sent) * kRate));
+                sent = position;
+                silent = false;
+            }
+        }
+    }
+
+    std::unique_ptr<MidiOutPort> m_port;
+    SS_MIDIFile* m_midi = nullptr;
+    SS_Sequencer* m_sequencer = nullptr;
+    std::thread m_thread;
+    std::atomic<bool> m_stop{false};
+    bool m_sounding[16][128] = {};
+    double m_length = 0;
+    double m_readSeconds = 0;
+    std::string m_title;
+};
+
 }  // namespace
 
 std::unique_ptr<Decoder> OpenMidiDecoder(const std::wstring& path, std::wstring& error) {
+    if (!g_midiOutputPort.empty()) {
+        // Through the port chosen; if it is gone, the synthesizer, as if none were
+        auto port = std::make_unique<MidiPortDecoder>();
+        std::wstring portError;
+        if (port->Open(path, portError)) return port;
+    }
     auto decoder = std::make_unique<MidiDecoder>();
     if (!decoder->Open(path, error)) return nullptr;
     return decoder;

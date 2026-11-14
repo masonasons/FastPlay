@@ -45,6 +45,12 @@ Option Clamped(float& value, float low, float high) {
             [&value, low, high](double v) { value = std::clamp(static_cast<float>(v), low, high); }};
 }
 
+// A time spring or tape seeking takes, in milliseconds
+Option ScrubTime(int& value) {
+    return {[&value]() { return static_cast<double>(value); },
+            [&value](double v) { value = std::clamp(static_cast<int>(v), kScrubTimeMinMs, kScrubTimeMaxMs); }};
+}
+
 // Every option the settings screens show, as the desktop's Options window has them.
 const std::map<std::string, Option>& Options() {
     static const std::map<std::string, Option> options = {
@@ -76,8 +82,23 @@ const std::map<std::string, Option>& Options() {
         {"speechTrackChange", Flag(g_speechTrackChange)},
         {"speechVolume", Flag(g_speechVolume)},
         {"speechEffect", Flag(g_speechEffect)},
+        // Seeking
+        {"springSpeed", Plain(g_springSpeed)},
+        {"springWindUp", Flag(g_springWindUp)},
+        {"springDoublingMs", ScrubTime(g_springDoublingMs)},
+        {"tapeSpeed", Plain(g_tapeSpeed)},
+        {"tapeSpinUp", Flag(g_tapeSpinUp)},
+        {"tapeSpinUpMs", ScrubTime(g_tapeSpinUpMs)},
+        {"tapeSpinDown", Flag(g_tapeSpinDown)},
+        {"tapeSpinDownMs", ScrubTime(g_tapeSpinDownMs)},
+        {"tapeStopOnPause", Flag(g_tapeStopOnPause)},
+        {"tapeStopOnStop", Flag(g_tapeStopOnStop)},
+        {"tapeStopMs", ScrubTime(g_tapeStopMs)},
+        {"tapeStartOnPlay", Flag(g_tapeStartOnPlay)},
+        {"tapeStartMs", ScrubTime(g_tapeStartMs)},
         // Effects
         {"rateStepMode", Plain(g_rateStepMode)},
+        {"wrapEffects", Flag(g_wrapEffects)},
         {"reverbAlgorithm", {[]() { return static_cast<double>(g_reverbAlgorithm); },
                              [](double v) { SetReverbAlgorithm(std::clamp(static_cast<int>(v), 0, 2)); }}},
         // Advanced

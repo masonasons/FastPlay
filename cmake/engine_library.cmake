@@ -17,6 +17,7 @@ set(FPE_SOURCES
     src/audio/engine.cpp
     src/audio/http_cache.cpp
     src/audio/miniaudio.c
+    src/platform/midi_out_none.cpp
     src/audio/scrubber.cpp
     src/audio/tempo_processor.cpp
     src/audio/recorder.cpp
