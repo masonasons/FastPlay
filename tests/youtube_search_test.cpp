@@ -90,6 +90,17 @@ void CheckEscapes() {
 	Check(results[0].channel == Utf8ToWide("Caf\xC3\xA9"), "Channel Unicode escapes changed");
 }
 
+void CheckHtmlEntities() {
+	// The Data API HTML-escapes snippet text inside its JSON strings
+	responseBody = R"({"items":[{"id":{"videoId":"entities"},"snippet":{"title":"Don&#39;t Stop &amp; &quot;Go&quot; &lt;3 &#x1F600; &bogus; AT&T","channelTitle":"Rock &amp; Roll","channelId":"channel"}}]})";
+	std::vector<YouTubeResult> results;
+	std::wstring next;
+	Check(SearchWithAPI(L"test", results, next, L""), "Escaped title was lost");
+	Check(results.size() == 1, "Escaped title changed the entry boundaries");
+	Check(results[0].title == Utf8ToWide("Don't Stop & \"Go\" <3 \xF0\x9F\x98\x80 &bogus; AT&T"), "HTML entities in title were not decoded");
+	Check(results[0].channel == L"Rock & Roll", "HTML entities in channel were not decoded");
+}
+
 void CheckEmptyAndTruncatedResponses() {
 	for (const char* body : {"", "{}", "{\"items\":[]}", "{\"items\":[{\"id\":{\"videoId\":\"cut-off\"}"}) {
 		responseBody = body;
@@ -118,6 +129,7 @@ int main() {
 		CheckIncompleteEntries();
 		CheckMetadataOutsideResults();
 		CheckEscapes();
+		CheckHtmlEntities();
 		CheckEmptyAndTruncatedResponses();
 		std::cout << "YouTube search regression checks passed\n";
 		return 0;
