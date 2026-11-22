@@ -36,24 +36,6 @@ static std::string ExtractJsonString(const std::string& json, const std::string&
 }
 
 // Extract first object from JSON array
-static std::string ExtractFirstArrayObject(const std::string& json) {
-    size_t start = json.find('[');
-    if (start == std::string::npos) return "";
-
-    size_t objStart = json.find('{', start);
-    if (objStart == std::string::npos) return "";
-
-    int depth = 1;
-    size_t objEnd = objStart + 1;
-    while (objEnd < json.length() && depth > 0) {
-        if (json[objEnd] == '{') depth++;
-        else if (json[objEnd] == '}') depth--;
-        objEnd++;
-    }
-
-    return json.substr(objStart, objEnd - objStart);
-}
-
 // Convert string to lowercase
 static std::string ToLower(const std::string& str) {
     std::string result = str;
@@ -155,17 +137,17 @@ UpdateInfo CheckForUpdates() {
     HttpResult result = HttpGet(Utf8ToWide(GITHUB_API_URL), options);
     const std::string& response = result.body;
 
+    if (result.completed && result.status == 404) {
+        info.errorMessage = "No FastPlay release found.";
+        return info;
+    }
     if (!result.completed || result.status != 200 || response.empty()) {
         info.errorMessage = "Failed to connect to GitHub. Please check your internet connection.";
         return info;
     }
 
-    // Get first (latest) release
-    std::string release = ExtractFirstArrayObject(response);
-    if (release.empty()) {
-        info.errorMessage = "No releases found.";
-        return info;
-    }
+    // The release itself (one object, not a list)
+    const std::string& release = response;
 
     std::string body = ExtractJsonString(release, "body");
     std::string tagName = ExtractJsonString(release, "tag_name");

@@ -25,8 +25,15 @@ if not exist "temp_dl" mkdir temp_dl
 
 echo Downloading SQLite...
 powershell -Command "Invoke-WebRequest -Uri 'https://sqlite.org/2026/sqlite-amalgamation-3510200.zip' -OutFile 'temp_dl\sqlite.zip'"
-powershell -Command "Expand-Archive -Path 'temp_dl\sqlite.zip' -DestinationPath 'temp_dl\sqlite' -Force"
+rem tar (in Windows since 10) rather than Expand-Archive, which breaks when Windows
+rem PowerShell loads PowerShell 7's Archive module
+if not exist "temp_dl\sqlite" mkdir "temp_dl\sqlite"
+tar -xf "temp_dl\sqlite.zip" -C "temp_dl\sqlite"
 copy /y "temp_dl\sqlite\sqlite-amalgamation-3510200\sqlite3.c" "src\" >nul
+if not exist "src\sqlite3.c" (
+    echo Error: SQLite could not be downloaded or unpacked.
+    exit /b 1
+)
 
 echo.
 echo Cloning Speedy (Google's nonlinear speech speedup)...

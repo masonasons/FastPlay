@@ -13,6 +13,8 @@
 #endif
 
 #define GITHUB_REPO "masonasons/FastPlay"
-#define GITHUB_API_URL "https://api.github.com/repos/masonasons/FastPlay/releases"
+// FastPlay's own release, by its tag: the repository has others (the engine's,
+// engine-latest), and the newest of all is not always FastPlay's
+#define GITHUB_API_URL "https://api.github.com/repos/masonasons/FastPlay/releases/tags/latest"
 
 #endif // FASTPLAY_VERSION_H
