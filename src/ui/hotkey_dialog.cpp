@@ -8,7 +8,7 @@
 #include "hotkeys.h"
 #include "accessibility.h"
 #include "keycodes.h"
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
 #include "system_keys.h"
 #endif
 
@@ -156,6 +156,19 @@ private:
         if (event.AltDown()) modifiers |= MOD_ALT;          // Option
         if (event.ShiftDown()) modifiers |= MOD_SHIFT;
         if (event.RawControlDown()) modifiers |= MOD_WIN;   // Control
+        SetKey(modifiers, vk);
+#elif defined(__WXGTK__)
+        // Stored as Windows virtual key codes on every system (keycodes.h), by the
+        // key's place (its hardware code), not the character it types
+        unsigned vk = LinuxKeyCodeToVirtualKey(static_cast<unsigned>(event.GetRawKeyFlags()));
+        if (vk == 0) {
+            event.Skip();
+            return;
+        }
+        unsigned modifiers = 0;
+        if (event.ControlDown()) modifiers |= MOD_CONTROL;
+        if (event.AltDown()) modifiers |= MOD_ALT;
+        if (event.ShiftDown()) modifiers |= MOD_SHIFT;
         SetKey(modifiers, vk);
 #else
         event.Skip();

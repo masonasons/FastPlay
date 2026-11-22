@@ -109,7 +109,7 @@ private:
     std::unique_ptr<TrayIcon> m_tray;
     bool m_hotkeysRegistered = false;
     std::wstring m_titleChapter;  // the chapter the window title names, to see it change
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
     std::wstring m_nowPlayingTitle;  // for Control Center's Now Playing
 #endif
 };

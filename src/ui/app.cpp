@@ -16,6 +16,9 @@
 #include <wx/ipc.h>
 #include <wx/snglinst.h>
 #include <wx/filename.h>
+#ifdef __WXGTK__
+#include <unistd.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -27,7 +30,19 @@
 namespace {
 
 // Files are handed from a newly started FastPlay to the one already running.
-const char* kIpcService = "FastPlay";
+#ifdef __WXGTK__
+// On Unix wxWidgets takes a name with a slash in it as a socket's path, and any
+// other as a TCP service; this socket is in the user's own runtime folder.
+wxString IpcService() {
+    wxString dir = wxGetenv("XDG_RUNTIME_DIR");
+    if (dir.empty()) return wxString::Format("/tmp/FastPlay-%lu.ipc", static_cast<unsigned long>(getuid()));
+    return dir + "/FastPlay.ipc";
+}
+#else
+wxString IpcService() {
+    return "FastPlay";
+}
+#endif
 const char* kIpcTopic = "files";
 // Sent instead when it was started without files (from the taskbar, a shortcut,
 // Windows+number): the running one shows its window, hidden to the tray or not.
@@ -101,7 +116,7 @@ std::vector<std::wstring> FastPlayApp::ExistingPathArgs() const {
 
 bool FastPlayApp::HandOverToRunningInstance(const std::vector<std::wstring>& files) {
     wxClient client;
-    std::unique_ptr<wxConnectionBase> connection(client.MakeConnection("localhost", kIpcService, kIpcTopic));
+    std::unique_ptr<wxConnectionBase> connection(client.MakeConnection("localhost", IpcService(), kIpcTopic));
     if (!connection) return false;
 #ifdef _WIN32
     // Windows lets only the program the user just started come to the front;
@@ -146,7 +161,7 @@ bool FastPlayApp::OnInit() {
     // Every running FastPlay accepts files, as any FastPlay window used to, so a
     // handoff still works after the first of several instances has closed.
     m_server = std::make_unique<FileServer>();
-    m_server->Create(kIpcService);
+    m_server->Create(IpcService());
 #endif
 
     LoadSettings();

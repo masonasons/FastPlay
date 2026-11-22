@@ -1,6 +1,6 @@
 # FastPlay
 
-A fast, accessible audio player for Windows and macOS with support for tempo/pitch shifting, effects, and screen reader accessibility.
+A fast, accessible audio player for Windows, macOS and Linux with support for tempo/pitch shifting, effects, and screen reader accessibility.
 
 ## Features
 
@@ -50,6 +50,39 @@ Disable screen reader support:
 ```batch
 build_new.bat no-speech
 ```
+
+## Building on Linux
+
+Install a compiler, CMake, Git and the development packages for GTK 3, libcurl,
+OpenSSL, zlib, Speech Dispatcher and ALSA. On Fedora:
+
+```sh
+sudo dnf install gcc-c++ cmake ninja-build git gtk3-devel libcurl-devel openssl-devel \
+    zlib-ng-compat-devel speech-dispatcher-devel alsa-lib-devel
+```
+
+On Debian and Ubuntu:
+
+```sh
+sudo apt install g++ cmake ninja-build git libgtk-3-dev libcurl4-openssl-dev libssl-dev \
+    zlib1g-dev libspeechd-dev libasound2-dev
+```
+
+Then run `./download-deps.sh` once (on Linux it builds FastPlay's FFmpeg itself,
+which takes a few minutes), and build:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+build/FastPlay
+```
+
+On Linux FastPlay plays through PulseAudio, or PipeWire's PulseAudio service;
+speaks through Speech Dispatcher, as Orca does; shows what is playing and takes
+the media keys through MPRIS; and plays MIDI through output ports of the ALSA
+sequencer (without ALSA's headers, through the built-in synthesizer only). Global
+hotkeys need an X11 session: Wayland does not let a program take keys from the
+others. Settings and the library are in `~/.local/share/FastPlay`.
 
 ## Running
 

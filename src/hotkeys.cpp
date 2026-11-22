@@ -12,7 +12,16 @@ static std::wstring KeyName(unsigned vk) {
     if (vk >= VK_F1 && vk <= VK_F24) return L"F" + std::to_wstring(vk - VK_F1 + 1);
     if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) return L"Num " + std::to_wstring(vk - VK_NUMPAD0);
     switch (vk) {
+#ifdef __APPLE__
+        // As the Mac's keys are labelled
         case VK_BACK: return L"Delete";
+        case VK_INSERT: return L"Help";
+        case VK_DELETE: return L"Forward Delete";
+#else
+        case VK_BACK: return L"Backspace";
+        case VK_INSERT: return L"Insert";
+        case VK_DELETE: return L"Delete";
+#endif
         case VK_TAB: return L"Tab";
         case VK_CLEAR: return L"Clear";
         case VK_RETURN: return L"Return";
@@ -26,8 +35,6 @@ static std::wstring KeyName(unsigned vk) {
         case VK_UP: return L"Up";
         case VK_RIGHT: return L"Right";
         case VK_DOWN: return L"Down";
-        case VK_INSERT: return L"Help";
-        case VK_DELETE: return L"Forward Delete";
         case VK_MULTIPLY: return L"Num *";
         case VK_ADD: return L"Num +";
         case VK_SUBTRACT: return L"Num -";
@@ -65,7 +72,11 @@ std::wstring FormatHotkey(unsigned modifiers, unsigned vk) {
     if (modifiers & MOD_CONTROL) result += L"Ctrl+";
     if (modifiers & MOD_ALT) result += L"Alt+";
     if (modifiers & MOD_SHIFT) result += L"Shift+";
+#ifdef _WIN32
     if (modifiers & MOD_WIN) result += L"Win+";
+#else
+    if (modifiers & MOD_WIN) result += L"Super+";
+#endif
 #endif
 
 #ifdef _WIN32

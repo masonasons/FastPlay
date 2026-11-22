@@ -1,13 +1,14 @@
 #!/bin/bash
-# Download FastPlay's dependencies for macOS: SQLite, the tempo libraries and FDK AAC
-# (into deps/), and FastPlay's FFmpeg (into ffmpeg/). download-deps.bat is the
-# Windows equivalent.
+# Download FastPlay's dependencies for macOS and Linux: SQLite, the tempo libraries
+# and FDK AAC (into deps/), and FastPlay's FFmpeg (into ffmpeg/: CI's on the Mac,
+# built here on Linux). download-deps.bat is the Windows equivalent.
 set -e
 
 cd "$(dirname "$0")"
 
 echo "============================================"
-echo "FastPlay Dependency Downloader (macOS)"
+if [ "$(uname -s)" = Darwin ]; then os=macos; else os=linux; fi
+echo "FastPlay Dependency Downloader ($os)"
 echo "============================================"
 echo
 
@@ -45,7 +46,14 @@ clone https://github.com/mstorsjo/fdk-aac.git deps/fdk-aac
 
 # FFmpeg: FastPlay's audio-only build (ci/ffmpeg). CI builds it in the job; a local
 # build takes CI's latest with the GitHub CLI, or builds it: ci/ffmpeg/build.sh macos ffmpeg
-if [ "${CI:-}" != "true" ]; then
+if [ "$os" = linux ]; then
+    # No Linux FFmpeg in CI: built here (a few minutes), unless it is already
+    if [ ! -f ffmpeg/lib/libavformat.a ]; then
+        echo
+        echo "Building FFmpeg..."
+        bash ci/ffmpeg/build.sh linux ffmpeg
+    fi
+elif [ "${CI:-}" != "true" ]; then
     echo
     echo "Downloading FFmpeg from CI..."
     if command -v gh > /dev/null; then
@@ -76,4 +84,5 @@ rm -rf temp_dl
 echo
 echo "Done. Build with:"
 echo "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release"
-echo "  cmake --build build --parallel \"$(sysctl -n hw.ncpu)\""
+if [ "$os" = macos ]; then jobs="$(sysctl -n hw.ncpu)"; else jobs="$(nproc)"; fi
+echo "  cmake --build build --parallel $jobs"

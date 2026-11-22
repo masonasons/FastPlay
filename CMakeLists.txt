@@ -85,7 +85,13 @@ FetchContent_Declare(wxWidgets
 )
 set(wxBUILD_SHARED OFF CACHE INTERNAL "")
 # The same C runtime as FastPlay; mixing the static and DLL runtimes fails at link time.
-set(wxBUILD_USE_STATIC_RUNTIME ON CACHE INTERNAL "")
+# Not on Linux: there it means -static-libstdc++, which few systems have the library
+# for, and without it every one of wxWidgets' configure checks fails to link.
+if(WIN32 OR APPLE)
+    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE INTERNAL "")
+else()
+    set(wxBUILD_USE_STATIC_RUNTIME OFF CACHE INTERNAL "")
+endif()
 set(wxBUILD_TESTS OFF CACHE INTERNAL "")
 set(wxBUILD_SAMPLES OFF CACHE INTERNAL "")
 set(wxBUILD_DEMOS OFF CACHE INTERNAL "")
@@ -425,10 +431,30 @@ if(APPLE AND NOT FASTPLAY_IOS)
         src/platform/folder_watch_mac.cpp
     )
 elseif(NOT WIN32 AND NOT FASTPLAY_MOBILE)
-    list(APPEND FASTPLAY_SOURCES src/platform/updater_unsupported.cpp src/platform/folder_watch_none.cpp)
-endif()
-if(NOT WIN32 AND NOT APPLE AND NOT FASTPLAY_ANDROID)
-    list(APPEND FASTPLAY_SOURCES src/platform/midi_out_none.cpp)  # Linux: no MIDI ports yet
+    # Linux: GLib and GIO for the XDG folders, the desktop's file associations and
+    # MPRIS (the media keys and the desktop's Now Playing), Speech Dispatcher for
+    # speech, inotify for watching folders, X11 key grabs for global hotkeys. No
+    # updater: the system's packages do that.
+    set(FASTPLAY_LINUX ON)
+    list(APPEND FASTPLAY_SOURCES
+        src/platform/file_assoc_linux.cpp
+        src/platform/folder_watch_linux.cpp
+        src/platform/now_playing_linux.cpp
+        src/platform/paths_linux.cpp
+        src/platform/speech_linux.cpp
+        src/platform/startup_linux.cpp
+        src/platform/system_keys_linux.cpp
+        src/platform/updater_unsupported.cpp
+    )
+    # MIDI output ports through the ALSA sequencer, if its headers are here
+    # (alsa-lib-devel, libasound2-dev); without them, the built-in synthesizer only
+    find_package(ALSA)
+    if(ALSA_FOUND)
+        list(APPEND FASTPLAY_SOURCES src/platform/midi_out_alsa.cpp)
+    else()
+        message(STATUS "ALSA not found: no MIDI output ports")
+        list(APPEND FASTPLAY_SOURCES src/platform/midi_out_none.cpp)
+    endif()
 endif()
 
 if(FASTPLAY_IOS)
@@ -504,6 +530,31 @@ if(NOT FASTPLAY_MOBILE)
     if(NOT WIN32)
         find_package(CURL REQUIRED)
         target_link_libraries(FastPlay PRIVATE CURL::libcurl)
+    endif()
+    if(FASTPLAY_LINUX)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(FASTPLAY_GIO REQUIRED IMPORTED_TARGET gio-2.0 gio-unix-2.0)
+        pkg_check_modules(FASTPLAY_SPEECHD REQUIRED IMPORTED_TARGET speech-dispatcher)
+        pkg_check_modules(FASTPLAY_GTK REQUIRED IMPORTED_TARGET gtk+-3.0 x11)
+        target_link_libraries(FastPlay PRIVATE
+            PkgConfig::FASTPLAY_GIO PkgConfig::FASTPLAY_SPEECHD PkgConfig::FASTPLAY_GTK)
+        if(ALSA_FOUND)
+            target_link_libraries(FastPlay PRIVATE ALSA::ALSA)
+        endif()
+        # FFmpeg's static libraries with Codec 2, and what they use of the system:
+        # OpenSSL for HTTPS, zlib
+        find_package(OpenSSL REQUIRED)
+        find_package(ZLIB REQUIRED)
+        target_link_libraries(FastPlay PRIVATE
+            ${FASTPLAY_FFMPEG_DIR}/lib/libavformat.a ${FASTPLAY_FFMPEG_DIR}/lib/libavcodec.a
+            ${FASTPLAY_FFMPEG_DIR}/lib/libswresample.a ${FASTPLAY_FFMPEG_DIR}/lib/libavutil.a
+            ${FASTPLAY_FFMPEG_DIR}/lib/libcodec2.a
+            OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB m ${CMAKE_DL_LIBS})
+        # miniaudio plays through PulseAudio, which PipeWire serves as well (it
+        # loads the library when it starts; nothing to link). Not straight to ALSA:
+        # that would bypass the sound server. The null backend is for the tests.
+        target_compile_definitions(FastPlay PRIVATE
+            MA_ENABLE_ONLY_SPECIFIC_BACKENDS MA_ENABLE_PULSEAUDIO MA_ENABLE_NULL)
     endif()
 endif()
 
