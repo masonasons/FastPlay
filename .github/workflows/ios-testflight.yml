@@ -32,7 +32,9 @@ concurrency:
 
 jobs:
   testflight:
-    runs-on: macos-26
+    # macOS 27 with Xcode 27, for the iOS 27 SDK: GitHub's image with it is still a
+    # preview (macos-26 has Xcode 26 only)
+    runs-on: xcode-27
     timeout-minutes: 120
 
     steps:
@@ -68,13 +70,14 @@ jobs:
         run: JOBS="$(sysctl -n hw.ncpu)" bash ci/ffmpeg/build.sh ios ffmpeg-ios
 
       # The engine's own build, and the libraries CMake fetches for it, kept
-      # between runs
+      # between runs. By Xcode: CMake's cache names the compiler by its path, which
+      # is gone on another Xcode's image.
       - name: Cache the engine build
         uses: actions/cache@v4
         with:
           path: ios/build/core-iphoneos
-          key: ios-core-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: ios-core-
+          key: ios-core-xcode-27-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ios-core-xcode-27-
 
       # One certificate, reused every run, in a keychain of its own. (Automatic
       # signing made a new certificate on each run, there being none on the runner.)
