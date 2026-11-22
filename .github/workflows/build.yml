@@ -252,3 +252,10 @@ jobs:
           make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The action makes a draft, uploads to it and publishes it, but has left it a
+      # draft while saying it published it, and the updater cannot see a draft
+      - name: Make sure the release is published
+        run: gh release edit latest --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
