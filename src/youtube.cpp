@@ -638,6 +638,59 @@ std::wstring ParseJsonString(const std::wstring& json, const std::wstring& key) 
     return value;
 }
 
+// UTF-8 text with HTML/XML character references decoded (&amp; &lt; &gt; &quot;
+// &apos; &#39; &#x27; ...). The Data API escapes titles this way inside its JSON,
+// and feeds use the same escapes. Anything unrecognized is kept as written.
+std::string DecodeEntities(const std::string& text) {
+    std::string out;
+    for (size_t i = 0; i < text.size(); i++) {
+        size_t semi = text[i] == '&' ? text.find(';', i) : std::string::npos;
+        if (semi == std::string::npos || semi - i > 10) {
+            out += text[i];
+            continue;
+        }
+        std::string entity = text.substr(i + 1, semi - i - 1);
+        if (entity == "amp") out += '&';
+        else if (entity == "lt") out += '<';
+        else if (entity == "gt") out += '>';
+        else if (entity == "quot") out += '"';
+        else if (entity == "apos") out += '\'';
+        else if (entity == "nbsp") out += "\xC2\xA0";
+        else if (entity.size() > 1 && entity[0] == '#') {
+            bool hex = entity[1] == 'x' || entity[1] == 'X';
+            const char* digits = entity.c_str() + (hex ? 2 : 1);
+            char* end = nullptr;
+            unsigned long code = std::strtoul(digits, &end, hex ? 16 : 10);
+            if (end == digits || *end || code == 0 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+                out += text.substr(i, semi - i + 1);
+            } else if (code < 0x80) {
+                out += static_cast<char>(code);
+            } else if (code < 0x800) {
+                out += static_cast<char>(0xC0 | (code >> 6));
+                out += static_cast<char>(0x80 | (code & 0x3F));
+            } else if (code < 0x10000) {
+                out += static_cast<char>(0xE0 | (code >> 12));
+                out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+                out += static_cast<char>(0x80 | (code & 0x3F));
+            } else {
+                out += static_cast<char>(0xF0 | (code >> 18));
+                out += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+                out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+                out += static_cast<char>(0x80 | (code & 0x3F));
+            }
+        } else {
+            out += text.substr(i, semi - i + 1);
+        }
+        i = semi;
+    }
+    return out;
+}
+
+std::wstring DecodeEntities(const std::wstring& text) {
+    if (text.find(L'&') == std::wstring::npos) return text;
+    return Utf8ToWide(DecodeEntities(WideToUtf8(text)));
+}
+
 // Find the end of a JSON object or array, ignoring delimiters inside strings.
 // Search entries must be read as whole objects: a snippet can be arbitrarily
 // long, and its position relative to the video ID is not fixed.
@@ -729,8 +782,9 @@ bool SearchWithAPI(const std::wstring& query, std::vector<YouTubeResult>& result
 		std::wstring item = response.substr(pos, end - pos);
 		YouTubeResult result;
 		result.id = ParseJsonString(item, L"videoId");
-		result.title = ParseJsonString(item, L"title");
-		result.channel = ParseJsonString(item, L"channelTitle");
+		// The Data API HTML-escapes text in snippets (&#39; &amp; &quot;)
+		result.title = DecodeEntities(ParseJsonString(item, L"title"));
+		result.channel = DecodeEntities(ParseJsonString(item, L"channelTitle"));
 		result.channelId = ParseJsonString(item, L"channelId");
 		if (!result.id.empty() && !result.title.empty()) results.push_back(std::move(result));
 		pos = end;
@@ -907,34 +961,7 @@ static std::string XmlText(const std::string& xml, const char* tag, size_t from,
     start += open.size();
     size_t stop = xml.find(close, start);
     if (stop == std::string::npos) return "";
-    std::string text = xml.substr(start, stop - start), out;
-    for (size_t i = 0; i < text.size(); i++) {
-        if (text[i] != '&') {
-            out += text[i];
-            continue;
-        }
-        size_t semi = text.find(';', i);
-        if (semi == std::string::npos) {
-            out += text[i];
-            continue;
-        }
-        std::string entity = text.substr(i + 1, semi - i - 1);
-        if (entity == "amp") out += '&';
-        else if (entity == "lt") out += '<';
-        else if (entity == "gt") out += '>';
-        else if (entity == "quot") out += '"';
-        else if (entity == "apos") out += '\'';
-        else if (!entity.empty() && entity[0] == '#') {
-            unsigned long code = entity.size() > 1 && (entity[1] == 'x' || entity[1] == 'X')
-                                     ? std::strtoul(entity.c_str() + 2, nullptr, 16)
-                                     : std::strtoul(entity.c_str() + 1, nullptr, 10);
-            out += WideToUtf8(std::wstring(1, static_cast<wchar_t>(code)));
-        } else {
-            out += text.substr(i, semi - i + 1);
-        }
-        i = semi;
-    }
-    return out;
+    return DecodeEntities(xml.substr(start, stop - start));
 }
 
 bool YouTubeReadFeed(YouTubeKind kind, const std::wstring& id, YouTubeListInfo& info, int64_t& published,
