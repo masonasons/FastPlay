@@ -2,20 +2,29 @@
 #ifndef FASTPLAY_SYSTEM_KEYS_H
 #define FASTPLAY_SYSTEM_KEYS_H
 
-// System-wide keys on macOS (src/platform/system_keys_mac.mm): global hotkeys, and the
-// media keys and Now Playing controls. On Windows wxWidgets registers the hotkeys and
-// media keys itself; there, the arrows are watched for scrubbing (below).
+// System-wide keys on macOS (src/platform/system_keys_mac.mm, now_playing_apple.mm)
+// and Linux (system_keys_linux.cpp, now_playing_linux.cpp): global hotkeys, and the
+// media keys and Now Playing controls (MPRIS on Linux). On Windows wxWidgets
+// registers the hotkeys and media keys itself; there, the arrows are watched for
+// scrubbing (below).
 
 #include <string>
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
 
+#ifdef __APPLE__
 // The Windows virtual key code (keycodes.h) for a macOS key code (kVK_*), or 0.
 unsigned MacKeyCodeToVirtualKey(unsigned macKeyCode);
+#else
+// The Windows virtual key code (keycodes.h) for an X/GDK hardware key code (as
+// wxKeyEvent::GetRawKeyFlags gives it under GTK), or 0.
+unsigned LinuxKeyCodeToVirtualKey(unsigned hardwareKeycode);
+#endif
 
-// Global hotkeys, given as MOD_* flags and a virtual key code. MOD_CONTROL is
-// Command, MOD_ALT is Option and MOD_WIN is Control. The handler runs on the UI
-// thread with the hotkey's id, when it is pressed and when it is let go.
+// Global hotkeys, given as MOD_* flags and a virtual key code. On macOS MOD_CONTROL
+// is Command, MOD_ALT is Option and MOD_WIN is Control; on Linux MOD_WIN is Super.
+// The handler runs on the UI thread with the hotkey's id, when it is pressed and
+// when it is let go. Linux has them only under X11: false under Wayland.
 void SetSystemHotkeyHandler(void (*handler)(int id, bool pressed));
 bool RegisterSystemHotkey(int id, unsigned modifiers, unsigned vk);
 void UnregisterSystemHotkey(int id);

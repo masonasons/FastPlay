@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -403,6 +404,11 @@ ma_context* AcquireContext() {
         // off and the screen locked (miniaudio's default is for a phone call)
         contextConfig.coreaudio.sessionCategory =
             g_iosSessionPlayback ? ma_ios_session_category_playback : ma_ios_session_category_none;
+#endif
+#ifdef MA_ENABLE_PULSEAUDIO
+        // Named so in the sound server's mixer (PulseAudio, or PipeWire's), not
+        // after the program's file
+        contextConfig.pulse.pApplicationName = "FastPlay";
 #endif
         if (ma_context_init(test ? &nullBackend : nullptr, test ? 1 : 0, &contextConfig, &g_context) != MA_SUCCESS) {
             return nullptr;
@@ -1039,6 +1045,9 @@ bool OpenDevice(Engine& g, const std::wstring& name, int bufferMs) {
     config.performanceProfile = ma_performance_profile_low_latency;
     config.periodSizeInMilliseconds = kDevicePeriodMs;
     config.periods = 3;
+#ifdef MA_ENABLE_PULSEAUDIO
+    config.pulse.pStreamNamePlayback = "Playback";
+#endif
     if (ma_device_init(g.context, &config, &g.device) != MA_SUCCESS) {
         if (!found) return false;
         config.playback.pDeviceID = nullptr;  // fall back to the default

@@ -5,7 +5,8 @@
 // Watching folders, and everything under them, for files and folders coming,
 // going, being renamed and changing. ReadDirectoryChangesW on Windows
 // (src/platform/folder_watch_windows.cpp), FSEvents on macOS
-// (folder_watch_mac.cpp); elsewhere nothing is watched.
+// (folder_watch_mac.cpp), inotify on Linux (folder_watch_linux.cpp); elsewhere
+// nothing is watched.
 
 #include <functional>
 #include <memory>

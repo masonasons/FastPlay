@@ -28,6 +28,7 @@ extern "C" {
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cwctype>
 #include <cstdlib>
 #include <chrono>
 #include <cstring>

@@ -886,8 +886,8 @@ void MainFrame::UpdateTitle() {
     std::wstring title = APP_NAME;
 
     bool haveTrack = g_currentTrack >= 0 && g_currentTrack < static_cast<int>(g_playlist.size());
-#ifdef __WXOSX__
-    bool wantTrackTitle = haveTrack;  // Control Center shows it too
+#if defined(__WXOSX__) || defined(__WXGTK__)
+    bool wantTrackTitle = haveTrack;  // Control Center (MPRIS on Linux) shows it too
 #else
     bool wantTrackTitle = haveTrack && g_showTitleInWindow;
 #endif
@@ -910,7 +910,7 @@ void MainFrame::UpdateTitle() {
     if (!m_titleChapter.empty()) {
         title += L" - " + m_titleChapter;
     }
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
     m_nowPlayingTitle = trackTitle;
 #endif
 
@@ -933,7 +933,7 @@ void MainFrame::UpdateStatus() {
         if (g_showChapterInTitle && GetCurrentChapterTitle() != m_titleChapter) {
             UpdateTitle();
         }
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
         UpdateNowPlaying(m_nowPlayingTitle, len, pos, IsPlaying());
 #endif
 
@@ -1034,8 +1034,8 @@ void MainFrame::RegisterGlobalHotkeys() {
     m_shellHookMessage = ::RegisterWindowMessageW(L"SHELLHOOK");
     ::RegisterShellHookWindow(static_cast<HWND>(GetHWND()));
     m_hotkeysRegistered = true;
-#elif defined(__WXOSX__)
-    // The media keys arrive through the system's Now Playing controls.
+#elif defined(__WXOSX__) || defined(__WXGTK__)
+    // The media keys arrive through the system's Now Playing controls (MPRIS).
     StartMediaKeys([](int commandId) { PostCommand(commandId); },
                    [](int direction, bool pressed) {
                        if (MainFrame* frame = GetMainFrame()) frame->MediaSeek(direction, pressed);
@@ -1068,7 +1068,7 @@ void MainFrame::UnregisterGlobalHotkeys() {
     }
     ::DeregisterShellHookWindow(static_cast<HWND>(GetHWND()));
     m_hotkeysRegistered = false;
-#elif defined(__WXOSX__)
+#elif defined(__WXOSX__) || defined(__WXGTK__)
     if (!m_hotkeysRegistered) return;
     for (const auto& hk : g_hotkeys) {
         UnregisterSystemHotkey(hk.id);
@@ -1198,7 +1198,7 @@ void MainFrame::OnClose(wxCloseEvent&) {
     }
     UnregisterGlobalHotkeys();
     StopYouTubeAutoRefresh();
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
     StopMediaKeys();  // and leave Control Center's Now Playing
 #endif
     StopRecording();  // Stop recording on exit

@@ -1,6 +1,7 @@
 // MIDI output ports: a synthesizer or other program the system knows of, to play
 // MIDI files through instead of the built-in synthesizer (Options > MIDI). Core
-// MIDI on the Mac, the multimedia MIDI API on Windows; nowhere else.
+// MIDI on the Mac, the multimedia MIDI API on Windows, the ALSA sequencer on Linux;
+// nowhere else.
 
 #ifndef FASTPLAY_MIDI_OUT_H
 #define FASTPLAY_MIDI_OUT_H

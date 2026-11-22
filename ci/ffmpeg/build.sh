@@ -10,6 +10,7 @@
 #   ci/ffmpeg/build.sh ios <out-dir>       (iPhone arm64, and the simulator for both Macs)
 #   ci/ffmpeg/build.sh android <out-dir>   (phones' arm64-v8a and the emulator's x86_64;
 #                                           ANDROID_NDK_HOME names the NDK)
+#   ci/ffmpeg/build.sh linux <out-dir>     (the host's architecture, HTTPS through OpenSSL)
 #
 # <out-dir> receives include/, lib/ and BUILDINFO.txt. The version to build is in
 # ci/ffmpeg/VERSION (an FFmpeg tag), Codec 2's in ci/ffmpeg/CODEC2_VERSION; lib/ has
@@ -288,8 +289,23 @@ case "$platform" in
         android_slice x86_64 x86_64 x86_64-linux-android --disable-x86asm
         cp -r "$work/install-android-arm64-v8a/include" "$out/include"
         ;;
+    linux)
+        # The host's architecture. HTTPS through the system's OpenSSL (Apache 2.0,
+        # which makes this FFmpeg LGPL v3: hence --enable-version3), linked
+        # dynamically as every Linux system has it. No x86 assembly (it needs
+        # nasm; audio decoding is cheap). Codec 2 uses libm, which FFmpeg's test
+        # of it must link. FFmpeg's OpenSSL code does DTLS too, which needs its UDP
+        # protocol.
+        build_codec2 linux "$work/install-linux" -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        build_one linux "$work/install-linux" \
+            --enable-version3 --enable-openssl --enable-zlib --disable-x86asm \
+            --enable-protocol=udp --extra-libs=-lm
+        cp -r "$work/install-linux/include" "$out/include"
+        mkdir -p "$out/lib"
+        cp "$work/install-linux/lib"/*.a "$out/lib/"
+        ;;
     *)
-        echo "usage: $0 windows|macos|ios|android <out-dir>" >&2
+        echo "usage: $0 windows|macos|ios|android|linux <out-dir>" >&2
         exit 2
         ;;
 esac
