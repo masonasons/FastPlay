@@ -95,9 +95,14 @@ private:
     void* m_nativeAccel = nullptr;
 #else
     // The keyboard shortcuts, for the keys caught before macOS dispatches them
-    // (see menu_keys_mac.mm). True if the key ran a command.
+    // (see menu_keys_mac.mm), or GTK (OnCharHook). True if the key ran a command.
     bool RunShortcut(unsigned modifiers, unsigned vk);
     std::vector<wxAcceleratorEntry> m_shortcuts;
+#endif
+#ifdef __WXGTK__
+    void OnCharHook(wxKeyEvent& event);
+    static unsigned KeyModifiers(const wxKeyEvent& event);
+    unsigned m_heldKey = 0;  // the key last down and not yet up, to tell its repeats
 #endif
 
     wxMenu* m_recentMenu = nullptr;

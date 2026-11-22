@@ -54,13 +54,13 @@ static const int kHotkeyMediaStop = 0x7F01;
 static const int kHotkeyMediaPrev = 0x7F02;
 static const int kHotkeyMediaNext = 0x7F03;
 
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXGTK__)
 namespace {
 
-// macOS delivers key presses to the focused view, and a frame with only a menu bar
-// and status bar has none: only keys that are also menu shortcuts would work. This
-// empty window fills the frame and holds the focus, so every key reaches the
-// frame's accelerator table (wxWidgets looks it up from the focused window).
+// macOS and GTK deliver key presses to the focused view, and a frame with only a
+// menu bar and status bar has none: only keys that are also menu shortcuts would
+// work. This empty window fills the frame and holds the focus, so every key reaches
+// the frame (wxWidgets looks up the accelerator table from the focused window).
 class KeyTarget : public wxWindow {
 public:
     explicit KeyTarget(wxWindow* parent)
@@ -94,6 +94,18 @@ MainFrame::MainFrame()
         [](unsigned modifiers, unsigned vk, bool down, bool repeat) {
             return g_mainFrame != nullptr && g_mainFrame->HandleScrubKey(modifiers, vk, down, repeat);
         });
+#elif defined(__WXGTK__)
+    // GTK takes no plain arrow keys as menu shortcuts, and the frame's accelerator
+    // table sees only what the focused window passes up: every key is looked up
+    // here first instead, as on macOS, by the key's place (as hotkeys are stored)
+    auto* keyTarget = new KeyTarget(this);
+    keyTarget->SetFocus();
+    Bind(wxEVT_CHAR_HOOK, &MainFrame::OnCharHook, this);
+    keyTarget->Bind(wxEVT_KEY_UP, [this](wxKeyEvent& event) {
+        const unsigned vk = LinuxKeyCodeToVirtualKey(static_cast<unsigned>(event.GetRawKeyFlags()));
+        if (vk == m_heldKey) m_heldKey = 0;
+        if (!HandleScrubKey(KeyModifiers(event), vk, false, false)) event.Skip();
+    });
 #endif
 
     Bind(wxEVT_MENU, &MainFrame::OnMenu, this);
@@ -465,7 +477,34 @@ void MainFrame::BuildAccelerators() {
 #endif
 }
 
-#ifdef __WXOSX__
+#ifdef __WXGTK__
+unsigned MainFrame::KeyModifiers(const wxKeyEvent& event) {
+    unsigned modifiers = 0;
+    if (event.ControlDown()) modifiers |= MOD_CONTROL;
+    if (event.ShiftDown()) modifiers |= MOD_SHIFT;
+    if (event.AltDown()) modifiers |= MOD_ALT;
+    if (event.MetaDown()) modifiers |= MOD_WIN;  // Super
+    return modifiers;
+}
+
+void MainFrame::OnCharHook(wxKeyEvent& event) {
+    const unsigned vk = LinuxKeyCodeToVirtualKey(static_cast<unsigned>(event.GetRawKeyFlags()));
+    if (vk == 0) {
+        event.Skip();
+        return;
+    }
+    // GTK does not mark a key held down repeating: the same key again, with no
+    // key up between, is a repeat
+    const bool repeat = vk == m_heldKey;
+    m_heldKey = vk;
+    const unsigned modifiers = KeyModifiers(event);
+    if (HandleScrubKey(modifiers, vk, true, repeat)) return;
+    if (RunShortcut(modifiers, vk)) return;
+    event.Skip();  // Alt and a menu's letter, and keys FastPlay has no use for
+}
+#endif
+
+#if defined(__WXOSX__) || defined(__WXGTK__)
 bool MainFrame::RunShortcut(unsigned modifiers, unsigned vk) {
     int key = WxKeyFromVirtualKey(vk);
     if (key == 0) return false;
