@@ -89,6 +89,11 @@ private:
     bool HandleScrubKey(unsigned modifiers, unsigned vk, bool down, bool repeat);
     unsigned m_scrubKey = 0;  // the arrow held for scrubbing, if any
 #ifdef __WXMSW__
+    // Its coming up on the keyboard, watched once a screen reader has passed on a
+    // release while it is still held
+    wxTimer m_scrubArrowPoll;
+#endif
+#ifdef __WXMSW__
     // The keyboard shortcuts as a native accelerator table, so punctuation keys
     // are matched by their key position (VK_OEM_*) on every keyboard layout.
     bool MSWTranslateMessage(WXMSG* msg) override;
