@@ -24,6 +24,9 @@
 #if defined(__WXOSX__) || defined(__WXGTK__)
 #include "system_keys.h"
 #endif
+#ifdef __WXGTK__
+#include <gtk/gtk.h>
+#endif
 #ifdef __WXOSX__
 #include "platform.h"
 #endif
@@ -472,7 +475,11 @@ void MainFrame::BuildAccelerators() {
         all.emplace_back(flags, key, g_hotkeyActions[hk.actionIdx].commandId);
     }
     all.insert(all.end(), e.begin(), e.end());
+#ifndef __WXGTK__
+    // (Not on GTK: OnCharHook looks every key up in m_shortcuts first, and the
+    // table would also take keys meant for the menu bar while it is in use)
     SetAcceleratorTable(wxAcceleratorTable(static_cast<int>(all.size()), all.data()));
+#endif
     m_shortcuts = all;
 #endif
 }
@@ -488,6 +495,16 @@ unsigned MainFrame::KeyModifiers(const wxKeyEvent& event) {
 }
 
 void MainFrame::OnCharHook(wxKeyEvent& event) {
+    // While the menu bar is being used (F10, Alt and a letter, a click), it has the
+    // keys: the arrows move through it, Return chooses. Its menus come and go as
+    // they are moved through, but it has one of its own selected the whole time.
+    // (A popup menu holds GTK's grab instead.)
+    GtkWidget* bar = GetMenuBar() ? static_cast<GtkWidget*>(GetMenuBar()->GetHandle()) : nullptr;
+    if ((bar && GTK_IS_MENU_SHELL(bar) && gtk_menu_shell_get_selected_item(GTK_MENU_SHELL(bar))) ||
+        gtk_grab_get_current()) {
+        event.Skip();
+        return;
+    }
     const unsigned vk = LinuxKeyCodeToVirtualKey(static_cast<unsigned>(event.GetRawKeyFlags()));
     if (vk == 0) {
         event.Skip();
