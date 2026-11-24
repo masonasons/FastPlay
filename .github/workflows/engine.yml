@@ -1,7 +1,7 @@
 name: FastPlay Engine
 
 # The engine as a library (cmake/engine_library.cmake) for other apps, built for
-# Windows, macOS and iOS on every push that could change it, and published to the
+# Windows, macOS, iOS and Linux on every push that could change it, and published to the
 # engine-latest release: one zip per platform, each with the header
 # (include/fastplay_engine/fastplay_engine.h) and the library.
 
@@ -187,8 +187,55 @@ jobs:
           name: engine-ios
           path: fastplay-engine-ios.zip
 
+  # The oldest supported Ubuntu, so the library loads on any distribution at
+  # least as new (glibc, libstdc++, and OpenSSL 3, which newer ones keep beside 4)
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config unzip \
+            libcurl4-openssl-dev libssl-dev zlib1g-dev
+
+      # Before download-deps, which builds FFmpeg only when it is missing
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg
+          key: ffmpeg-linux-x64-ubuntu-22.04-${{ hashFiles('ci/ffmpeg/**') }}
+
+      - name: Download dependencies
+        run: |
+          chmod +x download-deps.sh
+          JOBS="$(nproc)" ./download-deps.sh
+
+      - name: Build the library
+        run: |
+          cmake -S . -B build-engine -DFASTPLAY_ENGINE_LIBRARY=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-engine --parallel "$(nproc)"
+          strip --strip-unneeded build-engine/out/libfastplay_engine.so
+          # Only the fpe_ functions are visible from outside
+          nm -D --defined-only build-engine/out/libfastplay_engine.so | awk '{print $3}' \
+            | grep -v '^fpe_' && exit 1 || true
+
+      - name: Package
+        run: |
+          mkdir -p pkg/include/fastplay_engine pkg/lib
+          cp include/fastplay_engine/fastplay_engine.h pkg/include/fastplay_engine/
+          cp build-engine/out/libfastplay_engine.so pkg/lib/
+          (cd pkg && zip -r ../fastplay-engine-linux-x64.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-linux
+          path: fastplay-engine-linux-x64.zip
+
   release:
-    needs: [windows, macos, ios]
+    needs: [windows, macos, ios, linux]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:

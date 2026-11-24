@@ -32,12 +32,6 @@ struct EventThread {
     std::thread thread;
     bool running = false;
 
-    // At exit with the library never shut down: let the thread go rather than
-    // end the program (a joinable std::thread's destructor calls terminate)
-    ~EventThread() {
-        if (thread.joinable()) thread.detach();
-    }
-
     void Run() {
         std::unique_lock<std::mutex> lock(mutex);
         for (;;) {
@@ -52,9 +46,14 @@ struct EventThread {
     }
 };
 
+// Never destroyed: at exit with the library never shut down, the thread is
+// still waiting on `wake`, and destroying a condition variable something waits
+// on hangs the exit on Linux (glibc waits for the waiter). The process ending
+// takes the thread with it; a static would also have to do something about the
+// joinable std::thread, whose destructor ends the program.
 EventThread& Events() {
-    static EventThread events;
-    return events;
+    static EventThread* events = new EventThread;
+    return *events;
 }
 
 std::mutex g_dataMutex;

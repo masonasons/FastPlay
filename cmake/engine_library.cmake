@@ -6,6 +6,7 @@
 #
 # Windows: fastplay_engine.dll (+ .lib to link against). macOS: a universal
 # libfastplay_engine.dylib, found through @rpath. iOS: FastPlayEngine.framework.
+# Linux: libfastplay_engine.so, exporting only the fpe_ functions.
 
 set(FPE_SOURCES
     src/engine_lib/api.cpp
@@ -76,6 +77,8 @@ else()
     )
     if(APPLE)
         list(APPEND FPE_SOURCES src/platform/startup_mac.cpp)
+    else()
+        list(APPEND FPE_SOURCES src/platform/startup_linux.cpp)
     endif()
 endif()
 
@@ -185,10 +188,22 @@ else()
             INSTALL_NAME_DIR "@rpath"
             BUILD_WITH_INSTALL_NAME_DIR TRUE)
     else()
+        # FFmpeg's HTTPS goes through OpenSSL (ci/ffmpeg/build.sh linux)
+        find_package(OpenSSL REQUIRED)
         target_link_libraries(fastplay_engine PRIVATE
             ${FASTPLAY_FFMPEG_DIR}/lib/libavformat.a ${FASTPLAY_FFMPEG_DIR}/lib/libavcodec.a
             ${FASTPLAY_FFMPEG_DIR}/lib/libswresample.a ${FASTPLAY_FFMPEG_DIR}/lib/libavutil.a
-            z pthread dl m)
+            ${FASTPLAY_FFMPEG_DIR}/lib/libcodec2.a
+            OpenSSL::SSL OpenSSL::Crypto z pthread dl m)
+        # Export only the fpe_ functions: the static FFmpeg and decoders inside
+        # stay private, so they can't clash with the host app's own copies (a
+        # GTK app's GStreamer may load the system FFmpeg into the same process).
+        set(FPE_VERSION_SCRIPT ${CMAKE_BINARY_DIR}/fastplay_engine.map)
+        file(WRITE ${FPE_VERSION_SCRIPT} "{ global: fpe_*; local: *; };\n")
+        target_link_options(fastplay_engine PRIVATE
+            "LINKER:--version-script=${FPE_VERSION_SCRIPT}" "LINKER:--exclude-libs,ALL"
+            "LINKER:--no-undefined")
+        set_property(TARGET fastplay_engine APPEND PROPERTY LINK_DEPENDS ${FPE_VERSION_SCRIPT})
     endif()
     set_target_properties(fastplay_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
 endif()
